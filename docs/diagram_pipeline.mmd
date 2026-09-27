@@ -1,0 +1,69 @@
+%% IOTARU SG-10 - Beacon Ingestion, Filter & Dispatch Pipeline Flowchart
+%% Standard Mermaid Format (Bisa di-render di mermaid.live atau Markdown Preview)
+
+flowchart TD
+    classDef hardware fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    classDef core0 fill:#0f172a,stroke:#818cf8,stroke-width:2px,color:#f8fafc;
+    classDef core1 fill:#0f172a,stroke:#34d399,stroke-width:2px,color:#f8fafc;
+    classDef decision fill:#1e1b4b,stroke:#f59e0b,stroke-width:2px,color:#fde68a;
+    classDef drop fill:#450a0a,stroke:#ef4444,stroke-width:1.5px,color:#fca5a5;
+    classDef success fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#a7f3d0;
+
+    subgraph NRF["1. BLE Co-Processor (nRF52840)"]
+        A1["BLE Radio Scanner<br/>(Channel 37, 38, 39)"]:::hardware --> A2["Parse Advertisement<br/>iBeacon / Extended"]:::hardware
+        A2 --> A3["Pack 25-Byte Binary Frame<br/>[Header 0xAA 0x55, Payload, CRC]"]:::hardware
+        A3 -->|UART2 @ 1.000.000 bps| B1["ESP32 GPIO 16 (RX2)"]:::hardware
+    end
+
+    subgraph CORE0["2. ESP32 Core 0 (PRO_CPU) - Pipeline Ingestion Engine"]
+        B1 --> B2["UART2 Hardware ISR &<br/>FreeRTOS Ring-Buffer (4KB)"]:::core0
+        B2 --> B3["Stream Parser State Machine<br/>(Cari Byte Sync 0xAA, 0x55)"]:::core0
+        B3 --> B4{"Kumpul 25 Byte<br/>Frame Selesai?"}:::decision
+        B4 -- Belum --> B3
+        B4 -- Lengkap --> B5["Hitung Fast XOR Checksum<br/>(Byte 0..23 vs Byte 24)"]:::core0
+        
+        B5 --> B6{"CRC XOR<br/>Valid?"}:::decision
+        B6 -- Tidak (Korup) --> D1["Drop Frame<br/>err_crc++"]:::drop
+        
+        B6 -- Valid --> C1{"Filter 1:<br/>RSSI >= rssi_min?"}:::decision
+        C1 -- Di bawah batas --> D2["Drop (Signal Weak)"]:::drop
+        
+        C1 -- Lolos --> C2{"Filter 2:<br/>filter_uuid_en == 1?"}:::decision
+        C2 -- Aktif --> C3{"UUID Cocok<br/>16-Byte?"}:::decision
+        C3 -- Tidak Cocok --> D3["Drop (UUID Mismatch)"]:::drop
+        C3 -- Cocok --> C4
+        C2 -- Tidak Aktif --> C4{"Filter 3:<br/>filter_major_en == 1?"}:::decision
+        
+        C4 -- Aktif --> C5{"Major Cocok<br/>(0..65535)?"}:::decision
+        C5 -- Tidak Cocok --> D4["Drop (Major Mismatch)"]:::drop
+        C5 -- Cocok --> DISPATCH
+        C4 -- Tidak Aktif --> DISPATCH
+        
+        subgraph DISPATCH["Thread-Safe Dispatch"]
+            E1["Paket Valid Diterima<br/>m_readCount++"]:::success
+            E1 --> E2{"Queue Penuh?<br/>(size == 300)"}:::decision
+            E2 -- Penuh --> E3["xQueueReceive(oldest)<br/>Drop Paket Terlama"]:::drop
+            E3 --> E4["xQueueSend(packet)<br/>Simpan ke beaconQueue"]:::success
+            E2 -- Ada Slot --> E4
+            
+            E1 --> E5["Ambil Mutex (Timeout 5ms)<br/>s_liveBufMutex"]:::core0
+            E5 --> E6["Simpan ke s_liveBeaconBuf<br/>(Circular FIFO Maks. 50)"]:::core0
+            E6 --> E7["Lepas Mutex"]:::core0
+        end
+    end
+
+    subgraph CORE1["3. ESP32 Core 1 (APP_CPU) - Batch Aggregator & Web UI"]
+        E4 -->|FreeRTOS Queue| F1["MQTT Service Task<br/>(Read beaconQueue)"]:::core1
+        F1 --> F2["Append ke Batch Buffer 4096B<br/>(Format Biner 6B / 7B)"]:::core1
+        F2 --> F3{"batch_count >= batch_max<br/>ATAU Timer batch_flush?"}:::decision
+        F3 -- Belum --> F1
+        F3 -- Siap Kirim --> F4["Publish MQTT Batch ke Broker<br/>Topik: beacon/%device_id%"]:::success
+        F4 -->|SPI DMA 25 MHz / Wi-Fi| F5["Ethernet W5500 / Wi-Fi Station"]:::hardware
+
+        E7 -.->|Shared RAM Buffer| G1["WebSocket Broadcast Task<br/>(Interval 100 ms)"]:::core1
+        G1 --> G2{"Ada Klien Web<br/>Terhubung di /ws?"}:::decision
+        G2 -- Tidak --> G1
+        G2 -- Ada --> G3["Serialisasi JSON Telemetri +<br/>Maks 50 Item Live Beacon"]:::core1
+        G3 --> G4["Kirim Frame Async WebSocket<br/>httpd_ws_send_frame_async()"]:::success
+        G4 --> G5["Browser Client UI<br/>(HUD Speed & Live Chart 60s)"]:::hardware
+    end

@@ -1,0 +1,599 @@
+﻿<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IOTARU %model% - Live Test Monitor</title>
+  <link rel="stylesheet" href="assets/css/app.css">
+
+  <script src="assets/js/swal-lite.js"></script>
+</head>
+
+<body>
+  <div class="wrapper">
+    <!-- Sidebar (Desktop) -->
+    <aside class="sidebar">
+      <div class="sidebar-wrapper">
+        <div class="logo">
+          <img src="assets/img/logo.png" alt="IOTARU" class="sidebar-logo-img">
+        </div>
+        <div class="user">
+          <div class="user-avatar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+          </div>
+          <span class="user-info">%user%</span>
+        </div>
+        <ul class="sidebar-nav">
+          <li>
+            <a href="/">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
+                <path d="M22 12A10 10 0 0 0 12 2v10z" />
+              </svg>
+              <span>Overview</span>
+            </a>
+          </li>
+          <li class="active nav-test-highlight">
+            <a href="/test">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+              <span>Live Test Monitor</span>
+            </a>
+          </li>
+          <li>
+            <a href="/auth">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <span>Auth Settings</span>
+            </a>
+          </li>
+          <li>
+            <a href="/settings">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path
+                  d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              <span>Device Settings</span>
+            </a>
+          </li>
+          <li>
+            <a href="/firmware">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+                <path d="M12 12v9" />
+                <path d="m16 16-4-4-4 4" />
+              </svg>
+              <span>Update Firmware</span>
+            </a>
+          </li>
+          <li>
+            <a href="/reset">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                <path d="M8 16H3v5" />
+              </svg>
+              <span>Reset Config</span>
+            </a>
+          </li>
+          <li>
+            <a href="/reboot">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+                <line x1="12" y1="2" x2="12" y2="12" />
+              </svg>
+              <span>Reboot</span>
+            </a>
+          </li>
+          <li class="sidebar-logout">
+            <a href="/logout" id="sidebarLogoutBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              <span>Logout</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Panel -->
+    <main class="main-panel">
+      <header class="navbar">
+        <div class="navbar-left">
+          <a href="/" class="mobile-logo-link">
+            <img src="assets/img/logo.png" alt="IOTARU" class="mobile-logo-img">
+          </a>
+          <span class="navbar-brand">Live Test Monitor</span>
+        </div>
+        <a href="/logout" class="mobile-logout-btn" id="mobileLogoutBtn" title="Logout">
+          <svg viewBox="0 0 24 24">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+          <span>Keluar</span>
+        </a>
+      </header>
+
+      <section class="content">
+<!-- ================= AP MODE CONFIG BANNER COMPONENT ================= -->
+<style>
+  .ap-banner-card {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.88) 100%);
+    border: 1px solid rgba(59, 130, 246, 0.45);
+    box-shadow: 0 8px 24px rgba(2, 132, 199, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(12px);
+    border-radius: 12px;
+    padding: 12px 18px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .ap-banner-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 4px;
+    background: linear-gradient(180deg, #38bdf8, #0284c7);
+  }
+  .ap-banner-left { display: flex; align-items: center; gap: 14px; }
+  .ap-pulse-ring { position: relative; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
+  .ap-pulse-dot { width: 10px; height: 10px; border-radius: 50%; background: #0284c7; box-shadow: 0 0 10px #38bdf8; z-index: 2; }
+  .ap-pulse-ring::after {
+    content: "";
+    position: absolute;
+    width: 100%; height: 100%;
+    border-radius: 50%;
+    background: #38bdf8;
+    animation: apPulseAnim 1.6s ease-out infinite;
+    z-index: 1;
+  }
+  @keyframes apPulseAnim {
+    0% { transform: scale(0.95); opacity: 0.8; }
+    70% { transform: scale(2.4); opacity: 0; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+  .ap-banner-text { display: flex; flex-direction: column; gap: 2px; }
+  .ap-banner-title { font-size: 0.95rem; font-weight: 600; color: #f8fafc; letter-spacing: 0.2px; }
+  .ap-banner-subtitle { font-size: 0.82rem; color: #94a3b8; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ap-banner-subtitle strong { color: #38bdf8; font-weight: 600; }
+  .ap-timer-pill {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    padding: 1px 8px;
+    border-radius: 9999px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    font-family: monospace;
+  }
+  .btn-ap-stop {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: rgba(249, 115, 22, 0.15);
+    border: 1px solid rgba(249, 115, 22, 0.4);
+    color: #fb923c;
+    border-radius: 8px;
+    font-size: 0.84rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+  .btn-ap-stop:hover {
+    background: rgba(249, 115, 22, 0.28);
+    border-color: rgba(249, 115, 22, 0.7);
+    color: #fdba74;
+    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25);
+    transform: translateY(-1px);
+  }
+  @media (max-width: 640px) {
+    .ap-banner-card { flex-direction: column; align-items: stretch; gap: 12px; }
+    .btn-ap-stop { width: 100%; justify-content: center; }
+  }
+</style>
+
+<div id="apModeBanner" class="ap-banner-card">
+  <div class="ap-banner-left">
+    <div class="ap-pulse-ring"><span class="ap-pulse-dot"></span></div>
+    <div class="ap-banner-text">
+      <div class="ap-banner-title">Hotspot Mode Konfigurasi Aktif</div>
+      <div class="ap-banner-subtitle">
+        SSID: <strong id="apBannerSsid">%ap_ssid%</strong> &bull; Auto-off idle: <span id="apBannerTimer" class="ap-timer-pill">60s</span>
+      </div>
+    </div>
+  </div>
+  <div class="ap-banner-right">
+    <button type="button" id="btnStopAp" class="btn-ap-stop" title="Matikan Hotspot Konfigurasi">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="1" y1="1" x2="23" y2="23"/>
+        <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+        <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+        <path d="M10.71 5.05A16 16 0 0 1 22.58 9"/>
+        <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+        <line x1="12" y1="20" x2="12.01" y2="20"/>
+      </svg>
+      <span>Nonaktifkan AP</span>
+    </button>
+  </div>
+</div>
+
+<script>
+(function() {
+  var b = document.getElementById("apModeBanner");
+  if (!b) return;
+
+  // Evaluasi aktif: Jika diakses via IP AP 192.168.4.1 ATAU server flag %ap_banner_active% == 1
+  var isFromAp = (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.") === 0 || "%ap_banner_active%" === "1");
+  if (isFromAp) {
+    b.style.display = "flex";
+  }
+
+  var btn = document.getElementById("btnStopAp");
+  if (btn && !btn.dataset.bound) {
+    btn.dataset.bound = "true";
+    btn.onclick = function(e) {
+      e.preventDefault();
+      function doStop() {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({
+            title: "Menonaktifkan...",
+            text: "Mematikan Hotspot SoftAP...",
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            didOpen: function() { Swal.showLoading(); }
+          });
+        }
+        fetch("/api/v1/system/config-ap/stop", { method: "POST" })
+          .then(function(r) { return r.json().catch(function() { return { status: "ok" }; }); })
+          .then(function(res) {
+            handleDone((res && res.message) ? res.message : "Mode AP telah dinonaktifkan.");
+          })
+          .catch(function() {
+            handleDone("Hotspot AP berhasil dimatikan. Perangkat kembali ke mode normal.");
+          });
+      }
+      function handleDone(msg) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ title: "Hotspot Dinonaktifkan", text: msg, icon: "success", confirmButtonColor: "#0284c7" });
+        } else {
+          alert(msg);
+        }
+        b.style.display = "none";
+      }
+
+      if (typeof Swal !== "undefined") {
+        Swal.fire({
+          title: "Nonaktifkan Mode AP?",
+          text: "Hotspot konfigurasi akan dimatikan dan indikator LED akan kembali ke status operasional normal.",
+          icon: "warning",
+          showCancelButton: true,
+          confirmButtonColor: "#f97316",
+          cancelButtonColor: "#64748b",
+          confirmButtonText: "Ya, Matikan AP!",
+          cancelButtonText: "Batal"
+        }).then(function(res) {
+          if (res.isConfirmed) doStop();
+        });
+      } else {
+        if (confirm("Nonaktifkan Mode Hotspot AP?")) doStop();
+      }
+    };
+  }
+
+  var tEl = document.getElementById("apBannerTimer");
+  var ssidEl = document.getElementById("apBannerSsid");
+  fetch("/api/v1/system/version")
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d) {
+        if (d.ap_active) b.style.display = "flex";
+        else if (!isFromAp) b.style.display = "none";
+        if (d.ap_ssid && ssidEl) ssidEl.textContent = d.ap_ssid;
+        var rem = d.ap_remain_sec !== undefined ? d.ap_remain_sec : 60;
+        if (tEl) tEl.textContent = rem + "s";
+        var iv = setInterval(function() {
+          if (rem > 0) {
+            rem--;
+            if (tEl) tEl.textContent = rem + "s";
+          } else {
+            clearInterval(iv);
+            if (tEl) tEl.textContent = "Off";
+            setTimeout(function() { b.style.display = "none"; }, 1500);
+          }
+        }, 1000);
+      }
+    })
+    .catch(function() {});
+})();
+</script>
+<!-- ================= END AP MODE CONFIG BANNER COMPONENT ================= -->
+        <!-- Test Control Bar -->
+        <div class="test-control-card">
+          <div class="test-control-info">
+            <div class="bento-icon cyan">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+            </div>
+            <div>
+              <div class="machine-title">Pengujian BLE Gateway Realtime</div>
+              <div class="machine-subtitle">Tekan Start untuk memulai streaming telemetri & inspeksi 10 beacon</div>
+            </div>
+          </div>
+          <div class="test-control-actions">
+            <div class="status-pill" id="testStatusBadge"
+              style="background:rgba(148,163,184,0.12);border-color:rgba(148,163,184,0.3);color:#94a3b8;">
+              <span id="testStatusText">STANDBY / STOPPED</span>
+            </div>
+            <button type="button" class="btn-start" id="btnStartTest">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+              Start Test
+            </button>
+            <button type="button" class="btn-stop" id="btnStopTest" style="display:none;" disabled>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+              Stop Test
+            </button>
+          </div>
+        </div>
+
+        <!-- Realtime Throughput & Performance HUD -->
+        <div class="throughput-hud">
+          <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-label">Tag Read Speed</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+              </svg>
+            </div>
+            <div class="hud-card-val cyan">
+              <span id="stat_read_speed">0</span>
+              <span class="hud-card-unit">pkt/s</span>
+            </div>
+          </div>
+
+                    <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-label">Unique Beacons</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </div>
+            <div class="hud-card-val" style="color:#38bdf8;">
+              <span id="stat_unique_tags">0</span>
+              <span class="hud-card-unit">tags</span>
+            </div>
+          </div>
+<div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-label">MQTT Publish Speed</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2">
+                <path d="M5 12h14" />
+                <path d="m12 5 7 7-7 7" />
+              </svg>
+            </div>
+            <div class="hud-card-val emerald">
+              <span id="stat_mqtt_speed">0</span>
+              <span class="hud-card-unit">batch/s</span>
+            </div>
+          </div>
+
+
+
+          <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-label">Queue FreeRTOS</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2">
+                <rect width="18" height="18" x="3" y="3" rx="2" />
+                <path d="M3 9h18" />
+                <path d="M9 21V9" />
+              </svg>
+            </div>
+            <div class="hud-card-val amber">
+              <span id="stat_queue_load">0 / 300</span>
+            </div>
+          </div>
+
+                    <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-label">Antrian Buffer Batch</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2">
+                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+                <path d="m3.3 7 8.7 5 8.7-5" />
+                <path d="M12 22V12" />
+              </svg>
+            </div>
+            <div class="hud-card-val" style="color:#f43f5e;">
+              <span id="stat_batch_load">0 / 100</span>
+            </div>
+          </div>
+          <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-label">Pkt per Batch</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2">
+                <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                <polyline points="2 17 12 22 22 17" />
+                <polyline points="2 12 12 17 22 12" />
+              </svg>
+            </div>
+            <div class="hud-card-val" style="color:#818cf8;">
+              <span id="stat_batch_pkt_size">0</span>
+              <span class="hud-card-unit">pkt</span>
+            </div>
+          </div>
+          <div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-label">Net Bandwidth</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+                <path d="M12 20v-6M6 20V10M18 20V4" />
+              </svg>
+            </div>
+            <div class="hud-card-val" style="color:#38bdf8;">
+              <span id="stat_net_bandwidth">0.00</span>
+              <span class="hud-card-unit">KB/s</span>
+            </div>
+          </div>
+<div class="hud-card">
+            <div class="hud-card-header">
+              <span class="hud-card-label">Free Heap RAM</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2">
+                <rect width="16" height="16" x="4" y="4" rx="2" />
+              </svg>
+            </div>
+            <div class="hud-card-val" style="color:#c084fc;">
+              <span id="stat_free_heap">0</span>
+              <span class="hud-card-unit">KB</span>
+            </div>
+          </div>
+
+
+        </div>
+
+        <!-- 10-Row Realtime FIFO Beacon Table -->
+        <div class="bento-card">
+          <div class="table-card-header">
+            <div>
+              <div class="bento-title">10 Data Beacon Terupdate (Buffer FIFO)</div>
+              <div class="bento-sub">Menampilkan 10 beacon paling mutakhir yang masuk via UART 1 Mbps</div>
+            </div>
+            <div class="filter-search-box">
+              <svg class="filter-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input type="text" id="tagFilterInput" placeholder="Filter Major, Minor, atau Format (mis: 1-2, 100)...">
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="beacon-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Format</th>
+                  <th>Major-Minor</th>
+                  <th>RSSI</th>
+                  <th>Battery</th>
+                  <th>Waktu</th>
+                </tr>
+              </thead>
+              <tbody id="beaconTableBody">
+                <tr>
+                  <td colspan="6" style="text-align:center;color:var(--text-dim);padding:30px;">
+                    Tekan tombol <strong>Start Test</strong> di atas untuk memulai streaming live.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <!-- Realtime Performance 60-Second Telemetry Chart (Task Manager Style) -->
+        <div class="bento-card chart-card">
+          <div class="table-card-header">
+            <div>
+              <div class="bento-title">Analisa Grafik Performa (60 Detik)</div>
+              <div class="bento-sub">Tren dinamis pembacaan tag, publish MQTT, antrian FreeRTOS, dan buffer batch</div>
+            </div>
+            <div class="chart-legend-box">
+              <span class="chart-legend-item cyan"><span class="legend-dot cyan"></span>Tag Speed</span>
+              <span class="chart-legend-item emerald"><span class="legend-dot emerald"></span>MQTT Speed</span>
+              <span class="chart-legend-item amber"><span class="legend-dot amber"></span>Queue RTOS</span>
+              <span class="chart-legend-item rose"><span class="legend-dot rose"></span>Batch Buffer</span>
+              <span class="chart-legend-item violet"><span class="legend-dot violet"></span>Pkt / Batch</span>
+              <span class="chart-legend-item sky"><span class="legend-dot sky"></span>Net Bandwidth</span>
+            </div>
+          </div>
+
+          <div class="chart-canvas-wrapper" id="chartWrapper">
+            <canvas id="telemetryChart" class="telemetry-canvas"></canvas>
+            <div class="chart-axis-labels">
+              <span class="axis-lbl-left">60 seconds</span>
+              <span class="axis-lbl-right">0</span>
+            </div>
+            <div id="chartTooltip" class="chart-tooltip" style="display:none;"></div>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        &copy; <span id="year"></span> IOTARU ESP32 Gateway (%model%). Live Diagnostic Suite.
+      </footer>
+    </main>
+
+    <!-- Bottom Navigation Bar (Mobile) -->
+    <nav class="bottom-nav">
+      <a href="/" class="bottom-nav-item">
+        <svg viewBox="0 0 24 24">
+          <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
+          <path d="M22 12A10 10 0 0 0 12 2v10z" />
+        </svg>
+        <span>Overview</span>
+      </a>
+      <button type="button" class="bottom-nav-item" data-action="config-sheet">
+        <svg viewBox="0 0 24 24">
+          <path
+            d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+        <span>Config</span>
+      </button>
+      <a href="/test" class="bottom-nav-item active nav-center-highlight">
+        <div class="center-pill">
+          <svg viewBox="0 0 24 24">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+          <span>Test</span>
+        </div>
+      </a>
+      <a href="/firmware" class="bottom-nav-item">
+        <svg viewBox="0 0 24 24">
+          <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+          <path d="M12 12v9" />
+          <path d="m16 16-4-4-4 4" />
+        </svg>
+        <span>Firmware</span>
+      </a>
+      <button type="button" class="bottom-nav-item nav-tab-reboot" data-action="power-sheet">
+        <svg viewBox="0 0 24 24">
+          <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+          <line x1="12" y1="2" x2="12" y2="12" />
+        </svg>
+        <span>Reboot</span>
+      </button>
+    </nav>
+  </div>
+
+  <script src="assets/js/app.js"></script>
+  <script src="assets/js/test.js"></script>
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+
+</html>

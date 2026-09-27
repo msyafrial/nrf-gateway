@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IOTARU %model% - Login</title>
+  <link rel="stylesheet" href="assets/css/app.css">
+  <script src="assets/js/swal-lite.js"></script>
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0b1120 0%, #1e293b 100%);
+      padding: 16px;
+    }
+    .login-wrapper {
+      max-width: 400px;
+      width: 100%;
+    }
+    .login-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 36px 28px;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+    }
+    .login-brand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    .login-logo-img {
+      height: 48px;
+      width: auto;
+      object-fit: contain;
+    }
+    .login-title {
+      text-align: center;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+    .login-sub {
+      text-align: center;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      margin-bottom: 24px;
+    }
+    .login-form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .login-btn {
+      width: 100%;
+      height: 46px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 8px;
+      box-shadow: 0 4px 14px var(--primary-glow);
+    }
+    .login-btn:hover {
+      background: var(--primary-hover);
+    }
+  
+    /* AP Banner Mobile & Desktop Styling */
+    .ap-banner-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      box-shadow: 0 8px 24px rgba(2, 132, 199, 0.2);
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-bottom: 18px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .ap-banner-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .ap-pulse-ring {
+      position: relative;
+      width: 14px;
+      height: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .ap-pulse-ring::before {
+      content: "";
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: #38bdf8;
+      opacity: 0.75;
+      animation: apPulseAnim 1.6s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+    }
+    @keyframes apPulseAnim {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      70% { transform: scale(2.4); opacity: 0; }
+      100% { transform: scale(2.4); opacity: 0; }
+    }
+    .ap-pulse-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #0284c7;
+      box-shadow: 0 0 8px #38bdf8;
+    }
+    .ap-banner-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #f8fafc;
+    }
+    .ap-banner-subtitle {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 2px;
+    }
+    .ap-timer-pill {
+      display: inline-block;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 1px 7px;
+      border-radius: 20px;
+      font-family: monospace;
+      font-weight: 600;
+      font-size: 11.5px;
+    }
+    .btn-ap-stop {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: rgba(249, 115, 22, 0.18);
+      border: 1px solid rgba(249, 115, 22, 0.5);
+      color: #fb923c;
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .btn-ap-stop:hover {
+      background: rgba(249, 115, 22, 0.35);
+      border-color: #f97316;
+      color: #fff;
+    }
+    @media (max-width: 640px) {
+      .ap-banner-card {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+      }
+      .btn-ap-stop {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+
+  </style>
+</head>
+<body>
+  <div class="login-wrapper">
+    <!-- Banner Mode AP jika diakses via Hotspot -->
+    <div id="apModeBanner" class="ap-banner-card" style="display: none; margin-bottom: 16px;">
+      <div class="ap-banner-left">
+        <div class="ap-pulse-ring">
+          <span class="ap-pulse-dot"></span>
+        </div>
+        <div class="ap-banner-text">
+          <div class="ap-banner-title">Hotspot Mode Config Aktif</div>
+          <div class="ap-banner-subtitle">
+            SSID: <strong id="apBannerSsid">%ap_ssid%</strong> &bull; Auto-off: <span id="apBannerTimer" class="ap-timer-pill">60s</span>
+          </div>
+        </div>
+      </div>
+      <div class="ap-banner-right">
+        <button type="button" id="btnStopAp" class="btn-ap-stop" title="Matikan Hotspot Konfigurasi">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="1" y1="1" x2="23" y2="23"/>
+            <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+            <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+            <path d="M10.71 5.05A16 16 0 0 1 22.58 9"/>
+            <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+            <line x1="12" y1="20" x2="12.01" y2="20"/>
+          </svg>
+          <span>Nonaktifkan AP</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="login-card">
+      <div class="login-brand">
+        <img src="assets/img/logo.png" alt="IOTARU" class="login-logo-img">
+      </div>
+      <div class="login-title">Autentikasi Gateway %model%</div>
+      <div class="login-sub">Masuk sebagai Administrator atau Teknisi Lapangan</div>
+      <form class="login-form" onsubmit="handleLogin(event)">
+        <div class="item">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" placeholder="Masukkan username" required autofocus>
+        </div>
+        <div class="item">
+          <label for="password">Password</label>
+          <div class="password-wrapper">
+            <input type="password" id="password" name="password" placeholder="Masukkan password" required>
+            <button type="button" class="btn-toggle-pwd" title="Tahan untuk melihat password" aria-label="Tahan untuk melihat password" tabindex="-1">
+                    <svg class="eye-closed" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+                      <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+                      <line x1="2" y1="2" x2="22" y2="22"/>
+                      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
+                    </svg>
+                    <svg class="eye-open" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                      <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                  </button>
+          </div>
+        </div>
+        <button type="submit" class="login-btn">Masuk ke Sistem</button>
+      </form>
+    </div>
+  </div>
+
+    <script>
+    // Jika sesi login masih aktif, alihkan langsung ke Overview
+    (function checkActiveSession() {
+      fetch("/api/v1/auth/check")
+        .then(res => {
+          if (res.status === 200) {
+            window.location.replace("/");
+          }
+        })
+        .catch(() => {});
+    })();
+
+    function handleLogin(e) {
+      e.preventDefault();
+      const u = document.getElementById("username").value.trim();
+      const p = document.getElementById("password").value;
+
+      if (!u || !p) return;
+
+      Swal.fire({
+        title: "Memverifikasi...",
+        text: "Menghubungkan ke sistem otentikasi ESP32",
+        allowOutsideClick: false,
+        showConfirmButton: false,
+        didOpen: () => Swal.showLoading()
+      });
+
+      const formData = new FormData();
+      formData.append("username", u);
+      formData.append("password", p);
+
+      fetch("/api/v1/auth/login", {
+        method: "POST",
+        body: formData
+      })
+      .then(res => {
+        Swal.close();
+        if (res.status === 200) {
+          window.location.href = "/";
+        } else {
+          return res.text().then(text => {
+            Swal.fire("Login Gagal", text || "Username atau password salah.", "error");
+          });
+        }
+      })
+      .catch(err => {
+        Swal.close();
+        Swal.fire("Error Koneksi", err.message || "Gagal menghubungi ESP32.", "error");
+      });
+    }
+  
+// =============================================================================
+// HOLD-TO-REVEAL PASSWORD TOGGLE MODULE
+// =============================================================================
+function initPasswordToggles() {
+  document.querySelectorAll(".btn-toggle-pwd").forEach(btn => {
+    if (btn.dataset.pwdBound) return;
+    btn.dataset.pwdBound = "true";
+
+    const wrapper = btn.closest(".password-wrapper");
+    if (!wrapper) return;
+    const input = wrapper.querySelector("input");
+    if (!input) return;
+
+    function reveal(e) {
+      if (e) e.preventDefault();
+      input.type = "text";
+      btn.classList.add("revealed");
+    }
+
+    function conceal(e) {
+      if (e) e.preventDefault();
+      input.type = "password";
+      btn.classList.remove("revealed");
+    }
+
+    // Pointer events support mouse hold, touch hold on mobile, and stylus
+    btn.addEventListener("pointerdown", reveal);
+    btn.addEventListener("pointerup", conceal);
+    btn.addEventListener("pointercancel", conceal);
+    btn.addEventListener("pointerleave", conceal);
+
+    // Keyboard navigation: hold Space or Enter to peek
+    btn.addEventListener("keydown", function(e) {
+      if (e.key === " " || e.key === "Enter") {
+        reveal(e);
+      }
+    });
+    btn.addEventListener("keyup", function(e) {
+      if (e.key === " " || e.key === "Enter") {
+        conceal(e);
+      }
+    });
+
+    btn.addEventListener("click", function(e) {
+      e.preventDefault();
+    });
+  });
+}
+
+document.addEventListener("DOMContentLoaded", initPasswordToggles);
+
+    // AP Mode Watcher untuk Halaman Login
+    let apCountdownInterval = null;
+    let currentApRemainingSec = 60;
+
+    function checkLoginApStatus() {
+      fetch("/api/v1/system/version")
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.ap_active) {
+            const banner = document.getElementById("apModeBanner");
+            const ssidEl = document.getElementById("apBannerSsid");
+            const timerEl = document.getElementById("apBannerTimer");
+            const btnStop = document.getElementById("btnStopAp");
+
+            if (banner) {
+              banner.style.display = "flex";
+              if (ssidEl && data.ap_ssid) ssidEl.textContent = data.ap_ssid;
+              currentApRemainingSec = data.ap_remain_sec || 60;
+              if (timerEl) timerEl.textContent = currentApRemainingSec + "s";
+
+              if (btnStop && !btnStop.dataset.bound) {
+                btnStop.dataset.bound = "true";
+                btnStop.addEventListener("click", function() {
+                  Swal.fire({
+                    title: "Nonaktifkan Mode AP?",
+                    text: "Hotspot konfigurasi akan dimatikan dan indikator LED akan kembali ke status operasional normal.",
+                    icon: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#f97316",
+                    cancelButtonColor: "#64748b",
+                    confirmButtonText: "Ya, Matikan AP!",
+                    cancelButtonText: "Batal"
+                  }).then(res => {
+                    if (res.isConfirmed) {
+                      Swal.fire({
+                        title: "Menonaktifkan...",
+                        text: "Mematikan Hotspot SoftAP...",
+                        allowOutsideClick: false,
+                        showConfirmButton: false,
+                        didOpen: () => Swal.showLoading()
+                      });
+                      fetch("/api/v1/system/config-ap/stop", { method: "POST" })
+                        .then(r => r.json().catch(() => ({ status: "ok" })))
+                        .then(resData => {
+                          Swal.fire({
+                            title: "Hotspot Dinonaktifkan",
+                            text: (resData && resData.message) ? resData.message : "Mode AP telah dinonaktifkan.",
+                            icon: "success",
+                            confirmButtonColor: "#0284c7"
+                          });
+                          banner.style.display = "none";
+                          if (apCountdownInterval) clearInterval(apCountdownInterval);
+                        })
+                        .catch(err => {
+                          // Karena mematikan AP otomatis memutus sambungan Wi-Fi ke 192.168.4.1,
+                          // network disconnection menandakan AP berhasil dimatikan!
+                          Swal.fire({
+                            title: "Hotspot Dinonaktifkan",
+                            text: "Mode Hotspot AP berhasil dimatikan. Perangkat kembali ke mode normal.",
+                            icon: "success",
+                            confirmButtonColor: "#0284c7"
+                          });
+                          banner.style.display = "none";
+                          if (apCountdownInterval) clearInterval(apCountdownInterval);
+                        });
+                    }
+                  });
+                });
+              }
+
+              if (apCountdownInterval) clearInterval(apCountdownInterval);
+              apCountdownInterval = setInterval(() => {
+                if (currentApRemainingSec > 0) {
+                  currentApRemainingSec--;
+                  if (timerEl) timerEl.textContent = currentApRemainingSec + "s";
+                } else {
+                  clearInterval(apCountdownInterval);
+                  if (timerEl) timerEl.textContent = "Off";
+                  setTimeout(() => { banner.style.display = "none"; }, 2000);
+                }
+              }, 1000);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+
+    
+    // Langsung tampilkan jika diakses via IP AP 192.168.4.1
+    if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.") === 0 || "%ap_banner_active%" === "1") {
+      const b = document.getElementById("apModeBanner");
+      if (b) b.style.display = "flex";
+    }
+
+    document.addEventListener("DOMContentLoaded", checkLoginApStatus);
+
+</script>
+</body>
+</html>

@@ -1,0 +1,211 @@
+#include "beacon_pipeline.hpp"
+#include "app_config.hpp"
+#include "crc_utils.hpp"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include <cstring>
+#include <cstdio>
+#include <atomic>
+
+static const char *TAG = "BEACON_PIPE";
+
+namespace Iotaru::Core {
+
+static QueueHandle_t s_beaconQueue = nullptr;
+static SemaphoreHandle_t s_liveBufMutex = nullptr;
+
+static LiveBeaconItem s_liveBeaconBuf[LIVE_FIFO_MAX];
+static size_t s_liveBeaconCount = 0;
+
+static std::atomic<uint32_t> s_totalBeaconsRead{0};
+static std::atomic<uint32_t> s_totalMqttPublished{0};
+static std::atomic<uint32_t> s_totalMqttFailed{0};
+
+static uint32_t s_readSpeed = 0;
+static uint32_t s_mqttSpeed = 0;
+static uint32_t s_lastReadSnap = 0;
+static uint32_t s_lastMqttSnap = 0;
+
+// Internal streaming state machine buffer
+static uint8_t s_rxFrameBuf[sizeof(BeaconBinaryFrame)];
+static size_t  s_rxFrameIdx = 0;
+
+void BeaconPipeline::init() {
+    if (s_liveBufMutex == nullptr) {
+        s_liveBufMutex = xSemaphoreCreateMutex();
+    }
+    if (s_beaconQueue == nullptr) {
+        s_beaconQueue = xQueueCreate(BEACON_QUEUE_MAX, sizeof(BeaconPacket));
+    }
+    ESP_LOGI(TAG, "Inisialisasi antrean data beacon selesai (Kapasitas: %u item, Live FIFO: %u item)",
+             (unsigned int)BEACON_QUEUE_MAX, (unsigned int)LIVE_FIFO_MAX);
+}
+
+void BeaconPipeline::push(const BeaconPacket& packet) {
+    if (s_beaconQueue == nullptr) return;
+
+    if (xQueueSend(s_beaconQueue, &packet, 0) != pdTRUE) {
+        // Antrean penuh: buang item tertua (drop-oldest policy)
+        BeaconPacket oldest;
+        if (xQueueReceive(s_beaconQueue, &oldest, 0) == pdTRUE) {
+            xQueueSend(s_beaconQueue, &packet, 0);
+        }
+    }
+}
+
+void BeaconPipeline::recordLiveBeacon(const BeaconPacket& p) {
+    if (s_liveBufMutex != nullptr && xSemaphoreTake(s_liveBufMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+        if (s_liveBeaconCount < LIVE_FIFO_MAX) {
+            LiveBeaconItem& item = s_liveBeaconBuf[s_liveBeaconCount++];
+            if (p.type == BeaconType::IBEACON) {
+                strncpy(item.code, "iBeacon", sizeof(item.code));
+            } else if (p.type == BeaconType::IBEACON_EXT || p.type == BeaconType::MINEW_B) {
+                strncpy(item.code, "ibeacon_ext", sizeof(item.code) - 1);
+                item.code[sizeof(item.code) - 1] = '\0';
+            } else {
+                strncpy(item.code, "BLE", sizeof(item.code));
+            }
+            snprintf(item.tag, sizeof(item.tag), "%05u-%05u", p.major, p.minor);
+            item.rssi = p.rssi;
+            item.batt = p.battery;
+        }
+        xSemaphoreGive(s_liveBufMutex);
+    }
+}
+
+void BeaconPipeline::pruneExpired() {
+    if (s_beaconQueue == nullptr) return;
+    BeaconPacket front;
+    uint32_t nowMs = (uint32_t)(esp_timer_get_time() / 1000);
+
+    while (xQueuePeek(s_beaconQueue, &front, 0) == pdTRUE) {
+        if ((nowMs - front.timestamp) > (uint32_t)g_config.data_ttl) {
+            BeaconPacket discarded;
+            xQueueReceive(s_beaconQueue, &discarded, 0);
+        } else {
+            break;
+        }
+    }
+}
+
+bool BeaconPipeline::buildBinaryPayload(const BeaconPacket& p, uint8_t* outBuf, size_t& outLen) {
+    if (p.type == BeaconType::IBEACON) {
+        outBuf[0] = 0x00;
+        outBuf[1] = (uint8_t)(p.major >> 8);
+        outBuf[2] = (uint8_t)(p.major & 0xFF);
+        outBuf[3] = (uint8_t)(p.minor >> 8);
+        outBuf[4] = (uint8_t)(p.minor & 0xFF);
+        outBuf[5] = (int8_t)p.rssi;
+        outLen = 6;
+        return true;
+    } else if (p.type == BeaconType::IBEACON_EXT || p.type == BeaconType::MINEW_B) {
+        outBuf[0] = 0x01;
+        outBuf[1] = (uint8_t)(p.major >> 8);
+        outBuf[2] = (uint8_t)(p.major & 0xFF);
+        outBuf[3] = (uint8_t)(p.minor >> 8);
+        outBuf[4] = (uint8_t)(p.minor & 0xFF);
+        outBuf[5] = (int8_t)p.rssi;
+        outBuf[6] = p.battery;
+        outLen = 7;
+        return true;
+    }
+    return false;
+}
+
+// Fast Stream State Machine (Core 0)
+void BeaconPipeline::processBytes(const uint8_t* buffer, size_t len) {
+    if (!buffer || len == 0) return;
+
+    for (size_t i = 0; i < len; ++i) {
+        uint8_t b = buffer[i];
+
+        if (s_rxFrameIdx == 0) {
+            // Mencari sync byte header 0xAA
+            if (b == 0xAA) {
+                s_rxFrameBuf[s_rxFrameIdx++] = b;
+            }
+        } else {
+            s_rxFrameBuf[s_rxFrameIdx++] = b;
+
+            // Frame lengkap 24 byte tercapai
+            if (s_rxFrameIdx == sizeof(BeaconBinaryFrame)) {
+                if (Utils::verifyBeaconChecksum(s_rxFrameBuf)) {
+                    const BeaconBinaryFrame* frame = (const BeaconBinaryFrame*)s_rxFrameBuf;
+
+                    // Konversi Big-Endian ke Host Endian
+                    uint16_t maj = (uint16_t)((frame->major >> 8) | (frame->major << 8));
+                    uint16_t min = (uint16_t)((frame->minor >> 8) | (frame->minor << 8));
+
+                    // Evaluasi Filter Hardware
+                    bool passRssi = (frame->rssi >= (int8_t)g_config.rssi_min);
+                    bool passFilter = passRssi;
+
+                    if (passFilter && g_config.filter_uuid_en) {
+                        passFilter = (std::memcmp(frame->uuid, g_config.filter_uuid_bytes, 16) == 0);
+                    }
+                    if (passFilter && g_config.filter_major_en) {
+                        passFilter = matchMajorFilter(maj, g_config.filter_major);
+                    }
+
+                    if (passFilter) {
+                        s_totalBeaconsRead++;
+
+                        BeaconPacket packet;
+                        packet.timestamp = (uint32_t)(esp_timer_get_time() / 1000);
+                        packet.type = (frame->code == 0x01) ? BeaconType::IBEACON_EXT : BeaconType::IBEACON;
+                        packet.rssi = frame->rssi;
+                        packet.battery = frame->battery;
+                        packet.major = maj;
+                        packet.minor = min;
+                        std::memcpy(packet.uuid, frame->uuid, 16);
+
+                        push(packet);
+                        recordLiveBeacon(packet);
+                    }
+                }
+                // Reset parser untuk frame berikutnya
+                s_rxFrameIdx = 0;
+            }
+        }
+    }
+}
+
+size_t BeaconPipeline::copyLiveBeacons(LiveBeaconItem* outItems, size_t maxItems) {
+    if (!outItems || maxItems == 0) return 0;
+    size_t count = 0;
+
+    if (s_liveBufMutex != nullptr && xSemaphoreTake(s_liveBufMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+        count = std::min(s_liveBeaconCount, maxItems);
+        std::memcpy(outItems, s_liveBeaconBuf, count * sizeof(LiveBeaconItem));
+        s_liveBeaconCount = 0; // Flush setelah disalin
+        xSemaphoreGive(s_liveBufMutex);
+    }
+    return count;
+}
+
+void BeaconPipeline::updateMetrics() {
+    uint32_t curRead = s_totalBeaconsRead;
+    uint32_t curMqtt = s_totalMqttPublished;
+
+    s_readSpeed = curRead - s_lastReadSnap;
+    s_mqttSpeed = curMqtt - s_lastMqttSnap;
+
+    s_lastReadSnap = curRead;
+    s_lastMqttSnap = curMqtt;
+}
+
+uint32_t BeaconPipeline::getReadSpeed() { return s_readSpeed; }
+uint32_t BeaconPipeline::getMqttSpeed() { return s_mqttSpeed; }
+uint32_t BeaconPipeline::getTotalBeaconsRead() { return s_totalBeaconsRead; }
+uint32_t BeaconPipeline::getTotalMqttPublished() { return s_totalMqttPublished; }
+uint32_t BeaconPipeline::getTotalMqttFailed() { return s_totalMqttFailed; }
+
+size_t BeaconPipeline::getQueueLoad() {
+    return (s_beaconQueue != nullptr) ? (size_t)uxQueueMessagesWaiting(s_beaconQueue) : 0;
+}
+
+QueueHandle_t BeaconPipeline::getQueue() {
+    return s_beaconQueue;
+}
+
+} // namespace Iotaru::Core

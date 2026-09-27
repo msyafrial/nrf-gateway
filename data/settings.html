@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IOTARU %model% - Device Settings</title>
+  <link rel="stylesheet" href="assets/css/app.css">
+  <script src="assets/js/swal-lite.js"></script>
+</head>
+<body>
+  <div class="wrapper">
+    <!-- Sidebar (Desktop) -->
+    <aside class="sidebar">
+      <div class="sidebar-wrapper">
+        <div class="logo">
+          <img src="assets/img/logo.png" alt="IOTARU" class="sidebar-logo-img">
+        </div>
+        <div class="user">
+          <div class="user-avatar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <span class="user-info">%user%</span>
+        </div>
+        <ul class="sidebar-nav">
+          <li>
+            <a href="/">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+              <span>Overview</span>
+            </a>
+          </li>
+          <li class="nav-test-highlight">
+            <a href="/test">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              <span>Live Test Monitor</span>
+            </a>
+          </li>
+          <li>
+            <a href="/auth">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span>Auth Settings</span>
+            </a>
+          </li>
+          <li class="active">
+            <a href="/settings">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+              <span>Device Settings</span>
+            </a>
+          </li>
+          <li>
+            <a href="/firmware">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+              <span>Update Firmware</span>
+            </a>
+          </li>
+          <li>
+            <a href="/reset">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+              <span>Reset Config</span>
+            </a>
+          </li>
+          <li>
+            <a href="/reboot">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+              <span>Reboot</span>
+            </a>
+          </li>
+          <li class="sidebar-logout">
+            <a href="/logout" id="sidebarLogoutBtn">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              <span>Logout</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Panel -->
+    <main class="main-panel">
+      <header class="navbar">
+        <div class="navbar-left">
+          <a href="/" class="mobile-logo-link">
+            <img src="assets/img/logo.png" alt="IOTARU" class="mobile-logo-img">
+          </a>
+          <span class="navbar-brand">Device Settings</span>
+        </div>
+        <a href="/logout" class="mobile-logout-btn" id="mobileLogoutBtn" title="Logout">
+          <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span>Keluar</span>
+        </a>
+      </header>
+
+      <section class="content">
+      <!-- PENDING REBOOT FLOATING BANNER (INDUSTRIAL SAFETY) -->
+      <div id="pendingRebootBanner" class="pending-reboot-banner">
+        <div class="pending-banner-text">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>Perubahan jaringan tersimpan di NVS. Reboot diperlukan untuk mengaktifkan ke hardware.</span>
+        </div>
+        <div class="pending-banner-actions">
+          <button type="button" class="btn-banner-reboot" onclick="triggerRebootNow()">Reboot Sekarang</button>
+          <button type="button" class="btn-banner-discard" onclick="discardPendingNetworkChanges()">Batalkan</button>
+        </div>
+      </div>
+
+<!-- ================= AP MODE CONFIG BANNER COMPONENT ================= -->
+<style>
+  .ap-banner-card {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.88) 100%);
+    border: 1px solid rgba(59, 130, 246, 0.45);
+    box-shadow: 0 8px 24px rgba(2, 132, 199, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(12px);
+    border-radius: 12px;
+    padding: 12px 18px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .ap-banner-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 4px;
+    background: linear-gradient(180deg, #38bdf8, #0284c7);
+  }
+  .ap-banner-left { display: flex; align-items: center; gap: 14px; }
+  .ap-pulse-ring { position: relative; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
+  .ap-pulse-dot { width: 10px; height: 10px; border-radius: 50%; background: #0284c7; box-shadow: 0 0 10px #38bdf8; z-index: 2; }
+  .ap-pulse-ring::after {
+    content: "";
+    position: absolute;
+    width: 100%; height: 100%;
+    border-radius: 50%;
+    background: #38bdf8;
+    animation: apPulseAnim 1.6s ease-out infinite;
+    z-index: 1;
+  }
+  @keyframes apPulseAnim {
+    0% { transform: scale(0.95); opacity: 0.8; }
+    70% { transform: scale(2.4); opacity: 0; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+  .ap-banner-text { display: flex; flex-direction: column; gap: 2px; }
+  .ap-banner-title { font-size: 0.95rem; font-weight: 600; color: #f8fafc; letter-spacing: 0.2px; }
+  .ap-banner-subtitle { font-size: 0.82rem; color: #94a3b8; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ap-banner-subtitle strong { color: #38bdf8; font-weight: 600; }
+  .ap-timer-pill {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    padding: 1px 8px;
+    border-radius: 9999px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    font-family: monospace;
+  }
+  .btn-ap-stop {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: rgba(249, 115, 22, 0.15);
+    border: 1px solid rgba(249, 115, 22, 0.4);
+    color: #fb923c;
+    border-radius: 8px;
+    font-size: 0.84rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+  .btn-ap-stop:hover {
+    background: rgba(249, 115, 22, 0.28);
+    border-color: rgba(249, 115, 22, 0.7);
+    color: #fdba74;
+    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25);
+    transform: translateY(-1px);
+  }
+  @media (max-width: 640px) {
+    .ap-banner-card { flex-direction: column; align-items: stretch; gap: 12px; }
+    .btn-ap-stop { width: 100%; justify-content: center; }
+  }
+</style>
+
+<div id="apModeBanner" class="ap-banner-card">
+  <div class="ap-banner-left">
+    <div class="ap-pulse-ring"><span class="ap-pulse-dot"></span></div>
+    <div class="ap-banner-text">
+      <div class="ap-banner-title">Hotspot Mode Konfigurasi Aktif</div>
+      <div class="ap-banner-subtitle">
+        SSID: <strong id="apBannerSsid">%ap_ssid%</strong> &bull; Auto-off idle: <span id="apBannerTimer" class="ap-timer-pill">60s</span>
+      </div>
+    </div>
+  </div>
+  <div class="ap-banner-right">
+    <button type="button" id="btnStopAp" class="btn-ap-stop" title="Matikan Hotspot Konfigurasi">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="1" y1="1" x2="23" y2="23"/>
+        <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+        <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+        <path d="M10.71 5.05A16 16 0 0 1 22.58 9"/>
+        <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+        <line x1="12" y1="20" x2="12.01" y2="20"/>
+      </svg>
+      <span>Nonaktifkan AP</span>
+    </button>
+  </div>
+</div>
+
+<script>
+(function() {
+  var b = document.getElementById("apModeBanner");
+  if (!b) return;
+
+  // Evaluasi aktif: Jika diakses via IP AP 192.168.4.1 ATAU server flag %ap_banner_active% == 1
+  var isFromAp = (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.") === 0 || "%ap_banner_active%" === "1");
+  if (isFromAp) {
+    b.style.display = "flex";
+  }
+
+  var btn = document.getElementById("btnStopAp");
+  if (btn && !btn.dataset.bound) {
+    btn.dataset.bound = "true";
+    btn.onclick = function(e) {
+      e.preventDefault();
+      function doStop() {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({
+            title: "Menonaktifkan...",
+            text: "Mematikan Hotspot SoftAP...",
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            didOpen: function() { Swal.showLoading(); }
+          });
+        }
+        fetch("/api/v1/system/config-ap/stop", { method: "POST" })
+          .then(function(r) { return r.json().catch(function() { return { status: "ok" }; }); })
+          .then(function(res) {
+            handleDone((res && res.message) ? res.message : "Mode AP telah dinonaktifkan.");
+          })
+          .catch(function() {
+            handleDone("Hotspot AP berhasil dimatikan. Perangkat kembali ke mode normal.");
+          });
+      }
+      function handleDone(msg) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ title: "Hotspot Dinonaktifkan", text: msg, icon: "success", confirmButtonColor: "#0284c7" });
+        } else {
+          alert(msg);
+        }
+        b.style.display = "none";
+      }
+
+      if (typeof Swal !== "undefined") {
+        Swal.fire({
+          title: "Nonaktifkan Mode AP?",
+          text: "Hotspot konfigurasi akan dimatikan dan indikator LED akan kembali ke status operasional normal.",
+          icon: "warning",
+          showCancelButton: true,
+          confirmButtonColor: "#f97316",
+          cancelButtonColor: "#64748b",
+          confirmButtonText: "Ya, Matikan AP!",
+          cancelButtonText: "Batal"
+        }).then(function(res) {
+          if (res.isConfirmed) doStop();
+        });
+      } else {
+        if (confirm("Nonaktifkan Mode Hotspot AP?")) doStop();
+      }
+    };
+  }
+
+  var tEl = document.getElementById("apBannerTimer");
+  var ssidEl = document.getElementById("apBannerSsid");
+  fetch("/api/v1/system/version")
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d) {
+        if (d.ap_active) b.style.display = "flex";
+        else if (!isFromAp) b.style.display = "none";
+        if (d.ap_ssid && ssidEl) ssidEl.textContent = d.ap_ssid;
+        var rem = d.ap_remain_sec !== undefined ? d.ap_remain_sec : 60;
+        if (tEl) tEl.textContent = rem + "s";
+        var iv = setInterval(function() {
+          if (rem > 0) {
+            rem--;
+            if (tEl) tEl.textContent = rem + "s";
+          } else {
+            clearInterval(iv);
+            if (tEl) tEl.textContent = "Off";
+            setTimeout(function() { b.style.display = "none"; }, 1500);
+          }
+        }, 1000);
+      }
+    })
+    .catch(function() {});
+})();
+</script>
+<!-- ================= END AP MODE CONFIG BANNER COMPONENT ================= -->
+        <form id="settingsValidation" onsubmit="return handleFormSubmit('settingsValidation', '/api/v1/config/settings', 'Pengaturan gateway berhasil diperbarui.')">
+          
+          <!-- BENTO CARD 1: BLE Scanner & Sensitivitas Sinyal -->
+          <div class="bento-card">
+            <div class="bento-header">
+              <div class="bento-icon cyan">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                  <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/>
+                  <path d="M12 6v6l4 2"/>
+                </svg>
+              </div>
+              <div class="bento-title">Filter BLE Scanner & Sinyal</div>
+            </div>
+
+            <div class="bento-grid single">
+              <!-- Switch Filter UUID -->
+              <div class="item full">
+                <div class="toggle-card-row">
+                  <div class="toggle-card-info">
+                    <label class="toggle-card-title" for="filterUuidToggle">Filter UUID Target</label>
+                  </div>
+                  <label class="ios-switch">
+                    <input type="checkbox" id="filterUuidToggle" %filter_uuid_checked%>
+                    <span class="ios-slider"></span>
+                  </label>
+                  <input type="hidden" id="filter_uuid_en" name="filter_uuid_en" value="%filter_uuid_en%">
+                </div>
+              </div>
+
+              <!-- Target UUID dengan Live Hex Counter & Quick Paste -->
+              <div class="item full %uuid_container_dimmed%" id="uuidContainer">
+                <div class="label-row">
+                  <label for="filter_uuid">Target UUID iBeacon</label>
+                  <span class="%uuid_badge_class%" id="uuidBadge">%uuid_badge_text%</span>
+                </div>
+                <div class="input-action-wrap">
+                  <input type="text" id="filter_uuid" name="filter_uuid" value="%filter_uuid%" placeholder="FDA50693A4E24FB1AFCFC6EB07647825" maxlength="36" spellcheck="false" autocomplete="off" required %filter_uuid_disabled%>
+                  <button type="button" class="btn-input-action" id="btnPasteUuid" title="Tempel dari Clipboard">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
+                      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                    </svg>
+                    <span>Tempel</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Switch Filter Major Tag (Default OFF) -->
+              <div class="item full">
+                <div class="toggle-card-row">
+                  <div class="toggle-card-info">
+                    <label class="toggle-card-title" for="filterMajorToggle">Filter Major Tag</label>
+                  </div>
+                  <label class="ios-switch">
+                    <input type="checkbox" id="filterMajorToggle" %filter_major_checked%>
+                    <span class="ios-slider"></span>
+                  </label>
+                  <input type="hidden" id="filter_major_en" name="filter_major_en" value="%filter_major_en%">
+                </div>
+              </div>
+
+              <!-- Target Major Tag dengan Validasi 5 Digit & 65535 -->
+              <div class="item full %major_container_dimmed%" id="majorContainer">
+                <div class="label-row">
+                  <label for="filter_major">Target Major Tag</label>
+                  <span class="%major_badge_class%" id="majorBadge">%major_badge_text%</span>
+                </div>
+                <div class="input-action-wrap">
+                  <input type="text" id="filter_major" name="filter_major" value="%filter_major%" placeholder="65535" maxlength="5" inputmode="numeric" spellcheck="false" autocomplete="off" %filter_major_disabled%>
+                </div>
+                <span style="font-size:0.75rem;color:var(--text-dim);margin-top:4px;display:block;">Maksimal 5 digit (0 s/d 65535). Dapat diisi tanpa angka 0 di depan (misal: 1).</span>
+              </div>
+
+              <!-- Input Angka Bebas Minus & Slider Sensitivitas Presisi -->
+              <div class="item full">
+                <div class="rssi-title-center">
+                  <label for="rssi_input_abs">Batas Minimum RSSI</label>
+                </div>
+                <div class="rssi-center-wrap">
+                  <div class="rssi-merged-pill" id="rssiPill">
+                    <span class="rssi-minus">&minus;</span><input type="number" id="rssi_input_abs" min="30" max="100" step="1" value="%rssi_val_abs%" placeholder="80" required><span class="rssi-unit">dBm</span>
+                  </div>
+                </div>
+                <div class="range-slider-wrap">
+                  <input type="range" id="rssi_slider" min="30" max="100" step="1" value="%rssi_slider_val%" style="background: %rssi_slider_bg%;">
+                  <input type="hidden" id="rssi_min" name="rssi_min" value="%rssi_min%">
+                </div>
+                <script>
+                  (function(){
+                    var s = document.getElementById('rssi_slider');
+                    var inp = document.getElementById('rssi_input_abs');
+                    var v = parseInt(inp && inp.value ? inp.value : (s && s.value ? s.value : 80), 10);
+                    if (!isNaN(v) && s) {
+                      if (v < 30) v = 30; if (v > 100) v = 100;
+                      var p = ((v - 30) / 70) * 100;
+                      s.style.background = 'linear-gradient(to right, #0284c7 0%, #38bdf8 ' + p + '%, #1e293b ' + p + '%, #1e293b 100%)';
+                    }
+                  })();
+                </script>
+                <div class="range-ticks">
+                  <span>-30 dBm</span>
+                  <span>-65 dBm</span>
+                  <span>-100 dBm</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- BENTO CARD 2: Batching & Antrean MQTT -->
+          <div class="bento-card">
+            <div class="bento-header">
+              <div class="bento-icon emerald">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                  <rect width="18" height="18" x="3" y="3" rx="2"/>
+                  <path d="M3 9h18"/><path d="M9 21V9"/>
+                </svg>
+              </div>
+              <div class="bento-title">Batching & Antrean MQTT</div>
+            </div>
+
+            <div class="bento-grid">
+              <div class="item full">
+                <label>Topik Publish MQTT Gateway</label>
+                <div class="subtopic-display-pill">
+                  <span class="subtopic-prefix">beacon/</span><span class="subtopic-id">%device_id%</span>
+                </div>
+              </div>
+
+              <div class="item">
+                <label for="batch_max">Maksimal Beacon per Batch</label>
+                <div class="stepper-control enhanced-stepper">
+                  <button type="button" class="stepper-btn" data-action="minus" aria-label="Kurangi">&minus;</button>
+                  <input type="number" class="stepper-input" min="10" max="200" id="batch_max" name="batch_max" value="%batch_max%" readonly required>
+                  <button type="button" class="stepper-btn" data-action="plus" aria-label="Tambah">&plus;</button>
+                </div>
+              </div>
+
+              <div class="item">
+                <label for="batch_flush">Batas Waktu Buffer Flush</label>
+                <div class="unit-box">
+                  <input type="number" id="batch_flush" name="batch_flush" value="%batch_flush%" placeholder="300" min="50" max="2000" required>
+                  <span class="unit-text">Milidetik</span>
+                </div>
+              </div>
+
+              <div class="item full">
+                <label for="data_ttl">Masa Kadaluarsa Antrean (TTL)</label>
+                <div class="unit-box">
+                  <input type="number" id="data_ttl" name="data_ttl" value="%data_ttl%" placeholder="5000" min="1000" max="30000" required>
+                  <span class="unit-text">Milidetik</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- BENTO CARD 3: Jadwal Reboot & Watchdog -->
+          <div class="bento-card">
+            <div class="bento-header">
+              <div class="bento-icon slate">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
+              </div>
+              <div class="bento-title">Jadwal Reboot & Watchdog</div>
+            </div>
+
+            <div class="bento-grid">
+              <div class="item full">
+                <div class="toggle-card-row">
+                  <div class="toggle-card-info">
+                    <label class="toggle-card-title" for="restartScheduleToggle">Jadwal Reboot Otomatis Harian</label>
+                  </div>
+                  <label class="ios-switch">
+                    <input type="checkbox" id="restartScheduleToggle" %restart_sch_checked%>
+                    <span class="ios-slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="item %restart_sch_container_dimmed%" id="restartScheduleContainer">
+                <label for="restart_schedule">Waktu Reboot Harian (HH:MM)</label>
+                <input type="time" class="time-input native-time" id="restart_schedule" name="restart_schedule" value="%restart_schedule%">
+              </div>
+
+              <div class="item">
+                <label for="discon_rst">Reboot saat Terputus (Watchdog)</label>
+                <div class="unit-box">
+                  <input type="number" id="discon_rst" name="discon_rst" value="%discon_rst%" placeholder="5" min="1" max="60" required>
+                  <span class="unit-text">Menit</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <footer>
+        &copy; <span id="year"></span> IOTARU ESP32 Gateway (%model%).
+      </footer>
+    </main>
+
+    <!-- Floating Sticky Save Dock -->
+    <div id="floatingSaveDock" class="floating-save-dock" style="display:none;">
+      <div class="floating-save-box">
+        <div class="floating-save-info">
+          <span class="dirty-indicator-dot"></span>
+          <span class="floating-save-text">Belum disimpan</span>
+        </div>
+        <div class="floating-save-actions">
+          <button type="button" class="btn-dock-cancel" id="btnCancelChanges">Batal</button>
+          <button type="submit" form="settingsValidation" class="btn-dock-save" id="btnDockSave">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
+            <span>Simpan</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Navigation Bar (Mobile) -->
+    <nav class="bottom-nav">
+      <a href="/" class="bottom-nav-item">
+        <svg viewBox="0 0 24 24"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+        <span>Overview</span>
+      </a>
+      <button type="button" class="bottom-nav-item active" data-action="config-sheet">
+        <svg viewBox="0 0 24 24">
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+        <span>Config</span>
+      </button>
+      <a href="/test" class="bottom-nav-item nav-center-highlight">
+        <div class="center-pill">
+          <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span>Test</span>
+        </div>
+      </a>
+      <a href="/firmware" class="bottom-nav-item">
+        <svg viewBox="0 0 24 24"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+        <span>Firmware</span>
+      </a>
+      <button type="button" class="bottom-nav-item nav-tab-reboot" data-action="power-sheet">
+        <svg viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+        <span>Reboot</span>
+      </button>
+    </nav>
+  </div>
+
+  <script src="assets/js/app.js"></script>
+  <script src="assets/js/settings.js"></script>
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
