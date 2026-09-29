@@ -120,93 +120,10 @@
 </div>
 
 <script>
-(function() {
+if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.") === 0 || "%ap_banner_active%" === "1") {
   var b = document.getElementById("apModeBanner");
-  if (!b) return;
-
-  // Evaluasi aktif: Jika diakses via IP AP 192.168.4.1 ATAU server flag %ap_banner_active% == 1
-  var isFromAp = (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.") === 0 || "%ap_banner_active%" === "1");
-  if (isFromAp) {
-    b.style.display = "flex";
-  }
-
-  var btn = document.getElementById("btnStopAp");
-  if (btn && !btn.dataset.bound) {
-    btn.dataset.bound = "true";
-    btn.onclick = function(e) {
-      e.preventDefault();
-      function doStop() {
-        if (typeof Swal !== "undefined") {
-          Swal.fire({
-            title: "Menonaktifkan...",
-            text: "Mematikan Hotspot SoftAP...",
-            allowOutsideClick: false,
-            showConfirmButton: false,
-            didOpen: function() { Swal.showLoading(); }
-          });
-        }
-        fetch("/api/v1/system/config-ap/stop", { method: "POST" })
-          .then(function(r) { return r.json().catch(function() { return { status: "ok" }; }); })
-          .then(function(res) {
-            handleDone((res && res.message) ? res.message : "Mode AP telah dinonaktifkan.");
-          })
-          .catch(function() {
-            handleDone("Hotspot AP berhasil dimatikan. Perangkat kembali ke mode normal.");
-          });
-      }
-      function handleDone(msg) {
-        if (typeof Swal !== "undefined") {
-          Swal.fire({ title: "Hotspot Dinonaktifkan", text: msg, icon: "success", confirmButtonColor: "#0284c7" });
-        } else {
-          alert(msg);
-        }
-        b.style.display = "none";
-      }
-
-      if (typeof Swal !== "undefined") {
-        Swal.fire({
-          title: "Nonaktifkan Mode AP?",
-          text: "Hotspot konfigurasi akan dimatikan dan indikator LED akan kembali ke status operasional normal.",
-          icon: "warning",
-          showCancelButton: true,
-          confirmButtonColor: "#f97316",
-          cancelButtonColor: "#64748b",
-          confirmButtonText: "Ya, Matikan AP!",
-          cancelButtonText: "Batal"
-        }).then(function(res) {
-          if (res.isConfirmed) doStop();
-        });
-      } else {
-        if (confirm("Nonaktifkan Mode Hotspot AP?")) doStop();
-      }
-    };
-  }
-
-  var tEl = document.getElementById("apBannerTimer");
-  var ssidEl = document.getElementById("apBannerSsid");
-  fetch("/api/v1/system/version")
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d) {
-        if (d.ap_active) b.style.display = "flex";
-        else if (!isFromAp) b.style.display = "none";
-        if (d.ap_ssid && ssidEl) ssidEl.textContent = d.ap_ssid;
-        var rem = d.ap_remain_sec !== undefined ? d.ap_remain_sec : 60;
-        if (tEl) tEl.textContent = rem + "s";
-        var iv = setInterval(function() {
-          if (rem > 0) {
-            rem--;
-            if (tEl) tEl.textContent = rem + "s";
-          } else {
-            clearInterval(iv);
-            if (tEl) tEl.textContent = "Off";
-            setTimeout(function() { b.style.display = "none"; }, 1500);
-          }
-        }, 1000);
-      }
-    })
-    .catch(function() {});
-})();
+  if (b) b.style.display = "flex";
+}
 </script>
 <!-- ================= END AP MODE CONFIG BANNER COMPONENT ================= -->
         <!-- BENTO CARD 1: Firmware Update (.bin) -->

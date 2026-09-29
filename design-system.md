@@ -650,3 +650,122 @@ Pemisahan arsitektur versioning gateway agar setiap layer dapat di-update secara
   - Mencegah reload (F5 / Ctrl+R) atau penutupan tab secara tidak sengaja saat pengujian sedang aktif.
   - Memanggil `e.preventDefault()` dan menyetel pesan peringatan standar browser.
 
+## 23. 2026 Enterprise Segmented Tab & Live Unique Beacon Monitor (`/test`)
+- **Session Telemetry Sub-Stats Bar (`.test-session-stats`)**:
+  - Bar statistik sesi horizontal di bawah tombol kontrol sesi pengujian:
+    `Elapsed: 00:00:00 | Rx: 0 | Tx: 0 | Drop: 0 (0.00%) | Bandwidth: 0.00 KB`
+  - **Total Bandwidth (`#sessionTotalBandwidth`, `.session-stat-val.sky`)**: Menghitung akumulasi byte egress nyata (Ethernet L2/WiFi + TCP/IP + MQTT header + Payload) secara presisi dari firmware (`s_statTotalWireBytes`), ditransmisikan via WebSocket telemetry (`total_bytes`), dan diformat otomatis (`KB`, `MB`, `GB`).
+- **Segmented Control Rail (Apple HIG / Linear / Vercel Standards)**:
+  - **Track / Rail**: Kontainer inset gelap `rgba(2, 6, 23, 0.7)` dengan border `1px solid rgba(255, 255, 255, 0.08)`, border-radius `12px`, dan padding `4px`.
+  - **Floating Active Tile**: Segmen aktif berpendar cyan neon (`background: linear-gradient(...)`, border `rgba(56, 189, 248, 0.4)`, glow `rgba(56, 189, 248, 0.15)`, shadow `0 4px 14px rgba(0, 0, 0, 0.45)`).
+  - **Clean Minimalist Design**:
+    - **Tab Buffer FIFO (`#tabFifo`)**: Memiliki pulsing live stream dot cyan (`.segment-live-dot`) dan label teks "Buffer FIFO" (tanpa badge pil "10 Pkt").
+    - **Tab Unique Beacons (`#tabUnique`)**: Dilengkapi ikon radio pulse SVG dan label "Unique Beacons" (tanpa badge pil angka), menghasilkan tampilan ultra-clean dan lapang.
+- **Tab Body Toolbar (Search Field Placement & Standard UI/UX Width)**:
+  - Kotak filter pencarian (`.filter-search-box.compact`) diletakkan **di bawah tab segmen dan di atas tabel**, diposisikan di sebelah **KANAN** (`.tab-body-toolbar.right-aligned`, `justify-content: flex-end`).
+  - Lebar proporsional standar enterprise UI/UX: **250px** di desktop, **200px** di mobile (tidak lagi melar full-width).
+- **Tabel Unique Beacons (Datadog Telemetry Style)**:
+  - **Struktur 6 Kolom (Tanpa Kolom Format)**:
+    `#` (40px) | `Major-Minor` | `RSSI` | `Battery` | `Terakhir Dilihat` | `Total Pkt`.
+    Kolom `Format` dihilangkan agar ruang identitas Major-Minor dan metrik sinyal/waktu/baterai lebih lapang.
+  - **Urutan Stabil (First-Seen Insertion Order / No Jumping Rows)**:
+    Data baris tidak saling bertukar posisi (*no flickering/row jumping*) saat paket dari berbagai tag masuk silih berganti. Baris #1, #2, #3, ... tetap permanen berdasarkan urutan kedatangan pertama.
+  - **In-Place Live Update**: Nilai **Waktu Terakhir**, **RSSI**, **Baterai**, dan **Total Pkt (Hits)** diperbarui secara *live in-place* pada baris masing-masing.
+  - **Persistensi Baterai**: Status baterai dari paket `ibeacon_ext` tetap tersimpan dan tidak hilang meskipun paket berikutnya berupa `iBeacon` standar.
+  - **Signal Strength Coding**: RSSI diberi kode warna: hijau neon (`good`, `>= -65 dBm`), kuning amber (`mid`, `-66 s/d -80 dBm`), merah rose (`weak`, `< -80 dBm`).
+- **Optimasi Responsif 360x800 Mobile (Android Standard)**:
+  - Segmented rail mengisi lebar kartu dengan alokasi tombol seimbang `flex: 1` dan tinggi touch-target **42px**.
+  - Kotak pencarian rata kanan dengan lebar 200px di layar mobile.
+  - Kontainer tabel memiliki batas ketinggian vertikal `max-height: 360px` dengan *smooth touch scroll* horizontal dan custom dark scrollbar.
+
+## 24. Dropped Data Telemetry & Diagnostic Tab (`/test`)
+- **Tujuan & Arsitektur Diagnosis Real-time**:
+  - Menyediakan visibilitas penuh terhadap paket beacon yang ditolak (*drop*) atau gagal dipublikasikan oleh ESP32 gateway selama pengujian live.
+  - Setiap paket drop diklasifikasikan ke dalam 6 kategori alasan mutlak:
+    1. `TTL Expired` (Value 0): Paket beacon berada di antrian buffer melebihi batas waktu TTL (Time-To-Live).
+    2. `RSSI < Min` (Value 1): Kekuatan sinyal beacon berada di bawah ambang batas minimal filter RSSI.
+    3. `UUID Mismatch` (Value 2): Nilai Proximity UUID paket beacon tidak cocok dengan UUID yang diizinkan pada pengaturan filter.
+    4. `Major Mismatch` (Value 3): Nilai Major beacon tidak memenuhi filter target Major.
+    5. `Queue Full` (Value 4): Antrian FreeRTOS penuh saat beban throughput spike (drop-oldest overflow).
+    6. `MQTT Fail` (Value 5): Kegagalan saat mempublikasikan payload ke broker MQTT (koneksi putus/buffer socket penuh).
+- **Segmented Control Rail Tab ke-3 (`#tabDropped`)**:
+  - Ditambahkan segmen ketiga dengan ikon block/circle-slash SVG dan label "Dropped Data" pada `.segmented-control`.
+  - Berpindah tab secara instan tanpa reload browser, mengaktifkan tampilan visual grid kartu dan tabel dropped data.
+- **Ringkasan Total Alasan Drop (Desktop Symmetric 6-Column Grid Layout)**:
+  - Kontainer `.drop-summary-grid` (`#dropSummaryGrid`) diletakkan tepat di atas tabel data dan di bawah segmented tab rail.
+  - **Tata Letak Desktop (`> 960px`)**:
+    - Disusun simetris dan seragam dalam **1 baris 6 kolom horizontal** (`repeat(6, 1fr)`), dengan gap 10px.
+    - Setiap kartu memiliki *top-accent border* berwarna khas (2px) untuk memperjelas kategori:
+      - TTL Expired: Rose Crimson (`#f43f5e`, `.card-ttl`)
+      - RSSI < Min: Amber Warning (`#f59e0b`, `.card-rssi`)
+      - UUID Mismatch: Violet Purple (`#a855f7`, `.card-uuid`)
+      - Major Mismatch: Yellow Gold (`#eab308`, `.card-major`)
+      - Queue Full: Sky Blue (`#0284c7`, `.card-queue`)
+      - MQTT Fail: Red Alert (`#ef4444`, `.card-mqtt`)
+    - Header kartu menampilkan pulsing dot berwarna dan nama alasan.
+    - Body kartu menampilkan nilai angka tebal monospace 1.25rem dengan satuan `pkt`.
+  - **Tata Letak Responsif Mobile (360x800)**:
+    - Ditata dalam grid 3 kolom x 2 baris (`repeat(3, 1fr)`), nilai angka disesuaikan menjadi 1.05rem, padding 8px 6px.
+- **Balanced Toolbar Layout (`#tabBodyToolbar`)**:
+  - Menggunakan `justify-content: space-between` saat tab Dropped Data aktif:
+    - **Sisi Kiri (`#toolbarLeftInfo`)**: Menampilkan pill badge amber `.drop-total-badge` dengan pulsing dot: `Total Ditolak: X pkt`.
+    - **Sisi Kanan**: Kotak filter pencarian `.filter-search-box.compact` dengan lebar standar 250px (desktop) atau 200px (mobile).
+  - Saat tab Buffer FIFO atau Unique Beacons aktif, elemen sisi kiri disembunyikan (`display: none;`), dan kotak pencarian tetap rata kanan secara elegan via `margin-left: auto`.
+- **Tabel Log Dropped Data Tepat 5 Kolom**:
+  - Kolom tabel disederhanakan tanpa kolom redundant:
+    `#` (40px) | `Tag / Identitas` | `RSSI` | `Alasan Drop` | `Waktu Drop`.
+  - **Kolom #**: Penomoran indeks baris (1 s.d. 50).
+  - **Kolom Tag / Identitas**: Teks Major-Minor atau identifier beacon dengan font monospace cyan `#38bdf8`.
+  - **Kolom RSSI**: Nilai sinyal numerik dalam format `-XX dBm` dengan badge sinyal berwarna.
+  - **Kolom Alasan Drop (`.badge-drop`)**: Badge pill berlatar transparan dengan border tipis dan warna sesuai jenis kegagalan:
+    - `.drop-ttl`: Rose background (`#fb7185`)
+    - `.drop-rssi`: Amber background (`#fbbf24`)
+    - `.drop-uuid`: Purple background (`#c084fc`)
+    - `.drop-major`: Yellow background (`#fde047`)
+    - `.drop-queue`: Sky background (`#38bdf8`)
+    - `.drop-mqtt`: Red background (`#f87171`)
+  - **Kolom Waktu Drop**: Timestamp presisi milidetik `HH:MM:SS.mmm`.
+- **Sinkronisasi Firmware & Reset Status**:
+  - Telemetri drop dipancarkan via WebSocket setiap detik dalam objek `drop_summary` (6 field counter) dan array `dropped_beacons` (ring buffer 50 paket terbaru).
+  - Saat pengetesan dihentikan atau dimulai ulang (`Start Test`), daftar dropped data di-reset ke 0 untuk memastikan sesi uji baru bersih.
+
+---
+
+## 32. Komponen Banner Hotspot SoftAP & Keepalive Lifecycle (`#apModeBanner`)
+- **Tujuan Desain**:
+  - Memberikan indikator visual yang jelas kepada teknisi/administrator ketika perangkat sedang beroperasi dalam mode darurat/on-demand Hotspot SoftAP (`192.168.4.1`).
+  - Menyajikan informasi SSID aktif, countdown timer *auto-shutdown idle*, dan tombol aksi langsung untuk mematikan AP secara manual.
+- **Spesifikasi Anatomi & Gaya (`.ap-banner-card`)**:
+  - **Latar & Bingkai**: Latar transparan gelap dengan aksen peringatan amber industri `rgba(245, 158, 11, 0.08)`, border solid tipis `1px solid rgba(245, 158, 11, 0.25)`, border-radius `10px`, padding `12px 18px`.
+  - **Indikator Pulsing (`.ap-pulse-ring`)**: Animasi riak cincin amber dengan titik inti solid `#f59e0b` yang berdenyut lembut (`animation: apPulse 2s infinite`).
+  - **Tipografi**:
+    - Judul: Teks tebal semibold 0.85rem dengan warna amber `#fbbf24`.
+    - Subtitle: Teks sekunder slate `#94a3b8` 0.78rem dengan penekanan SSID `#f8fafc`.
+    - Badge Timer (`.ap-timer-pill`): Pill badge gelap monospace dengan latar `rgba(15, 23, 42, 0.6)`, border `rgba(245, 158, 11, 0.3)`, warna teks kuning amber terang `#fef08a`.
+  - **Tombol Aksi (`.btn-ap-stop`)**: Tombol kompak dengan ikon antena terputus, latar merah rose transparan `rgba(244, 63, 94, 0.15)`, border `rgba(244, 63, 94, 0.35)`, teks `#fda4af`. Pada hover bertransisi ke latar rose pekat dengan efek glow.
+- **Siklus Hidup Keepalive & Auto-Reset Interaktif**:
+  - **Backend Global Activity Hook**: Setiap request HTTP (halaman, REST API, static assets) dan frame WebSocket secara otomatis memanggil `NetworkManager::recordApActivity()` jika mode AP aktif.
+  - **Dedicated Touch API**: Endpoint ringan `POST /api/v1/system/config-ap/touch` mengembalikan `{ status: "ok", ap_active: true, ap_remain_sec: 60 }`.
+  - **Frontend User-Activity Throttling**:
+    - Mendengarkan event interaksi pengguna (`mousedown`, `keydown`, `input`, `touchstart`, `scroll`).
+    - Mereset counter tampilan secara instan kembali ke 60s untuk responsivitas UX maksimal.
+    - Mengirim ping touch ke backend dengan throttle 12 detik dan heartbeat periodik 20 detik selama tab/halaman browser aktif.
+  - **Safety Auto-Off**: Jika pengguna benar-benar meninggalkan browser tanpa aktivitas selama 60 detik, SoftAP akan dimatikan otomatis oleh backend untuk keamanan jaringan industri dan penghematan daya radio RF.
+
+---
+
+## 33. Mekanisme Sliding Expiration Session & Global Keepalive
+- **Tujuan Keamanan & Pengalaman Pengguna**:
+  - Mencegah teknisi atau administrator terputus sesi loginnya secara mendadak saat sedang melakukan pemantauan live test beacon dalam durasi panjang (>15-20 menit) maupun saat sedang mengisi konfigurasi formulir yang kompleks.
+  - Mempertahankan batas keamanan sesi di sisi server (kedaluwarsa otomatis jika perangkat benar-benar ditinggalkan idle tanpa aktivitas selama 15 menit).
+- **Spesifikasi Teknis**:
+  - **Cookie Lifetime Buffer**: Cookie otentikasi `token` diterbitkan dengan atribut `Max-Age=3600` (buffer 1 jam) dan `SameSite=Lax; HttpOnly`.
+  - **Sliding Renewal via HTTP Heartbeat**:
+    - Setiap respons otentikasi sukses pada `/api/v1/auth/check` atau `/api/v1/system/config-ap/touch` menyertakan kembali header `Set-Cookie` yang diperbarui untuk me-reset hitungan mundur cookie di browser kembali ke 3600 detik.
+    - Script global [app.js](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/data/assets/js/app.js) menjalankan interval heartbeat setiap 45 detik selama tab browser aktif.
+    - Script [test.js](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/data/assets/js/test.js) menjalankan ping keepalive khusus setiap 30 detik saat sesi pengujian live aktif.
+  - **Proteksi Navigasi Bersih**:
+    - Event penutupan WebSocket `ws.onclose` hanya melakukan verifikasi status/redirect jika pengetesan sedang berjalan aktif, mencegah navigasi sukarela pengguna antar halaman terputus secara keliru.
+
+
+

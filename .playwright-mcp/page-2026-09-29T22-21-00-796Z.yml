@@ -1,0 +1,159 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - img "IOTARU" [ref=e6]
+        - generic [ref=e7]: "%user%"
+        - list [ref=e13]:
+          - listitem [ref=e14]:
+            - link "Overview" [ref=e15] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=e20]:
+            - link "Live Test Monitor" [ref=e21] [cursor=pointer]:
+              - /url: /test
+          - listitem [ref=e25]:
+            - link "Auth Settings" [ref=e26] [cursor=pointer]:
+              - /url: /auth
+          - listitem [ref=e31]:
+            - link "Device Settings" [ref=e32] [cursor=pointer]:
+              - /url: /settings
+          - listitem [ref=e37]:
+            - link "Update Firmware" [ref=e38] [cursor=pointer]:
+              - /url: /firmware
+          - listitem [ref=e43]:
+            - link "Reset Config" [ref=e44] [cursor=pointer]:
+              - /url: /reset
+          - listitem [ref=e51]:
+            - link "Reboot" [ref=e52] [cursor=pointer]:
+              - /url: /reboot
+          - listitem [ref=e56]:
+            - link "Logout" [ref=e57] [cursor=pointer]:
+              - /url: /logout
+    - main [ref=e62]:
+      - generic [ref=e63]:
+        - generic [ref=e64]: Device Settings
+        - link "Keluar" [ref=e66] [cursor=pointer]:
+          - /url: /logout
+      - generic [ref=e71]:
+        - generic [ref=e72]:
+          - generic [ref=e76]:
+            - generic [ref=e77]: Hotspot Mode Konfigurasi Aktif
+            - generic [ref=e78]:
+              - text: "SSID:"
+              - strong [ref=e79]: IOTARU-CONFIG-AP
+              - text: "• Auto-off idle:"
+              - generic [ref=e80]: 39s
+          - button "Nonaktifkan AP" [ref=e82] [cursor=pointer]
+        - generic [ref=e91]:
+          - generic [ref=e92]:
+            - generic [ref=e93]: Filter BLE Scanner & Sinyal
+            - generic [ref=e99]:
+              - generic [ref=e101]:
+                - generic [ref=e102]: Filter UUID Target
+                - generic [ref=e104]:
+                  - checkbox "Filter UUID Target"
+                  - generic [ref=e105] [cursor=pointer]
+              - generic:
+                - generic:
+                  - generic: Target UUID iBeacon
+                  - generic: 3/32 Hex
+                - generic:
+                  - textbox "Target UUID iBeacon" [disabled]:
+                    - /placeholder: FDA50693A4E24FB1AFCFC6EB07647825
+                    - text: FED
+                  - button "Tempel" [disabled]
+              - generic [ref=e107]:
+                - generic [ref=e108]: Filter Major Tag
+                - generic [ref=e110]:
+                  - checkbox "Filter Major Tag"
+                  - generic [ref=e111] [cursor=pointer]
+              - generic:
+                - generic:
+                  - generic: Target Major Tag
+                  - generic: 0 - 65535
+                - generic:
+                  - textbox "Target Major Tag" [disabled]:
+                    - /placeholder: "65535"
+                - generic: "Maksimal 5 digit (0 s/d 65535). Dapat diisi tanpa angka 0 di depan (misal: 1)."
+              - generic [ref=e112]:
+                - generic [ref=e113]: Batas Minimum RSSI
+                - generic [ref=e116]:
+                  - generic [ref=e117]: −
+                  - spinbutton "Batas Minimum RSSI" [ref=e118]: "65"
+                  - generic [ref=e119]: dBm
+                - slider [ref=e121] [cursor=pointer]: "65"
+                - generic [ref=e122]:
+                  - generic [ref=e123]: "-30 dBm"
+                  - generic [ref=e124]: "-65 dBm"
+                  - generic [ref=e125]: "-100 dBm"
+          - generic [ref=e126]:
+            - generic [ref=e127]: Batching & Antrean MQTT
+            - generic [ref=e132]:
+              - generic [ref=e133]:
+                - generic [ref=e134]: Topik Publish MQTT Gateway
+                - generic [ref=e135]:
+                  - generic [ref=e136]: beacon/
+                  - generic [ref=e137]: "%device_id%"
+              - generic [ref=e138]:
+                - generic [ref=e139]: Maksimal Beacon per Batch
+                - generic [ref=e140]:
+                  - button "Kurangi" [ref=e141] [cursor=pointer]: −
+                  - spinbutton "Maksimal Beacon per Batch" [ref=e142]
+                  - button "Tambah" [ref=e143] [cursor=pointer]: +
+              - generic [ref=e144]:
+                - generic [ref=e145]: Batas Waktu Buffer Flush
+                - generic [ref=e146]:
+                  - spinbutton "Batas Waktu Buffer Flush" [ref=e147]
+                  - generic: Milidetik
+              - generic [ref=e148]:
+                - generic [ref=e149]: Masa Kadaluarsa Antrean (TTL)
+                - generic [ref=e150]:
+                  - spinbutton "Masa Kadaluarsa Antrean (TTL)" [ref=e151]
+                  - generic: Milidetik
+          - generic [ref=e152]:
+            - generic [ref=e153]: Jadwal Reboot & Watchdog
+            - generic [ref=e159]:
+              - generic [ref=e161]:
+                - generic [ref=e162]: Jadwal Reboot Otomatis Harian
+                - generic [ref=e164]:
+                  - checkbox "Jadwal Reboot Otomatis Harian"
+                  - generic [ref=e165] [cursor=pointer]
+              - generic:
+                - generic: Waktu Reboot Harian (HH:MM)
+                - textbox "Waktu Reboot Harian (HH:MM)"
+              - generic [ref=e166]:
+                - generic [ref=e167]: Reboot saat Terputus (Watchdog)
+                - generic [ref=e168]:
+                  - spinbutton "Reboot saat Terputus (Watchdog)" [ref=e169]
+                  - generic: Menit
+      - generic [ref=e170]: © 2026 IOTARU ESP32 Gateway (%model%).
+  - generic [ref=e171]:
+    - generic [ref=e173]:
+      - generic [ref=e174]: Pengaturan Sistem
+      - generic [ref=e175]: Pilih menu konfigurasi gateway IOTARU
+    - generic [ref=e176]:
+      - link "Device Settings Filter UUID, RSSI threshold & batching MQTT" [ref=e177] [cursor=pointer]:
+        - /url: /settings
+        - generic [ref=e182]:
+          - generic [ref=e183]: Device Settings
+          - generic [ref=e184]: Filter UUID, RSSI threshold & batching MQTT
+      - link "Auth & Network Settings Kredensial login, Wi-Fi & LAN Ethernet" [ref=e185] [cursor=pointer]:
+        - /url: /auth
+        - generic [ref=e190]:
+          - generic [ref=e191]: Auth & Network Settings
+          - generic [ref=e192]: Kredensial login, Wi-Fi & LAN Ethernet
+      - button "Batal" [ref=e193] [cursor=pointer]
+  - generic [ref=e194]:
+    - generic [ref=e196]:
+      - generic [ref=e197]: Kontrol Daya Perangkat
+      - generic [ref=e198]: Pilih tindakan untuk mikrokontroler ESP32
+    - generic [ref=e199]:
+      - button "Reboot Perangkat Mulai ulang sistem modul ESP32" [ref=e200] [cursor=pointer]:
+        - generic [ref=e204]:
+          - generic [ref=e205]: Reboot Perangkat
+          - generic [ref=e206]: Mulai ulang sistem modul ESP32
+      - button "Reset Konfigurasi (Factory) Kembalikan semua setelan NVS ke default" [ref=e207] [cursor=pointer]:
+        - generic [ref=e214]:
+          - generic [ref=e215]: Reset Konfigurasi (Factory)
+          - generic [ref=e216]: Kembalikan semua setelan NVS ke default
+      - button "Batal" [ref=e217] [cursor=pointer]

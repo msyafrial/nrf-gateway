@@ -1,0 +1,7 @@
+[    3243ms] [WARNING] The specified value "%rssi_val_abs%" cannot be parsed, or is out of range. @ http://localhost:8089/settings.html:304
+[    3248ms] [WARNING] The specified value "%batch_max%" cannot be parsed, or is out of range. @ http://localhost:8089/settings.html:356
+[    3481ms] [WARNING] The specified value "%batch_flush%" cannot be parsed, or is out of range. @ http://localhost:8089/settings.html:364
+[    3481ms] [WARNING] The specified value "%data_ttl%" cannot be parsed, or is out of range. @ http://localhost:8089/settings.html:372
+[    3482ms] [WARNING] The specified value "%restart_schedule%" does not conform to the required format.  The format is "HH:mm", "HH:mm:ss" or "HH:mm:ss.SSS" where HH is 00-23, mm is 00-59, ss is 00-59, and SSS is 000-999. @ http://localhost:8089/settings.html:405
+[    3482ms] [WARNING] The specified value "%discon_rst%" cannot be parsed, or is out of range. @ http://localhost:8089/settings.html:411
+[    3875ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://localhost:8089/favicon.ico:0

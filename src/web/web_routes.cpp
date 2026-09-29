@@ -369,7 +369,7 @@ static esp_err_t api_login_handler(httpd_req_t *req) {
     Session::AuthResult auth_res = Session::authenticate(req, u, p, role, token, sizeof(token));
     if (auth_res == Session::AuthResult::SUCCESS) {
         char cookie_hdr[128];
-        snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=900", token);
+        snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600", token);
         httpd_resp_set_hdr(req, "Set-Cookie", cookie_hdr);
         httpd_resp_set_type(req, "application/json");
 
@@ -409,12 +409,18 @@ static esp_err_t api_logout_handler(httpd_req_t *req) {
 }
 
 static esp_err_t api_auth_check_handler(httpd_req_t *req) {
-    UserRole role = Session::validate(req);
+    char token[Session::TOKEN_LEN + 1] = {0};
+    UserRole role = Session::validate(req, token, sizeof(token));
     httpd_resp_set_type(req, "application/json");
     if (role == UserRole::NONE) {
         httpd_resp_set_status(req, "401 Unauthorized");
         httpd_resp_send(req, "{\"authenticated\":false}", HTTPD_RESP_USE_STRLEN);
     } else {
+        if (token[0] != '\0') {
+            char cookie_hdr[128];
+            snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600", token);
+            httpd_resp_set_hdr(req, "Set-Cookie", cookie_hdr);
+        }
         httpd_resp_send(req, "{\"authenticated\":true}", HTTPD_RESP_USE_STRLEN);
     }
     return ESP_OK;
@@ -608,6 +614,32 @@ static esp_err_t api_stop_ap_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"status\":\"ok\",\"message\":\"Mode Hotspot AP berhasil dinonaktifkan.\"}", HTTPD_RESP_USE_STRLEN);
     Network::NetworkManager::scheduleStopConfigAP(1000);
+    return ESP_OK;
+}
+
+static esp_err_t api_touch_ap_handler(httpd_req_t *req) {
+    if (Network::NetworkManager::isApActive()) {
+        Network::NetworkManager::recordApActivity();
+    }
+
+    char token[Session::TOKEN_LEN + 1] = {0};
+    UserRole role = Session::validate(req, token, sizeof(token));
+    if (role != UserRole::NONE && token[0] != '\0') {
+        char cookie_hdr[128];
+        snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600", token);
+        httpd_resp_set_hdr(req, "Set-Cookie", cookie_hdr);
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "status", "ok");
+    cJSON_AddBoolToObject(root, "ap_active", Network::NetworkManager::isApActive());
+    cJSON_AddNumberToObject(root, "ap_remain_sec", Network::NetworkManager::getApRemainingSeconds());
+
+    char *out = cJSON_PrintUnformatted(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+    cJSON_free(out);
+    cJSON_Delete(root);
     return ESP_OK;
 }
 
@@ -936,13 +968,25 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
 }
 
 // -------------------------------------------------------------
-// Helper for Safe URI Registration (Zero-initialized struct)
+// Helper for Safe URI Registration (Zero-initialized struct & AP activity hook)
 // -------------------------------------------------------------
+static esp_err_t generic_uri_dispatcher(httpd_req_t *req) {
+    if (Network::NetworkManager::isApActive()) {
+        Network::NetworkManager::recordApActivity();
+    }
+    auto handler = reinterpret_cast<esp_err_t (*)(httpd_req_t *)>(req->user_ctx);
+    if (handler) {
+        return handler(req);
+    }
+    return ESP_FAIL;
+}
+
 static inline void register_uri(httpd_handle_t server, const char *uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t *), bool is_ws = false) {
     httpd_uri_t u = {};
     u.uri = uri;
     u.method = method;
-    u.handler = handler;
+    u.handler = generic_uri_dispatcher;
+    u.user_ctx = reinterpret_cast<void *>(handler);
     u.is_websocket = is_ws;
     httpd_register_uri_handler(server, &u);
 }
@@ -982,6 +1026,8 @@ esp_err_t register_all(httpd_handle_t server) {
     // System REST
     register_uri(server, "/api/v1/system/version", HTTP_GET, api_system_version_handler);
     register_uri(server, "/api/v1/system/config-ap/stop", HTTP_POST, api_stop_ap_handler);
+    register_uri(server, "/api/v1/system/config-ap/touch", HTTP_POST, api_touch_ap_handler);
+    register_uri(server, "/api/v1/system/config-ap/touch", HTTP_GET, api_touch_ap_handler);
     register_uri(server, "/api/v1/system/reboot", HTTP_POST, api_reboot_handler);
     register_uri(server, "/api/v1/system/reset", HTTP_POST, api_reset_handler);
     register_uri(server, "/api/v1/debug/nrf", HTTP_GET, api_debug_nrf_handler);

@@ -844,6 +844,7 @@ input:disabled, select:disabled {
 
 .session-stat-val.cyan { color: #22d3ee; }
 .session-stat-val.green { color: #34d399; }
+.session-stat-val.sky { color: #38bdf8; }
 
 /* Realtime Throughput 8-Card Grid (2-Column Mobile Default, 4-Column Desktop) */
 .throughput-hud {
@@ -1204,12 +1205,233 @@ input:disabled, select:disabled {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+}
+
+.table-card-header-segmented {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+}
+
+/* 2026 Enterprise Segmented Control Rail (Apple HIG / Linear / Vercel style) */
+.segmented-control {
+  background: rgba(2, 6, 23, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.segment-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94a3b8;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.86rem;
+  padding: 7px 16px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.segment-btn:hover:not(.active) {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.segment-btn.active {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%);
+  color: #f8fafc;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45), 0 0 10px rgba(56, 189, 248, 0.15);
+}
+
+.segment-live-dot {
+  width: 7px;
+  height: 7px;
+  background-color: #38bdf8;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #38bdf8;
+  animation: pulse-stream 1.5s infinite;
+}
+
+.segment-icon {
+  width: 16px;
+  height: 16px;
+  color: #38bdf8;
+  flex-shrink: 0;
+}
+
+.segment-badge {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #94a3b8;
+  transition: all 0.2s;
+}
+
+.segment-badge.badge-cyan {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.segment-btn.active .segment-badge {
+  background: rgba(56, 189, 248, 0.2);
+  color: #e0f2fe;
+}
+
+/* Ringkasan Total Alasan Drop (Mini Summary Cards) */
+.drop-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin: 12px 0 14px 0;
+  width: 100%;
+}
+
+.drop-summary-card {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.drop-summary-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.drop-summary-card.card-ttl { border-top: 2px solid #f43f5e; }
+.drop-summary-card.card-rssi { border-top: 2px solid #f59e0b; }
+.drop-summary-card.card-uuid { border-top: 2px solid #a855f7; }
+.drop-summary-card.card-major { border-top: 2px solid #eab308; }
+.drop-summary-card.card-queue { border-top: 2px solid #0284c7; }
+.drop-summary-card.card-mqtt { border-top: 2px solid #ef4444; }
+
+.drop-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.drop-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.drop-dot.rose { background: #f43f5e; box-shadow: 0 0 6px rgba(244, 63, 94, 0.6); }
+.drop-dot.amber { background: #f59e0b; box-shadow: 0 0 6px rgba(245, 158, 11, 0.6); }
+.drop-dot.purple { background: #a855f7; box-shadow: 0 0 6px rgba(168, 85, 247, 0.6); }
+.drop-dot.yellow { background: #eab308; box-shadow: 0 0 6px rgba(234, 179, 8, 0.6); }
+.drop-dot.sky { background: #0284c7; box-shadow: 0 0 6px rgba(2, 132, 199, 0.6); }
+.drop-dot.red { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.6); }
+
+.drop-card-body {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.drop-val {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  line-height: 1.1;
+}
+.drop-val.rose { color: #f43f5e; }
+.drop-val.amber { color: #f59e0b; }
+.drop-val.purple { color: #c084fc; }
+.drop-val.yellow { color: #fde047; }
+.drop-val.sky { color: #38bdf8; }
+.drop-val.red { color: #f87171; }
+
+.drop-unit {
+  font-size: 0.72rem;
+  color: var(--text-dim, #64748b);
+  font-weight: 500;
+}
+
+/* Tab Body Toolbar: Balanced Toolbar */
+.tab-body-toolbar {
+  margin: 6px 0 12px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tab-body-toolbar.right-aligned {
+  justify-content: flex-end;
+}
+
+.tab-body-toolbar .filter-search-box {
+  margin-left: auto;
+}
+
+.toolbar-left-info {
+  display: flex;
+  align-items: center;
+}
+
+.drop-total-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.pulse-dot-amber {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.8);
+  animation: pulse-stream 1.5s infinite;
 }
 
 .filter-search-box {
   position: relative;
-  width: 280px;
+  width: 250px;
+  max-width: 100%;
+}
+
+.filter-search-box.compact {
+  width: 250px;
   max-width: 100%;
 }
 
@@ -1218,6 +1440,17 @@ input:disabled, select:disabled {
   padding-left: 36px;
   font-size: 0.86rem;
   border-radius: 8px;
+  width: 100%;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-main, #f8fafc);
+  transition: all 0.2s ease;
+}
+
+.filter-search-box input:focus {
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+  background: rgba(15, 23, 42, 0.85);
 }
 
 .filter-search-icon {
@@ -1235,6 +1468,125 @@ input:disabled, select:disabled {
   overflow-x: auto;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
+}
+
+.table-scroll-container {
+  max-height: 480px;
+  overflow-y: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll-container::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.table-scroll-container::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.table-scroll-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+.table-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.4);
+}
+
+/* Responsive Mobile Rules for 360x800 & Compact Screens */
+@media (max-width: 640px) {
+  .table-card-header-segmented {
+    width: 100%;
+    margin-bottom: 6px;
+  }
+
+  .segmented-control {
+    width: 100%;
+    display: flex;
+    box-sizing: border-box;
+    height: 40px;
+    padding: 3px;
+    gap: 3px;
+  }
+
+  .segment-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    font-size: 0.76rem;
+    padding: 5px 4px;
+    gap: 5px;
+  }
+
+  .segment-btn .segment-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .segment-badge {
+    padding: 1px 5px;
+    font-size: 0.68rem;
+    flex-shrink: 0;
+  }
+
+  .drop-summary-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin: 8px 0 10px 0;
+  }
+
+  .drop-summary-card {
+    padding: 8px 6px;
+  }
+
+  .drop-card-header {
+    font-size: 0.58rem;
+    gap: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: -0.01em;
+  }
+
+  .drop-val {
+    font-size: 1.05rem;
+  }
+
+  .drop-total-badge {
+    font-size: 0.72rem;
+    padding: 3px 8px;
+  }
+
+  .tab-body-toolbar {
+    margin: 4px 0 10px 0;
+  }
+
+  .tab-body-toolbar.right-aligned {
+    justify-content: flex-end;
+    margin: 4px 0 10px 0;
+  }
+
+  .filter-search-box.compact {
+    width: 200px;
+  }
+
+  .filter-search-box input {
+    height: 36px;
+    font-size: 0.8rem;
+    padding-left: 32px;
+  }
+
+  .table-scroll-container {
+    max-height: 360px;
+  }
+
+  .beacon-table th,
+  .beacon-table td {
+    padding: 8px 6px;
+    font-size: 0.78rem;
+  }
 }
 
 .beacon-table {
@@ -1322,6 +1674,79 @@ input:disabled, select:disabled {
 .badge-battery.low {
   background: rgba(244, 63, 94, 0.15);
   color: #fb7185;
+}
+
+/* RSSI & Hit Count Badges */
+.badge-rssi {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  font-size: 0.84rem;
+}
+.badge-rssi.good { color: #34d399; }
+.badge-rssi.mid { color: #fbbf24; }
+.badge-rssi.weak { color: #f43f5e; }
+
+.badge-hits {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 6px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  color: #cbd5e1;
+}
+
+/* Drop Reason Badges in Table */
+.badge-drop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-drop.drop-ttl {
+  background: rgba(244, 63, 94, 0.14);
+  color: #fb7185;
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+.badge-drop.drop-rssi {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.badge-drop.drop-uuid {
+  background: rgba(168, 85, 247, 0.14);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.badge-drop.drop-major {
+  background: rgba(234, 179, 8, 0.14);
+  color: #fde047;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.badge-drop.drop-queue {
+  background: rgba(2, 132, 199, 0.14);
+  color: #38bdf8;
+  border: 1px solid rgba(2, 132, 199, 0.3);
+}
+
+.badge-drop.drop-mqtt {
+  background: rgba(239, 68, 68, 0.14);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 /* Footer */

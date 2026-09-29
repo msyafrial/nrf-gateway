@@ -238,93 +238,10 @@
 </div>
 
 <script>
-(function() {
+if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.") === 0 || "%ap_banner_active%" === "1") {
   var b = document.getElementById("apModeBanner");
-  if (!b) return;
-
-  // Evaluasi aktif: Jika diakses via IP AP 192.168.4.1 ATAU server flag %ap_banner_active% == 1
-  var isFromAp = (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.") === 0 || "%ap_banner_active%" === "1");
-  if (isFromAp) {
-    b.style.display = "flex";
-  }
-
-  var btn = document.getElementById("btnStopAp");
-  if (btn && !btn.dataset.bound) {
-    btn.dataset.bound = "true";
-    btn.onclick = function(e) {
-      e.preventDefault();
-      function doStop() {
-        if (typeof Swal !== "undefined") {
-          Swal.fire({
-            title: "Menonaktifkan...",
-            text: "Mematikan Hotspot SoftAP...",
-            allowOutsideClick: false,
-            showConfirmButton: false,
-            didOpen: function() { Swal.showLoading(); }
-          });
-        }
-        fetch("/api/v1/system/config-ap/stop", { method: "POST" })
-          .then(function(r) { return r.json().catch(function() { return { status: "ok" }; }); })
-          .then(function(res) {
-            handleDone((res && res.message) ? res.message : "Mode AP telah dinonaktifkan.");
-          })
-          .catch(function() {
-            handleDone("Hotspot AP berhasil dimatikan. Perangkat kembali ke mode normal.");
-          });
-      }
-      function handleDone(msg) {
-        if (typeof Swal !== "undefined") {
-          Swal.fire({ title: "Hotspot Dinonaktifkan", text: msg, icon: "success", confirmButtonColor: "#0284c7" });
-        } else {
-          alert(msg);
-        }
-        b.style.display = "none";
-      }
-
-      if (typeof Swal !== "undefined") {
-        Swal.fire({
-          title: "Nonaktifkan Mode AP?",
-          text: "Hotspot konfigurasi akan dimatikan dan indikator LED akan kembali ke status operasional normal.",
-          icon: "warning",
-          showCancelButton: true,
-          confirmButtonColor: "#f97316",
-          cancelButtonColor: "#64748b",
-          confirmButtonText: "Ya, Matikan AP!",
-          cancelButtonText: "Batal"
-        }).then(function(res) {
-          if (res.isConfirmed) doStop();
-        });
-      } else {
-        if (confirm("Nonaktifkan Mode Hotspot AP?")) doStop();
-      }
-    };
-  }
-
-  var tEl = document.getElementById("apBannerTimer");
-  var ssidEl = document.getElementById("apBannerSsid");
-  fetch("/api/v1/system/version")
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d) {
-        if (d.ap_active) b.style.display = "flex";
-        else if (!isFromAp) b.style.display = "none";
-        if (d.ap_ssid && ssidEl) ssidEl.textContent = d.ap_ssid;
-        var rem = d.ap_remain_sec !== undefined ? d.ap_remain_sec : 60;
-        if (tEl) tEl.textContent = rem + "s";
-        var iv = setInterval(function() {
-          if (rem > 0) {
-            rem--;
-            if (tEl) tEl.textContent = rem + "s";
-          } else {
-            clearInterval(iv);
-            if (tEl) tEl.textContent = "Off";
-            setTimeout(function() { b.style.display = "none"; }, 1500);
-          }
-        }, 1000);
-      }
-    })
-    .catch(function() {});
-})();
+  if (b) b.style.display = "flex";
+}
 </script>
 <!-- ================= END AP MODE CONFIG BANNER COMPONENT ================= -->
         <!-- Test Control Bar -->
@@ -386,6 +303,10 @@
             <div class="session-stat-item">
               <span class="session-stat-label">Drop:</span>
               <span class="session-stat-val cyan" id="sessionDropRate">0 (0.00%)</span>
+            </div>
+            <div class="session-stat-item">
+              <span class="session-stat-label">Bandwidth:</span>
+              <span class="session-stat-val sky" id="sessionTotalBandwidth">0.00 KB</span>
             </div>
           </div>
         </div>
@@ -600,25 +521,79 @@
           </div>
         </div>
 
-        <!-- 10-Row Realtime FIFO Beacon Table -->
+        <!-- Realtime Beacon Table with 2026 Segmented Control -->
         <div class="bento-card">
-          <div class="table-card-header">
-            <div>
-              <div class="bento-title">10 Data Beacon Terupdate (Buffer FIFO)</div>
-              <div class="bento-sub">Menampilkan 10 beacon paling mutakhir yang masuk via UART 1 Mbps</div>
+          <div class="table-card-header table-card-header-segmented">
+            <div class="segmented-control" role="tablist" aria-label="Tipe Tampilan Data Beacon">
+              <button type="button" class="segment-btn active" id="tabFifo" role="tab" aria-selected="true">
+                <span class="segment-live-dot"></span>
+                <span class="segment-label">Buffer FIFO</span>
+              </button>
+              <button type="button" class="segment-btn" id="tabUnique" role="tab" aria-selected="false">
+                <svg class="segment-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="2"/>
+                  <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+                  <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
+                  <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/>
+                  <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+                </svg>
+                <span class="segment-label">Unique Beacons</span>
+              </button>
+              <button type="button" class="segment-btn" id="tabDropped" role="tab" aria-selected="false">
+                <svg class="segment-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                </svg>
+                <span class="segment-label">Dropped Data</span>
+              </button>
             </div>
-            <div class="filter-search-box">
+          </div>
+
+          <!-- Ringkasan Total Alasan Drop (Aktif khusus saat tab Dropped Data dipilih) -->
+          <div class="drop-summary-grid" id="dropSummaryGrid" style="display: none;">
+            <div class="drop-summary-card card-ttl">
+              <div class="drop-card-header"><span class="drop-dot rose"></span>TTL Expired</div>
+              <div class="drop-card-body"><span class="drop-val rose" id="count_drop_ttl">0</span> <span class="drop-unit">pkt</span></div>
+            </div>
+            <div class="drop-summary-card card-rssi">
+              <div class="drop-card-header"><span class="drop-dot amber"></span>RSSI &lt; Min</div>
+              <div class="drop-card-body"><span class="drop-val amber" id="count_drop_rssi">0</span> <span class="drop-unit">pkt</span></div>
+            </div>
+            <div class="drop-summary-card card-uuid">
+              <div class="drop-card-header"><span class="drop-dot purple"></span>UUID Mismatch</div>
+              <div class="drop-card-body"><span class="drop-val purple" id="count_drop_uuid">0</span> <span class="drop-unit">pkt</span></div>
+            </div>
+            <div class="drop-summary-card card-major">
+              <div class="drop-card-header"><span class="drop-dot yellow"></span>Major Mismatch</div>
+              <div class="drop-card-body"><span class="drop-val yellow" id="count_drop_major">0</span> <span class="drop-unit">pkt</span></div>
+            </div>
+            <div class="drop-summary-card card-queue">
+              <div class="drop-card-header"><span class="drop-dot sky"></span>Queue Full</div>
+              <div class="drop-card-body"><span class="drop-val sky" id="count_drop_queue">0</span> <span class="drop-unit">pkt</span></div>
+            </div>
+            <div class="drop-summary-card card-mqtt">
+              <div class="drop-card-header"><span class="drop-dot red"></span>MQTT Fail</div>
+              <div class="drop-card-body"><span class="drop-val red" id="count_drop_mqtt">0</span> <span class="drop-unit">pkt</span></div>
+            </div>
+          </div>
+
+          <!-- Tab Body Toolbar: Balanced Toolbar -->
+          <div class="tab-body-toolbar" id="tabBodyToolbar">
+            <div class="toolbar-left-info" id="toolbarLeftInfo" style="display: none;">
+              <span class="drop-total-badge"><span class="pulse-dot-amber"></span>Total Ditolak: <strong id="totalDroppedDisplay">0</strong> pkt</span>
+            </div>
+            <div class="filter-search-box compact">
               <svg class="filter-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
-              <input type="text" id="tagFilterInput" placeholder="Filter Major, Minor, atau Format (mis: 1-2, 100)...">
+              <input type="text" id="tagFilterInput" placeholder="Cari Major, Minor, Tag, Alasan...">
             </div>
           </div>
 
-          <div class="table-responsive">
-            <table class="beacon-table">
-              <thead>
+          <div class="table-responsive table-scroll-container">
+            <table class="beacon-table" id="mainBeaconTable">
+              <thead id="beaconTableHead">
                 <tr>
                   <th>#</th>
                   <th>Format</th>

@@ -17,6 +17,16 @@ static SemaphoreHandle_t s_liveBufMutex = nullptr;
 static LiveBeaconItem s_liveBeaconBuf[LIVE_FIFO_MAX];
 static size_t s_liveBeaconCount = 0;
 
+static DroppedBeaconItem s_droppedBeaconBuf[DROPPED_FIFO_MAX];
+static size_t s_droppedBeaconCount = 0;
+
+static std::atomic<uint32_t> s_dropTtlExpired{0};
+static std::atomic<uint32_t> s_dropRssiMin{0};
+static std::atomic<uint32_t> s_dropUuidMismatch{0};
+static std::atomic<uint32_t> s_dropMajorMismatch{0};
+static std::atomic<uint32_t> s_dropQueueOverflow{0};
+static std::atomic<uint32_t> s_dropMqttFailed{0};
+
 static std::atomic<uint32_t> s_totalBeaconsRead{0};
 static std::atomic<uint32_t> s_totalMqttPublished{0};
 static std::atomic<uint32_t> s_totalMqttBatches{0};
@@ -53,6 +63,7 @@ void BeaconPipeline::push(const BeaconPacket& packet) {
         BeaconPacket oldest;
         if (xQueueReceive(s_beaconQueue, &oldest, 0) == pdTRUE) {
             s_totalQueueDropped++;
+            recordDroppedBeacon(oldest, DropReason::QUEUE_OVERFLOW);
             xQueueSend(s_beaconQueue, &packet, 0);
         }
     }
@@ -88,6 +99,7 @@ void BeaconPipeline::pruneExpired() {
             BeaconPacket discarded;
             if (xQueueReceive(s_beaconQueue, &discarded, 0) == pdTRUE) {
                 s_totalQueueDropped++;
+                recordDroppedBeacon(discarded, DropReason::TTL_EXPIRED);
             }
         } else {
             break;
@@ -144,17 +156,18 @@ void BeaconPipeline::processBytes(const uint8_t* buffer, size_t len) {
                     uint16_t min = (uint16_t)((frame->minor >> 8) | (frame->minor << 8));
 
                     // Evaluasi Filter Hardware
+                    char tagBuf[24];
+                    snprintf(tagBuf, sizeof(tagBuf), "%05u-%05u", maj, min);
+                    const char* codeStr = (frame->code == 0x01) ? "ibeacon_ext" : "iBeacon";
+
                     bool passRssi = (frame->rssi >= (int8_t)g_config.rssi_min);
-                    bool passFilter = passRssi;
-
-                    if (passFilter && g_config.filter_uuid_en) {
-                        passFilter = (std::memcmp(frame->uuid, g_config.filter_uuid_bytes, 16) == 0);
-                    }
-                    if (passFilter && g_config.filter_major_en) {
-                        passFilter = matchMajorFilter(maj, g_config.filter_major);
-                    }
-
-                    if (passFilter) {
+                    if (!passRssi) {
+                        recordDroppedBeacon(codeStr, tagBuf, frame->rssi, DropReason::RSSI_OUT_OF_RANGE);
+                    } else if (g_config.filter_uuid_en && (std::memcmp(frame->uuid, g_config.filter_uuid_bytes, 16) != 0)) {
+                        recordDroppedBeacon(codeStr, tagBuf, frame->rssi, DropReason::UUID_MISMATCH);
+                    } else if (g_config.filter_major_en && !matchMajorFilter(maj, g_config.filter_major)) {
+                        recordDroppedBeacon(codeStr, tagBuf, frame->rssi, DropReason::MAJOR_MISMATCH);
+                    } else {
                         s_totalBeaconsRead++;
 
                         BeaconPacket packet;
@@ -218,7 +231,78 @@ void BeaconPipeline::recordMqttPublish(uint32_t packetCount, uint32_t batchCount
 
 void BeaconPipeline::recordMqttFailed(uint32_t packetCount) {
     s_totalMqttFailed += packetCount;
+    s_dropMqttFailed += packetCount;
+
+    if (s_liveBufMutex != nullptr && xSemaphoreTake(s_liveBufMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+        if (s_droppedBeaconCount < DROPPED_FIFO_MAX) {
+            DroppedBeaconItem& item = s_droppedBeaconBuf[s_droppedBeaconCount++];
+            strncpy(item.code, "MQTT", sizeof(item.code) - 1);
+            item.code[sizeof(item.code) - 1] = '\0';
+            snprintf(item.tag, sizeof(item.tag), "%lu pkt", (unsigned long)packetCount);
+            item.rssi = 0;
+            item.reason = DropReason::MQTT_FAIL;
+        }
+        xSemaphoreGive(s_liveBufMutex);
+    }
 }
+
+void BeaconPipeline::recordDroppedBeacon(const char* code, const char* tag, int8_t rssi, DropReason reason) {
+    switch (reason) {
+        case DropReason::TTL_EXPIRED:       s_dropTtlExpired++; break;
+        case DropReason::RSSI_OUT_OF_RANGE: s_dropRssiMin++; break;
+        case DropReason::UUID_MISMATCH:     s_dropUuidMismatch++; break;
+        case DropReason::MAJOR_MISMATCH:    s_dropMajorMismatch++; break;
+        case DropReason::QUEUE_OVERFLOW:    s_dropQueueOverflow++; break;
+        case DropReason::MQTT_FAIL:         s_dropMqttFailed++; break;
+    }
+
+    if (s_liveBufMutex != nullptr && xSemaphoreTake(s_liveBufMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+        if (s_droppedBeaconCount < DROPPED_FIFO_MAX) {
+            DroppedBeaconItem& item = s_droppedBeaconBuf[s_droppedBeaconCount++];
+            strncpy(item.code, code ? code : "BLE", sizeof(item.code) - 1);
+            item.code[sizeof(item.code) - 1] = '\0';
+            strncpy(item.tag, tag ? tag : "-", sizeof(item.tag) - 1);
+            item.tag[sizeof(item.tag) - 1] = '\0';
+            item.rssi = rssi;
+            item.reason = reason;
+        }
+        xSemaphoreGive(s_liveBufMutex);
+    }
+}
+
+void BeaconPipeline::recordDroppedBeacon(const BeaconPacket& p, DropReason reason) {
+    const char* code = (p.type == BeaconType::IBEACON_EXT) ? "ibeacon_ext" : "iBeacon";
+    char tagBuf[24];
+    snprintf(tagBuf, sizeof(tagBuf), "%05u-%05u", p.major, p.minor);
+    recordDroppedBeacon(code, tagBuf, p.rssi, reason);
+}
+
+size_t BeaconPipeline::copyDroppedBeacons(DroppedBeaconItem* outItems, size_t maxItems) {
+    if (!outItems || maxItems == 0) return 0;
+    size_t count = 0;
+
+    if (s_liveBufMutex != nullptr && xSemaphoreTake(s_liveBufMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+        count = std::min(s_droppedBeaconCount, maxItems);
+        std::memcpy(outItems, s_droppedBeaconBuf, count * sizeof(DroppedBeaconItem));
+        s_droppedBeaconCount = 0; // Flush setelah disalin
+        xSemaphoreGive(s_liveBufMutex);
+    }
+    return count;
+}
+
+void BeaconPipeline::flushDroppedBeacons() {
+    if (s_liveBufMutex != nullptr && xSemaphoreTake(s_liveBufMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+        s_droppedBeaconCount = 0;
+        xSemaphoreGive(s_liveBufMutex);
+    }
+}
+
+uint32_t BeaconPipeline::getDropTtlCount() { return s_dropTtlExpired.load(); }
+uint32_t BeaconPipeline::getDropRssiCount() { return s_dropRssiMin.load(); }
+uint32_t BeaconPipeline::getDropUuidCount() { return s_dropUuidMismatch.load(); }
+uint32_t BeaconPipeline::getDropMajorCount() { return s_dropMajorMismatch.load(); }
+uint32_t BeaconPipeline::getDropQueueCount() { return s_dropQueueOverflow.load(); }
+uint32_t BeaconPipeline::getDropMqttCount() { return s_dropMqttFailed.load(); }
 
 uint32_t BeaconPipeline::getReadSpeed() { return s_readSpeed; }
 uint32_t BeaconPipeline::getMqttSpeed() { return s_mqttSpeed; }

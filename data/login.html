@@ -463,7 +463,42 @@ document.addEventListener("DOMContentLoaded", initPasswordToggles);
         .catch(() => {});
     }
 
-    
+    let lastLoginApTouchTime = 0;
+    function touchLoginApActivity(forceSync = false) {
+      const isAp = (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.") === 0);
+      const b = document.getElementById("apModeBanner");
+      if (!isAp && (!b || b.style.display === "none")) return;
+
+      const now = Date.now();
+      const timerEl = document.getElementById("apBannerTimer");
+      if (currentApRemainingSec < 55 || forceSync) {
+        currentApRemainingSec = 60;
+        if (timerEl) timerEl.textContent = "60s";
+      }
+
+      if (now - lastLoginApTouchTime < 12000 && !forceSync) return;
+      lastLoginApTouchTime = now;
+
+      fetch("/api/v1/system/config-ap/touch", { method: "POST" })
+        .then(r => r.json())
+        .then(d => {
+          if (d && d.ap_remain_sec !== undefined) {
+            currentApRemainingSec = d.ap_remain_sec;
+            if (timerEl) timerEl.textContent = currentApRemainingSec + "s";
+          }
+        })
+        .catch(() => {});
+    }
+
+    const loginEvents = ["mousedown", "keydown", "input", "touchstart", "scroll"];
+    loginEvents.forEach(evt => {
+      window.addEventListener(evt, () => touchLoginApActivity(false), { passive: true });
+    });
+
+    setInterval(() => {
+      if (!document.hidden) touchLoginApActivity(false);
+    }, 20000);
+
     // Langsung tampilkan jika diakses via IP AP 192.168.4.1
     if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.") === 0 || "%ap_banner_active%" === "1") {
       const b = document.getElementById("apModeBanner");
@@ -471,7 +506,6 @@ document.addEventListener("DOMContentLoaded", initPasswordToggles);
     }
 
     document.addEventListener("DOMContentLoaded", checkLoginApStatus);
-
 </script>
 </body>
 </html>

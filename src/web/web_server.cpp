@@ -155,6 +155,9 @@ void broadcast_ws_text(const char *payload) {
 // -------------------------------------------------------------
 #ifdef CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT
 static esp_err_t ws_pre_handshake_cb(httpd_req_t *req) {
+    if (Network::NetworkManager::isApActive()) {
+        Network::NetworkManager::recordApActivity();
+    }
     char token[Session::TOKEN_LEN + 1] = {0};
     UserRole role = Session::validate(req, token, sizeof(token));
     if (role == UserRole::NONE) {
@@ -177,6 +180,9 @@ static esp_err_t ws_pre_handshake_cb(httpd_req_t *req) {
 // Dipanggil oleh ESP-IDF saat paket/frame WebSocket masuk
 // -------------------------------------------------------------
 static esp_err_t ws_handler(httpd_req_t *req) {
+    if (Network::NetworkManager::isApActive()) {
+        Network::NetworkManager::recordApActivity();
+    }
     int fd = httpd_req_to_sockfd(req);
 
     // 1. Tahap 1: Dapatkan metadata & ukuran frame yang masuk (max_len = 0)
@@ -277,6 +283,10 @@ void broadcast_live_ws_stats() {
     // Efisiensi Industri: Jika tidak ada yang menonton, hindari alokasi memori & CPU
     if (!has_subscribers) return;
 
+    if (Network::NetworkManager::isApActive()) {
+        Network::NetworkManager::recordApActivity();
+    }
+
     cJSON *root = cJSON_CreateObject();
     cJSON_AddNumberToObject(root, "beacons_read", Core::BeaconPipeline::getTotalBeaconsRead());
     cJSON_AddNumberToObject(root, "read_speed", Core::BeaconPipeline::getReadSpeed());
@@ -289,26 +299,52 @@ void broadcast_live_ws_stats() {
     cJSON_AddNumberToObject(root, "batch_max", g_config.batch_max);
     cJSON_AddNumberToObject(root, "batch_pkt_size", Network::MqttService::getLastBatchPktCount());
     cJSON_AddNumberToObject(root, "net_bandwidth", Network::MqttService::getBandwidthKBps());
+    cJSON_AddNumberToObject(root, "total_bytes", (double)Network::MqttService::getTotalWireBytes());
     cJSON_AddBoolToObject(root, "ap_active", Network::NetworkManager::isApActive());
     cJSON_AddNumberToObject(root, "ap_remain_sec", Network::NetworkManager::getApRemainingSeconds());
 
     cJSON *beacons_arr = cJSON_CreateArray();
-    LiveBeaconItem live_buf[50];
-    size_t count = Core::BeaconPipeline::copyLiveBeacons(live_buf, 50);
+    static LiveBeaconItem s_live_buf[50];
+    size_t count = Core::BeaconPipeline::copyLiveBeacons(s_live_buf, 50);
 
     for (size_t i = 0; i < count; i++) {
         cJSON *b = cJSON_CreateObject();
-        cJSON_AddStringToObject(b, "code", live_buf[i].code);
-        cJSON_AddStringToObject(b, "tag", live_buf[i].tag);
-        cJSON_AddNumberToObject(b, "rssi", live_buf[i].rssi);
-        if (strcmp(live_buf[i].code, "iBeacon") == 0 || live_buf[i].batt == 0) {
+        cJSON_AddStringToObject(b, "code", s_live_buf[i].code);
+        cJSON_AddStringToObject(b, "tag", s_live_buf[i].tag);
+        cJSON_AddNumberToObject(b, "rssi", s_live_buf[i].rssi);
+        if (strcmp(s_live_buf[i].code, "iBeacon") == 0 || s_live_buf[i].batt == 0) {
             cJSON_AddNullToObject(b, "batt");
         } else {
-            cJSON_AddNumberToObject(b, "batt", live_buf[i].batt);
+            cJSON_AddNumberToObject(b, "batt", s_live_buf[i].batt);
         }
         cJSON_AddItemToArray(beacons_arr, b);
     }
     cJSON_AddItemToObject(root, "beacons", beacons_arr);
+
+    // Ringkasan Alasan Drop
+    cJSON *drop_summary = cJSON_CreateObject();
+    cJSON_AddNumberToObject(drop_summary, "ttl", Core::BeaconPipeline::getDropTtlCount());
+    cJSON_AddNumberToObject(drop_summary, "rssi", Core::BeaconPipeline::getDropRssiCount());
+    cJSON_AddNumberToObject(drop_summary, "uuid", Core::BeaconPipeline::getDropUuidCount());
+    cJSON_AddNumberToObject(drop_summary, "major", Core::BeaconPipeline::getDropMajorCount());
+    cJSON_AddNumberToObject(drop_summary, "queue", Core::BeaconPipeline::getDropQueueCount());
+    cJSON_AddNumberToObject(drop_summary, "mqtt", Core::BeaconPipeline::getDropMqttCount());
+    cJSON_AddItemToObject(root, "drop_summary", drop_summary);
+
+    // Snapshot Event Dropped Beacons
+    cJSON *dropped_arr = cJSON_CreateArray();
+    static DroppedBeaconItem s_drop_buf[50];
+    size_t drop_count = Core::BeaconPipeline::copyDroppedBeacons(s_drop_buf, 50);
+
+    for (size_t i = 0; i < drop_count; i++) {
+        cJSON *d = cJSON_CreateObject();
+        cJSON_AddStringToObject(d, "code", s_drop_buf[i].code);
+        cJSON_AddStringToObject(d, "tag", s_drop_buf[i].tag);
+        cJSON_AddNumberToObject(d, "rssi", s_drop_buf[i].rssi);
+        cJSON_AddNumberToObject(d, "reason", (int)s_drop_buf[i].reason);
+        cJSON_AddItemToArray(dropped_arr, d);
+    }
+    cJSON_AddItemToObject(root, "dropped_beacons", dropped_arr);
 
     char *out = cJSON_PrintUnformatted(root);
     if (out) {
@@ -391,7 +427,7 @@ bool init() {
     Routes::register_all(s_server);
 
     // Start 100ms Telemetry Broadcast & Watchdog Task on Core 1
-    xTaskCreatePinnedToCore(telemetry_task_func, "web_telemetry", 4096, nullptr, 4, &s_telemetry_task, 1);
+    xTaskCreatePinnedToCore(telemetry_task_func, "web_telemetry", 8192, nullptr, 4, &s_telemetry_task, 1);
 
     ESP_LOGI(TAG, "Web Server native ESP-IDF siap dan aktif.");
     return true;

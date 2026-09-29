@@ -8,23 +8,40 @@ document.addEventListener("DOMContentLoaded", function() {
   const maxHistory = 30; // Batas maksimal riwayat buffer (30 paket terbaru)
   let packetStreamHistory = []; // FIFO stream (terbaru di indeks 0)
   const uniqueBeaconsSet = new Set(); // Pelacak perangkat beacon unik
+  const uniqueBeaconsMap = new Map(); // Pelacak detail perangkat unik { code, tag, rssi, batt, lastSeen, hits }
+  let activeTableTab = "fifo"; // "fifo" | "unique" | "dropped"
+  let droppedBeaconsList = []; // FIFO stream for dropped beacons (max 50)
   let currentFilter = "";
 
-  // DOM Elements
   // DOM Elements
   const btnStart = document.getElementById("btnStartTest");
   const btnStop = document.getElementById("btnStopTest");
   const btnExportCsv = document.getElementById("btnExportCsv");
   const statusBadge = document.getElementById("testStatusBadge");
   const statusText = document.getElementById("testStatusText");
+  const tableHead = document.getElementById("beaconTableHead");
   const tableBody = document.getElementById("beaconTableBody");
   const filterInput = document.getElementById("tagFilterInput");
+  const tabFifo = document.getElementById("tabFifo");
+  const tabUnique = document.getElementById("tabUnique");
+  const tabDropped = document.getElementById("tabDropped");
+  const dropSummaryGrid = document.getElementById("dropSummaryGrid");
+  const toolbarLeftInfo = document.getElementById("toolbarLeftInfo");
+  const totalDroppedDisplay = document.getElementById("totalDroppedDisplay");
+  const countDropTtl = document.getElementById("count_drop_ttl");
+  const countDropRssi = document.getElementById("count_drop_rssi");
+  const countDropUuid = document.getElementById("count_drop_uuid");
+  const countDropMajor = document.getElementById("count_drop_major");
+  const countDropQueue = document.getElementById("count_drop_queue");
+  const countDropMqtt = document.getElementById("count_drop_mqtt");
+  const badgeUniqueCount = document.getElementById("badgeUniqueCount");
 
   // Session Control Elements
   const elSessionElapsed = document.getElementById("sessionElapsedTime");
   const elSessionPktsRecv = document.getElementById("sessionPacketsReceived");
   const elSessionPktsSent = document.getElementById("sessionPacketsSent");
   const elSessionDropRate = document.getElementById("sessionDropRate");
+  const elSessionTotalBandwidth = document.getElementById("sessionTotalBandwidth");
 
   // Metrics elements
   const elReadSpeed = document.getElementById("stat_read_speed");
@@ -68,6 +85,8 @@ document.addEventListener("DOMContentLoaded", function() {
   let sessionStartDropped = null;
   let sessionDropped = 0;
   let curTotalDropped = 0;
+  let sessionStartBytes = null;
+  let sessionTotalBytes = 0;
   let fullSessionLog = [];
   let readSpeedSamples = [];
   let mqttSpeedSamples = [];
@@ -116,6 +135,16 @@ document.addEventListener("DOMContentLoaded", function() {
         elSessionDropRate.textContent = `${sessionDropped.toLocaleString()} (${rate.toFixed(2)}%)`;
       }
     }
+  }
+
+  function formatBytes(bytes) {
+    if (!bytes || bytes <= 0) return "0.00 KB";
+    const kb = bytes / 1024;
+    if (kb < 1024) return kb.toFixed(2) + " KB";
+    const mb = kb / 1024;
+    if (mb < 1024) return mb.toFixed(2) + " MB";
+    const gb = mb / 1024;
+    return gb.toFixed(2) + " GB";
   }
 
   function exportToCsv() {
@@ -201,6 +230,18 @@ document.addEventListener("DOMContentLoaded", function() {
     return `${h}:${m}:${s}.${ms}`;
   }
 
+  function getDropReasonInfo(reasonCode) {
+    switch (Number(reasonCode)) {
+      case 0: return { label: "TTL Expired", cssClass: "drop-ttl" };
+      case 1: return { label: "RSSI < Min", cssClass: "drop-rssi" };
+      case 2: return { label: "UUID Mismatch", cssClass: "drop-uuid" };
+      case 3: return { label: "Major Mismatch", cssClass: "drop-major" };
+      case 4: return { label: "Queue Full", cssClass: "drop-queue" };
+      case 5: return { label: "MQTT Fail", cssClass: "drop-mqtt" };
+      default: return { label: "Other Drop", cssClass: "drop-ttl" };
+    }
+  }
+
   function matchBeacon(b, filterVal) {
     if (!filterVal) return true;
 
@@ -262,6 +303,29 @@ document.addEventListener("DOMContentLoaded", function() {
     uniqueBeaconsSet.add(beacon.tag);
     if (elUniqueTags) elUniqueTags.textContent = uniqueBeaconsSet.size;
 
+    // Update Unique Beacons Map (In-place live state)
+    const existing = uniqueBeaconsMap.get(beacon.tag);
+    const prevHits = existing ? existing.hits : 0;
+
+    // Pertahankan nilai baterai jika sebelumnya ada tapi paket baru standard tanpa baterai
+    let battVal = beacon.batt;
+    if ((battVal === undefined || battVal === null || battVal === "" || battVal === 0 || battVal === "0") && existing && existing.batt) {
+      battVal = existing.batt;
+    }
+
+    uniqueBeaconsMap.set(beacon.tag, {
+      code: beacon.code || (existing ? existing.code : "BLE"),
+      tag: beacon.tag,
+      rssi: (beacon.rssi !== undefined && beacon.rssi !== null) ? beacon.rssi : (existing ? existing.rssi : null),
+      batt: battVal,
+      lastSeen: new Date(),
+      hits: prevHits + 1
+    });
+
+    if (badgeUniqueCount) {
+      badgeUniqueCount.textContent = uniqueBeaconsMap.size;
+    }
+
     // Catat RSSI untuk kalkulasi rolling average sinyal
     if (beacon.rssi !== undefined && beacon.rssi !== null) {
       rssiSamples.push(beacon.rssi);
@@ -292,13 +356,7 @@ document.addEventListener("DOMContentLoaded", function() {
     });
     if (fullSessionLog.length > 5000) fullSessionLog.shift();
 
-    // Saat filter aktif, paket yang tidak cocok DIBUANG dan TIDAK disimpan ke riwayat
-    const filterVal = currentFilter.toLowerCase().trim();
-    if (filterVal && !matchBeacon(beacon, filterVal)) {
-      return;
-    }
-
-    // Masukkan setiap paket yang lolos sebagai entri baru (continuous stream, non-unique)
+    // Masukkan ke continuous FIFO buffer (continuous stream, non-unique)
     const item = {
       code: beacon.code || "BLE",
       tag: beacon.tag,
@@ -313,55 +371,213 @@ document.addEventListener("DOMContentLoaded", function() {
     }
   }
 
-  function renderTable() {
-    if (!tableBody) return;
-
-    const filterVal = currentFilter.toLowerCase().trim();
-    let matched = packetStreamHistory;
-    if (filterVal) {
-      matched = packetStreamHistory.filter(b => matchBeacon(b, filterVal));
-    }
-
-    // Tampilkan tepat hingga 10 data teratas sesuai filter
-    const displayList = matched.slice(0, 10);
-
-    if (displayList.length === 0) {
-      tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:24px;">${filterVal ? "Tidak ada beacon yang cocok dengan filter." : "Menunggu paket data beacon..."}</td></tr>`;
-      return;
-    }
-
-    let html = "";
-    displayList.forEach((b, idx) => {
-      const isStdIBeacon = (b.code || "").toLowerCase() === "ibeacon";
-      const badgeClass = isStdIBeacon ? "badge-beacon ibeacon" : "badge-beacon ibeacon_ext";
-      
-      let batteryHtml = `<span style="color:var(--text-dim);">-</span>`;
-      if (!isStdIBeacon && b.batt !== undefined && b.batt !== null && b.batt !== "" && b.batt !== 0 && b.batt !== "0") {
-        const battVal = parseInt(b.batt, 10);
-        if (!isNaN(battVal) && battVal > 0) {
-          let battClass = "badge-battery full";
-          if (battVal < 20) battClass = "badge-battery low";
-          else if (battVal < 50) battClass = "badge-battery mid";
-          batteryHtml = `<span class="${battClass}">${battVal}%</span>`;
-        }
-      }
-
-      const timeStr = formatTime(b.time);
-
-      html += `
-        <tr class="${idx === 0 ? 'new-row' : ''}">
-          <td style="color:var(--text-dim);font-family:var(--font-mono, monospace);">${idx + 1}</td>
-          <td><span class="${badgeClass}">${b.code || "BLE"}</span></td>
-          <td><strong style="font-family:var(--font-mono, monospace);color:#38bdf8;">${b.tag || "-"}</strong></td>
-          <td style="font-family:var(--font-mono, monospace);font-weight:600;">${b.rssi ? b.rssi + " dBm" : "-"}</td>
-          <td>${batteryHtml}</td>
-          <td style="color:var(--text-dim);font-family:var(--font-mono, monospace);font-size:0.84rem;">${timeStr}</td>
+  function updateTableHead() {
+    if (!tableHead) return;
+    if (activeTableTab === "fifo") {
+      tableHead.innerHTML = `
+        <tr>
+          <th style="width:40px;">#</th>
+          <th>Format</th>
+          <th>Major-Minor</th>
+          <th>RSSI</th>
+          <th>Battery</th>
+          <th>Waktu</th>
         </tr>
       `;
-    });
-
-    tableBody.innerHTML = html;
+    } else if (activeTableTab === "unique") {
+      tableHead.innerHTML = `
+        <tr>
+          <th style="width:40px;">#</th>
+          <th>Major-Minor</th>
+          <th>RSSI</th>
+          <th>Battery</th>
+          <th>Terakhir Dilihat</th>
+          <th>Total Pkt</th>
+        </tr>
+      `;
+    } else {
+      tableHead.innerHTML = `
+        <tr>
+          <th style="width:40px;">#</th>
+          <th>Tag / Identitas</th>
+          <th>RSSI</th>
+          <th>Alasan Drop</th>
+          <th>Waktu Drop</th>
+        </tr>
+      `;
+    }
   }
+
+  function renderTable() {
+    if (!tableBody) return;
+    updateTableHead();
+
+    const filterVal = currentFilter.toLowerCase().trim();
+
+    if (activeTableTab === "fifo") {
+      let matched = packetStreamHistory;
+      if (filterVal) {
+        matched = packetStreamHistory.filter(b => matchBeacon(b, filterVal));
+      }
+
+      const displayList = matched.slice(0, 10);
+      if (displayList.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:24px;">${filterVal ? "Tidak ada beacon yang cocok dengan filter." : (isTesting ? "Menunggu paket data beacon..." : "Tekan tombol <strong>Start Test</strong> di atas untuk memulai streaming live.")}</td></tr>`;
+        return;
+      }
+
+      let html = "";
+      displayList.forEach((b, idx) => {
+        const isStdIBeacon = (b.code || "").toLowerCase() === "ibeacon";
+        const badgeClass = isStdIBeacon ? "badge-beacon ibeacon" : "badge-beacon ibeacon_ext";
+
+        let batteryHtml = `<span style="color:var(--text-dim);">-</span>`;
+        if (!isStdIBeacon && b.batt !== undefined && b.batt !== null && b.batt !== "" && b.batt !== 0 && b.batt !== "0") {
+          const battVal = parseInt(b.batt, 10);
+          if (!isNaN(battVal) && battVal > 0) {
+            let battClass = "badge-battery full";
+            if (battVal < 20) battClass = "badge-battery low";
+            else if (battVal < 50) battClass = "badge-battery mid";
+            batteryHtml = `<span class="${battClass}">${battVal}%</span>`;
+          }
+        }
+
+        const timeStr = formatTime(b.time);
+
+        html += `
+          <tr class="${idx === 0 ? 'new-row' : ''}">
+            <td style="color:var(--text-dim);font-family:var(--font-mono, monospace);">${idx + 1}</td>
+            <td><span class="${badgeClass}">${b.code || "BLE"}</span></td>
+            <td><strong style="font-family:var(--font-mono, monospace);color:#38bdf8;">${b.tag || "-"}</strong></td>
+            <td style="font-family:var(--font-mono, monospace);font-weight:600;">${b.rssi ? b.rssi + " dBm" : "-"}</td>
+            <td>${batteryHtml}</td>
+            <td style="color:var(--text-dim);font-family:var(--font-mono, monospace);font-size:0.84rem;">${timeStr}</td>
+          </tr>
+        `;
+      });
+      tableBody.innerHTML = html;
+
+    } else if (activeTableTab === "unique") {
+      // Unique Beacons Tab Mode (Fixed First-Seen Order / No Row Jumping)
+      let uniqueList = Array.from(uniqueBeaconsMap.values());
+      if (filterVal) {
+        uniqueList = uniqueList.filter(b => matchBeacon(b, filterVal));
+      }
+
+      if (uniqueList.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:24px;">${filterVal ? "Tidak ada beacon unik yang cocok dengan filter." : (isTesting ? "Belum ada beacon unik terdeteksi..." : "Tekan tombol <strong>Start Test</strong> di atas untuk memindai beacon unik.")}</td></tr>`;
+        return;
+      }
+
+      let html = "";
+      uniqueList.forEach((b, idx) => {
+        const isStdIBeacon = (b.code || "").toLowerCase() === "ibeacon";
+        const badgeClass = isStdIBeacon ? "badge-beacon ibeacon" : "badge-beacon ibeacon_ext";
+
+        let batteryHtml = `<span style="color:var(--text-dim);">-</span>`;
+        if (b.batt !== undefined && b.batt !== null && b.batt !== "" && b.batt !== 0 && b.batt !== "0") {
+          const battVal = parseInt(b.batt, 10);
+          if (!isNaN(battVal) && battVal > 0) {
+            let battClass = "badge-battery full";
+            if (battVal < 20) battClass = "badge-battery low";
+            else if (battVal < 50) battClass = "badge-battery mid";
+            batteryHtml = `<span class="${battClass}">${battVal}%</span>`;
+          }
+        }
+
+        let rssiHtml = `<span style="color:var(--text-dim);">-</span>`;
+        if (b.rssi !== null && b.rssi !== undefined) {
+          let rssiClass = "good";
+          if (b.rssi < -80) rssiClass = "weak";
+          else if (b.rssi < -65) rssiClass = "mid";
+          rssiHtml = `<span class="badge-rssi ${rssiClass}">${b.rssi} dBm</span>`;
+        }
+
+        const timeStr = formatTime(b.lastSeen);
+
+        html += `
+          <tr>
+            <td style="color:var(--text-dim);font-family:var(--font-mono, monospace);">${idx + 1}</td>
+            <td><strong style="font-family:var(--font-mono, monospace);color:#38bdf8;">${b.tag || "-"}</strong></td>
+            <td>${rssiHtml}</td>
+            <td>${batteryHtml}</td>
+            <td style="color:#f8fafc;font-family:var(--font-mono, monospace);font-size:0.84rem;">${timeStr}</td>
+            <td><span class="badge-hits">${b.hits || 1} pkt</span></td>
+          </tr>
+        `;
+      });
+      tableBody.innerHTML = html;
+
+    } else {
+      // Dropped Data Tab Mode (5 Kolom: # | Tag / Identitas | RSSI | Alasan Drop | Waktu Drop)
+      let matched = droppedBeaconsList;
+      if (filterVal) {
+        matched = droppedBeaconsList.filter(b => {
+          const reasonInfo = getDropReasonInfo(b.reason);
+          return matchBeacon(b, filterVal) || reasonInfo.label.toLowerCase().includes(filterVal);
+        });
+      }
+
+      if (matched.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);padding:24px;">${filterVal ? "Tidak ada data paket ditolak yang cocok dengan filter." : (isTesting ? "Belum ada paket data yang di-drop/ditolak..." : "Tekan tombol <strong>Start Test</strong> di atas untuk memantau streaming live.")}</td></tr>`;
+        return;
+      }
+
+      let html = "";
+      matched.forEach((b, idx) => {
+        const reasonInfo = getDropReasonInfo(b.reason);
+        const timeStr = formatTime(b.time);
+
+        let rssiHtml = `<span style="color:var(--text-dim);">-</span>`;
+        if (b.rssi !== null && b.rssi !== undefined && b.rssi !== 0) {
+          let rssiClass = "good";
+          if (b.rssi < -80) rssiClass = "weak";
+          else if (b.rssi < -65) rssiClass = "mid";
+          rssiHtml = `<span class="badge-rssi ${rssiClass}">${b.rssi} dBm</span>`;
+        }
+
+        html += `
+          <tr class="${idx === 0 ? 'new-row' : ''}">
+            <td style="color:var(--text-dim);font-family:var(--font-mono, monospace);">${idx + 1}</td>
+            <td><strong style="font-family:var(--font-mono, monospace);color:#38bdf8;">${b.tag || b.code || "-"}</strong></td>
+            <td>${rssiHtml}</td>
+            <td><span class="badge-drop ${reasonInfo.cssClass}">${reasonInfo.label}</span></td>
+            <td style="color:var(--text-dim);font-family:var(--font-mono, monospace);font-size:0.84rem;">${timeStr}</td>
+          </tr>
+        `;
+      });
+      tableBody.innerHTML = html;
+    }
+  }
+
+  function switchTab(tab) {
+    activeTableTab = tab;
+    if (tabFifo) {
+      tabFifo.classList.toggle("active", tab === "fifo");
+      tabFifo.setAttribute("aria-selected", tab === "fifo");
+    }
+    if (tabUnique) {
+      tabUnique.classList.toggle("active", tab === "unique");
+      tabUnique.setAttribute("aria-selected", tab === "unique");
+    }
+    if (tabDropped) {
+      tabDropped.classList.toggle("active", tab === "dropped");
+      tabDropped.setAttribute("aria-selected", tab === "dropped");
+    }
+
+    if (dropSummaryGrid) {
+      dropSummaryGrid.style.display = (tab === "dropped") ? "grid" : "none";
+    }
+    if (toolbarLeftInfo) {
+      toolbarLeftInfo.style.display = (tab === "dropped") ? "flex" : "none";
+    }
+
+    renderTable();
+  }
+
+  if (tabFifo) tabFifo.addEventListener("click", () => switchTab("fifo"));
+  if (tabUnique) tabUnique.addEventListener("click", () => switchTab("unique"));
+  if (tabDropped) tabDropped.addEventListener("click", () => switchTab("dropped"));
 
   // =================================================================
   // 60-SECOND REALTIME CANVAS TELEMETRY CHART ENGINE (TASK MANAGER STYLE)
@@ -712,16 +928,61 @@ document.addEventListener("DOMContentLoaded", function() {
             curNetBandwidth = (typeof msg.net_bandwidth === "number") ? msg.net_bandwidth : (parseFloat(msg.net_bandwidth) || 0.0);
             if (elNetBandwidth) elNetBandwidth.textContent = curNetBandwidth.toFixed(2);
           }
+          if (msg.total_bytes !== undefined) {
+            if (sessionStartBytes === null) {
+              sessionStartBytes = msg.total_bytes;
+            }
+            sessionTotalBytes = Math.max(0, msg.total_bytes - sessionStartBytes);
+            if (elSessionTotalBandwidth) elSessionTotalBandwidth.textContent = formatBytes(sessionTotalBytes);
+          } else if (msg.net_bandwidth !== undefined && isTesting) {
+            sessionTotalBytes += Math.round(curNetBandwidth * 1024);
+            if (elSessionTotalBandwidth) elSessionTotalBandwidth.textContent = formatBytes(sessionTotalBytes);
+          }
 
           // Process incoming beacons (single or array)
           if (msg.beacons && Array.isArray(msg.beacons) && msg.beacons.length > 0) {
             for (let i = 0; i < msg.beacons.length; i++) {
               insertBeacon(msg.beacons[i]);
             }
-            renderTable();
+            if (activeTableTab !== "dropped") {
+              renderTable();
+            }
           } else if (msg.code && msg.tag) {
             insertBeacon(msg);
-            renderTable();
+            if (activeTableTab !== "dropped") {
+              renderTable();
+            }
+          }
+
+          // Process drop summary metrics & live dropped beacons
+          if (msg.drop_summary) {
+            const ds = msg.drop_summary;
+            if (countDropTtl) countDropTtl.textContent = (ds.ttl || 0).toLocaleString();
+            if (countDropRssi) countDropRssi.textContent = (ds.rssi || 0).toLocaleString();
+            if (countDropUuid) countDropUuid.textContent = (ds.uuid || 0).toLocaleString();
+            if (countDropMajor) countDropMajor.textContent = (ds.major || 0).toLocaleString();
+            if (countDropQueue) countDropQueue.textContent = (ds.queue || 0).toLocaleString();
+            if (countDropMqtt) countDropMqtt.textContent = (ds.mqtt || 0).toLocaleString();
+
+            const sum = (ds.ttl || 0) + (ds.rssi || 0) + (ds.uuid || 0) + (ds.major || 0) + (ds.queue || 0) + (ds.mqtt || 0);
+            if (totalDroppedDisplay) totalDroppedDisplay.textContent = sum.toLocaleString();
+          }
+
+          if (msg.dropped_beacons && Array.isArray(msg.dropped_beacons) && msg.dropped_beacons.length > 0) {
+            for (let i = 0; i < msg.dropped_beacons.length; i++) {
+              const db = msg.dropped_beacons[i];
+              droppedBeaconsList.unshift({
+                code: db.code || "BLE",
+                tag: db.tag || "-",
+                rssi: db.rssi,
+                reason: db.reason,
+                time: new Date()
+              });
+              if (droppedBeaconsList.length > 50) droppedBeaconsList.pop();
+            }
+            if (activeTableTab === "dropped") {
+              renderTable();
+            }
           }
         } catch (e) {
           console.error("[WS] Parse error:", e);
@@ -730,21 +991,23 @@ document.addEventListener("DOMContentLoaded", function() {
 
       ws.onclose = () => {
         console.log("[WS] Disconnected");
-        // Verifikasi apakah sesi masih valid (misal ESP32 baru saja restart atau sesi expired)
-        fetch("/api/v1/auth/check", { cache: "no-store" })
-          .then(res => {
-            if (res.status === 401) {
-              // Sesi hangus karena restart/expired -> Redirect ke login
-              window.location.href = "/login.html";
-            } else if (isTesting) {
-              setTimeout(initWebSocket, 2000);
-            }
-          })
-          .catch(() => {
-            if (isTesting) {
-              setTimeout(initWebSocket, 2000);
-            }
-          });
+        // Hanya verifikasi status jika pengetesan sedang aktif (bukan saat user bernavigasi keluar)
+        if (isTesting) {
+          fetch("/api/v1/auth/check", { cache: "no-store" })
+            .then(res => {
+              if (res.status === 401) {
+                // Sesi hangus karena restart/expired -> Redirect ke login
+                window.location.href = "/login.html";
+              } else if (isTesting) {
+                setTimeout(initWebSocket, 2000);
+              }
+            })
+            .catch(() => {
+              if (isTesting) {
+                setTimeout(initWebSocket, 2000);
+              }
+            });
+        }
       };
 
       ws.onerror = (err) => {
@@ -796,11 +1059,27 @@ document.addEventListener("DOMContentLoaded", function() {
 
       // Reset Unique Beacon Counter & Batch Pkt Size
       uniqueBeaconsSet.clear();
+      uniqueBeaconsMap.clear();
+      if (badgeUniqueCount) badgeUniqueCount.textContent = "0";
       if (elUniqueTags) elUniqueTags.textContent = "0";
       curBatchPktSize = 0;
       if (elBatchPktSize) elBatchPktSize.textContent = "0";
       curNetBandwidth = 0.0;
       if (elNetBandwidth) elNetBandwidth.textContent = "0.00";
+      sessionStartBytes = null;
+      sessionTotalBytes = 0;
+      if (elSessionTotalBandwidth) elSessionTotalBandwidth.textContent = "0.00 KB";
+
+      // Reset Dropped Data
+      droppedBeaconsList = [];
+      if (totalDroppedDisplay) totalDroppedDisplay.textContent = "0";
+      if (countDropTtl) countDropTtl.textContent = "0";
+      if (countDropRssi) countDropRssi.textContent = "0";
+      if (countDropUuid) countDropUuid.textContent = "0";
+      if (countDropMajor) countDropMajor.textContent = "0";
+      if (countDropQueue) countDropQueue.textContent = "0";
+      if (countDropMqtt) countDropMqtt.textContent = "0";
+      renderTable();
 
       // Reset & Start 60-Second Realtime Chart
       chartData.length = 0;
@@ -808,13 +1087,13 @@ document.addEventListener("DOMContentLoaded", function() {
       sampleChartData(); // Sample initial data point immediately
       chartInterval = setInterval(sampleChartData, 1000); // 1Hz sampling rate
 
-      // Start keepalive ping every 60 seconds during testing
+      // Start keepalive ping every 30 seconds during active testing (sliding cookie renewal)
       if (keepAliveTimer) clearInterval(keepAliveTimer);
       keepAliveTimer = setInterval(() => {
         if (isTesting) {
           fetch("/api/v1/auth/check", { cache: "no-store" }).catch(() => {});
         }
-      }, 60000);
+      }, 30000);
 
       initWebSocket();
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -974,11 +1253,6 @@ document.addEventListener("DOMContentLoaded", function() {
   if (filterInput) {
     filterInput.addEventListener("input", function() {
       currentFilter = this.value;
-      const filterVal = currentFilter.toLowerCase().trim();
-      if (filterVal) {
-        // Buang data yang tidak cocok dari riwayat agar 30 slot riwayat khusus untuk data yang lolos filter
-        packetStreamHistory = packetStreamHistory.filter(b => matchBeacon(b, filterVal));
-      }
       renderTable();
     });
   }
@@ -1066,12 +1340,43 @@ document.addEventListener("DOMContentLoaded", function() {
         curNetBandwidth = (typeof msg.net_bandwidth === "number") ? msg.net_bandwidth : (parseFloat(msg.net_bandwidth) || 0.0);
         if (elNetBandwidth) elNetBandwidth.textContent = curNetBandwidth.toFixed(2);
       }
+      if (msg.total_bytes !== undefined) {
+        if (sessionStartBytes === null) sessionStartBytes = msg.total_bytes;
+        sessionTotalBytes = Math.max(0, msg.total_bytes - sessionStartBytes);
+        if (elSessionTotalBandwidth) elSessionTotalBandwidth.textContent = formatBytes(sessionTotalBytes);
+      }
       if (msg.beacons && Array.isArray(msg.beacons)) {
         for (let i = 0; i < msg.beacons.length; i++) insertBeacon(msg.beacons[i]);
-        renderTable();
+        if (activeTableTab !== "dropped") renderTable();
       } else if (msg.code && msg.tag) {
         insertBeacon(msg);
-        renderTable();
+        if (activeTableTab !== "dropped") renderTable();
+      }
+      if (msg.drop_summary) {
+        const ds = msg.drop_summary;
+        if (countDropTtl) countDropTtl.textContent = (ds.ttl || 0).toLocaleString();
+        if (countDropRssi) countDropRssi.textContent = (ds.rssi || 0).toLocaleString();
+        if (countDropUuid) countDropUuid.textContent = (ds.uuid || 0).toLocaleString();
+        if (countDropMajor) countDropMajor.textContent = (ds.major || 0).toLocaleString();
+        if (countDropQueue) countDropQueue.textContent = (ds.queue || 0).toLocaleString();
+        if (countDropMqtt) countDropMqtt.textContent = (ds.mqtt || 0).toLocaleString();
+
+        const sum = (ds.ttl || 0) + (ds.rssi || 0) + (ds.uuid || 0) + (ds.major || 0) + (ds.queue || 0) + (ds.mqtt || 0);
+        if (totalDroppedDisplay) totalDroppedDisplay.textContent = sum.toLocaleString();
+      }
+      if (msg.dropped_beacons && Array.isArray(msg.dropped_beacons)) {
+        for (let i = 0; i < msg.dropped_beacons.length; i++) {
+          const db = msg.dropped_beacons[i];
+          droppedBeaconsList.unshift({
+            code: db.code || "BLE",
+            tag: db.tag || "-",
+            rssi: db.rssi,
+            reason: db.reason,
+            time: new Date()
+          });
+          if (droppedBeaconsList.length > 50) droppedBeaconsList.pop();
+        }
+        if (activeTableTab === "dropped") renderTable();
       }
     },
     pushChartPoint: function(pt) {
@@ -1090,16 +1395,21 @@ document.addEventListener("DOMContentLoaded", function() {
     exportToCsv: exportToCsv,
     stopTest: stopTest,
     confirmLeavePage: confirmLeavePage,
+    switchTableTab: switchTab,
     getState: function() {
       return {
         isTesting: isTesting,
+        activeTableTab: activeTableTab,
         uniqueCount: uniqueBeaconsSet.size,
+        uniqueBeaconsMapCount: uniqueBeaconsMap.size,
         historyCount: packetStreamHistory.length,
+        droppedCount: droppedBeaconsList.length,
         fullSessionLogCount: fullSessionLog.length,
         chartDataPoints: chartData.length,
         currentFilter: currentFilter,
         sessionTotalRecv: sessionTotalRecv,
-        sessionTotalSent: sessionTotalSent
+        sessionTotalSent: sessionTotalSent,
+        sessionTotalBytes: sessionTotalBytes
       };
     }
   };

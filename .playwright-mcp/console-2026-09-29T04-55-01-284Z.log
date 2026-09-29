@@ -1,0 +1,4 @@
+[   57535ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:853
+[   57633ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://192.168.8.161/api/v1/auth/check:0
+[   60451ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://192.168.8.161/api/v1/auth/check:0
+[   75965ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://192.168.8.161/api/v1/auth/check:0

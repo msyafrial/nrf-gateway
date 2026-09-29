@@ -956,6 +956,56 @@ function startApCountdown(remainSec) {
   }, 1000);
 }
 
+let lastApTouchTime = 0;
+let apActivityListenersInitialized = false;
+
+function touchApActivity(forceSync = false) {
+  const isApHost = (location.hostname === "192.168.4.1" || location.hostname.startsWith("192.168.4."));
+  const banner = document.getElementById("apModeBanner");
+  const isVisible = banner && banner.style.display !== "none";
+  if (!isApHost && !isVisible) return;
+
+  const now = Date.now();
+  // Immediately reset local UI counter to 60s for immediate feedback if it has decremented
+  if (currentApRemainingSec < 55 || forceSync) {
+    currentApRemainingSec = 60;
+    updateApTimerDisplay();
+  }
+
+  // Throttle touch network request to once every 12 seconds
+  if (now - lastApTouchTime < 12000 && !forceSync) {
+    return;
+  }
+  lastApTouchTime = now;
+
+  fetch("/api/v1/system/config-ap/touch", { method: "POST" })
+    .then(res => res.json())
+    .then(data => {
+      if (data && data.ap_remain_sec !== undefined) {
+        currentApRemainingSec = data.ap_remain_sec;
+        updateApTimerDisplay();
+      }
+    })
+    .catch(() => {});
+}
+
+function initApUserActivityListeners() {
+  if (apActivityListenersInitialized) return;
+  apActivityListenersInitialized = true;
+
+  const events = ["mousedown", "keydown", "input", "touchstart", "scroll"];
+  events.forEach(evt => {
+    window.addEventListener(evt, () => touchApActivity(false), { passive: true });
+  });
+
+  // Periodic heartbeat every 20 seconds if user has page active and visible
+  setInterval(() => {
+    if (!document.hidden) {
+      touchApActivity(false);
+    }
+  }, 20000);
+}
+
 function initApModeWatcher() {
   let banner = document.getElementById("apModeBanner");
   const isApHost = (location.hostname === "192.168.4.1" || location.hostname.startsWith("192.168.4."));
@@ -966,6 +1016,7 @@ function initApModeWatcher() {
   }
 
   bindApStopButton();
+  initApUserActivityListeners();
 
   // Fetch status dari server untuk sinkronisasi SSID & sisa waktu countdown
   fetch("/api/v1/system/version")
@@ -1030,11 +1081,36 @@ function initApModeWatcher() {
     });
 }
 
+// =================================================================
+// GLOBAL SESSION KEEPALIVE & SLIDING COOKIE RENEWAL
+// =================================================================
+function initGlobalSessionKeepalive() {
+  const isLoginPage = (location.pathname.endsWith("login") || location.pathname.endsWith("login.html"));
+  if (isLoginPage) return;
+
+  // Heartbeat setiap 45 detik selama tab browser terbuka
+  setInterval(() => {
+    if (!document.hidden) {
+      fetch("/api/v1/auth/check", { cache: "no-store" })
+        .then(res => {
+          if (res.status === 401) {
+            console.warn("[SESSION] Sesi kedaluwarsa di server.");
+          }
+        })
+        .catch(() => {});
+    }
+  }, 45000);
+}
+
 // Inisialisasi aman: jalankan langsung jika DOM sudah siap, atau listen DOMContentLoaded
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initApModeWatcher);
+  document.addEventListener("DOMContentLoaded", () => {
+    initApModeWatcher();
+    initGlobalSessionKeepalive();
+  });
 } else {
   initApModeWatcher();
+  initGlobalSessionKeepalive();
 }
 
 // =================================================================

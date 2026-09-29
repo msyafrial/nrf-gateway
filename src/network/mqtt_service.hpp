@@ -20,6 +20,7 @@ public:
     static void getTopicRes(char* outBuf, size_t maxLen);
 
     static float getBandwidthKBps();
+    static uint64_t getTotalWireBytes();
     static size_t getBatchBufferLoad();
     static size_t getLastBatchPktCount();
     static const char* getLastError();

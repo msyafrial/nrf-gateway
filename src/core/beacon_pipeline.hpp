@@ -26,6 +26,12 @@ public:
     static size_t copyLiveBeacons(LiveBeaconItem* outItems, size_t maxItems);
     static void   flushLiveBeacons();
     
+    // Snapshot Dropped Beacons untuk WebSocket (Thread-Safe)
+    static void   recordDroppedBeacon(const char* code, const char* tag, int8_t rssi, DropReason reason);
+    static void   recordDroppedBeacon(const BeaconPacket& packet, DropReason reason);
+    static size_t copyDroppedBeacons(DroppedBeaconItem* outItems, size_t maxItems);
+    static void   flushDroppedBeacons();
+
     // Kalkulasi Metrik Throughput (Dipanggil tiap 1 detik oleh esp_timer)
     static void updateMetrics();
 
@@ -44,6 +50,14 @@ public:
     static uint32_t getTotalQueueDropped();
     static uint32_t getTotalDropped();
     static size_t   getQueueLoad();
+
+    // Getter Counter Alasan Drop
+    static uint32_t getDropTtlCount();
+    static uint32_t getDropRssiCount();
+    static uint32_t getDropUuidCount();
+    static uint32_t getDropMajorCount();
+    static uint32_t getDropQueueCount();
+    static uint32_t getDropMqttCount();
     
     // Handle queue untuk task consumer (MQTT publisher di Core 1)
     static QueueHandle_t getQueue();

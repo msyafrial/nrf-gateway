@@ -46,7 +46,24 @@ struct LiveBeaconItem {
     uint8_t batt;
 };
 
+enum class DropReason : uint8_t {
+    TTL_EXPIRED       = 0, // Kedaluwarsa di antrean (> data_ttl)
+    RSSI_OUT_OF_RANGE = 1, // RSSI di bawah ambang batas minimal (rssi_min)
+    UUID_MISMATCH     = 2, // UUID tidak cocok dengan konfigurasi filter
+    MAJOR_MISMATCH    = 3, // Major tidak masuk dalam rentang filter
+    QUEUE_OVERFLOW    = 4, // Antrean FreeRTOS penuh 300/300 (drop-oldest)
+    MQTT_FAIL         = 5  // Gagal publish ke MQTT broker
+};
+
+struct DroppedBeaconItem {
+    char       code[16];
+    char       tag[24];
+    int8_t     rssi;
+    DropReason reason;
+};
+
 constexpr size_t LIVE_FIFO_MAX = 50;
+constexpr size_t DROPPED_FIFO_MAX = 50;
 constexpr size_t BEACON_QUEUE_MAX = 300;
 constexpr size_t MQTT_BATCH_BUFFER_SIZE = 4096;
 

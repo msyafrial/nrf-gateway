@@ -31,7 +31,13 @@ static uint8_t s_batchBuffer[MQTT_BATCH_BUFFER_SIZE];
 static std::atomic<size_t> s_statBatchBufferLoad{0};
 static std::atomic<size_t> s_statLastBatchPktCount{0};
 static std::atomic<uint32_t> s_statWireBytesAcc{0};
+static std::atomic<uint64_t> s_statTotalWireBytes{0};
 static std::atomic<float> s_statBandwidthKBps{0.0f};
+
+static inline void recordWireBytes(uint32_t bytes) {
+    s_statWireBytesAcc += bytes;
+    s_statTotalWireBytes += bytes;
+}
 
 static void sanitizeToken(const char* input, char* output, size_t maxLen, bool forceLower = false) {
     if (!input || !output || maxLen == 0) return;
@@ -131,7 +137,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
 
             int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicStatus, birth_payload, strlen(birth_payload), 1, 1);
             if (msgId >= 0) {
-                s_statWireBytesAcc += calculateWireBytes(strlen(s_topicStatus), strlen(birth_payload), 1);
+                recordWireBytes(calculateWireBytes(strlen(s_topicStatus), strlen(birth_payload), 1));
             }
 
             // 2. Subscribe ke Topik Perintah (QoS 1)
@@ -238,7 +244,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                                                             (const char*)s_batchBuffer,
                                                             batchLen, 0, 0);
                         if (msgId >= 0) {
-                            s_statWireBytesAcc += calculateWireBytes(strlen(s_topicData), batchLen, 0);
+                            recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, 0));
                             Bsp::LedManager::triggerTrafficBlip();
                             Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
                         } else {
@@ -261,7 +267,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                                                             (const char*)s_batchBuffer,
                                                             batchLen, 0, 0);
                         if (msgId >= 0) {
-                            s_statWireBytesAcc += calculateWireBytes(strlen(s_topicData), batchLen, 0);
+                            recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, 0));
                             Bsp::LedManager::triggerTrafficBlip();
                             Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
                         } else {
@@ -286,7 +292,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                                                         (const char*)s_batchBuffer,
                                                         batchLen, 0, 0);
                     if (msgId >= 0) {
-                        s_statWireBytesAcc += calculateWireBytes(strlen(s_topicData), batchLen, 0);
+                        recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, 0));
                         Bsp::LedManager::triggerTrafficBlip();
                         Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
                     } else {
@@ -378,6 +384,10 @@ float MqttService::getBandwidthKBps() {
     uint32_t bytesSec = s_statWireBytesAcc.exchange(0);
     s_statBandwidthKBps = (float)bytesSec / 1024.0f;
     return s_statBandwidthKBps;
+}
+
+uint64_t MqttService::getTotalWireBytes() {
+    return s_statTotalWireBytes.load();
 }
 
 size_t MqttService::getBatchBufferLoad() { return s_statBatchBufferLoad; }
