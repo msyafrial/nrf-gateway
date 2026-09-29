@@ -1,0 +1,200 @@
+- generic [active] [ref=f23e1]:
+  - generic [ref=f23e2]:
+    - complementary [ref=f23e3]:
+      - generic [ref=f23e4]:
+        - img "IOTARU" [ref=f23e6]
+        - generic [ref=f23e7]: Administrator
+        - list [ref=f23e13]:
+          - listitem [ref=f23e14]:
+            - link "Overview" [ref=f23e15] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=f23e20]:
+            - link "Live Test Monitor" [ref=f23e21] [cursor=pointer]:
+              - /url: /test
+          - listitem [ref=f23e25]:
+            - link "Auth Settings" [ref=f23e26] [cursor=pointer]:
+              - /url: /auth
+          - listitem [ref=f23e31]:
+            - link "Device Settings" [ref=f23e32] [cursor=pointer]:
+              - /url: /settings
+          - listitem [ref=f23e37]:
+            - link "Update Firmware" [ref=f23e38] [cursor=pointer]:
+              - /url: /firmware
+          - listitem [ref=f23e43]:
+            - link "Reset Config" [ref=f23e44] [cursor=pointer]:
+              - /url: /reset
+          - listitem [ref=f23e51]:
+            - link "Reboot" [ref=f23e52] [cursor=pointer]:
+              - /url: /reboot
+          - listitem [ref=f23e56]:
+            - link "Logout" [ref=f23e57] [cursor=pointer]:
+              - /url: /logout
+    - main [ref=f23e62]:
+      - generic [ref=f23e63]:
+        - generic [ref=f23e64]: Live Test Monitor
+        - link "Keluar" [ref=f23e66] [cursor=pointer]:
+          - /url: /logout
+      - generic [ref=f23e71]:
+        - generic [ref=f23e72]:
+          - generic [ref=f23e73]:
+            - generic [ref=f23e74]:
+              - heading "Pengujian BLE Gateway Realtime" [level=2] [ref=f23e75]
+              - generic [ref=f23e76]: STANDBY / READY FOR STREAMING
+            - generic [ref=f23e79]:
+              - button "Start Test" [ref=f23e80] [cursor=pointer]
+              - button "Export CSV" [ref=f23e84] [cursor=pointer]
+          - generic [ref=f23e89]:
+            - generic [ref=f23e90]:
+              - generic [ref=f23e91]: "Elapsed Time:"
+              - generic [ref=f23e92]: 00:00:00
+            - generic [ref=f23e93]:
+              - generic [ref=f23e94]: "Packets Received:"
+              - generic [ref=f23e95]: "0"
+            - generic [ref=f23e96]:
+              - generic [ref=f23e97]: "Packets Sent:"
+              - generic [ref=f23e98]: "0"
+            - generic [ref=f23e99]:
+              - generic [ref=f23e100]: "Drop Rate:"
+              - generic [ref=f23e101]: 0.00%
+        - generic [ref=f23e102]:
+          - generic [ref=f23e103]:
+            - generic [ref=f23e104]: TAG READ SPEED
+            - generic [ref=f23e113]:
+              - generic [ref=f23e114]:
+                - generic [ref=f23e115]: "0"
+                - generic [ref=f23e116]: pkt/s
+              - generic [ref=f23e117]:
+                - generic [ref=f23e118]:
+                  - text: "Avg:"
+                  - strong [ref=f23e119]: "0.0"
+                  - text: pkt/s
+                - generic [ref=f23e120]:
+                  - text: "Max:"
+                  - strong [ref=f23e121]: "0"
+                  - text: pkt/s
+          - generic [ref=f23e122]:
+            - generic [ref=f23e123]: UNIQUE BEACONS
+            - generic [ref=f23e128]:
+              - generic [ref=f23e129]:
+                - generic [ref=f23e130]:
+                  - generic [ref=f23e131]: "0"
+                  - generic [ref=f23e132]: tag
+                - generic [ref=f23e133]: iBeacon
+              - generic [ref=f23e135]:
+                - text: "Sinyal:"
+                - strong [ref=f23e136]: "-"
+                - text: (Avg)
+          - generic [ref=f23e137]:
+            - generic [ref=f23e138]: MQTT PUBLISH SPEED
+            - generic [ref=f23e144]:
+              - generic [ref=f23e145]:
+                - generic [ref=f23e146]: "0"
+                - generic [ref=f23e147]: pkt/s
+              - generic [ref=f23e148]:
+                - generic [ref=f23e149]:
+                  - text: "Avg:"
+                  - strong [ref=f23e150]: "0.0"
+                  - text: pkt/s
+                - generic [ref=f23e151]:
+                  - text: "Max:"
+                  - strong [ref=f23e152]: "0"
+                  - text: pkt/s
+          - generic [ref=f23e153]:
+            - generic [ref=f23e154]: QUEUE FREERTOS
+            - generic [ref=f23e159]:
+              - generic [ref=f23e160]: 0 / 300
+              - generic [ref=f23e161]: 0% Load Safe
+          - generic [ref=f23e163]:
+            - generic [ref=f23e164]: ANTRIAN BUFFER BATCH
+            - generic [ref=f23e172]:
+              - generic [ref=f23e173]: 0 / 100
+              - generic [ref=f23e174]: 0% Buffer
+          - generic [ref=f23e176]:
+            - generic [ref=f23e177]: PKT PER BATCH
+            - generic [ref=f23e184]:
+              - generic [ref=f23e185]:
+                - generic [ref=f23e186]: "0"
+                - generic [ref=f23e187]: / 100 pkt
+              - generic [ref=f23e188]: Avg payload
+          - generic [ref=f23e190]:
+            - generic [ref=f23e191]: NET BANDWIDTH
+            - generic [ref=f23e199]:
+              - generic [ref=f23e200]:
+                - generic [ref=f23e201]: "0.00"
+                - generic [ref=f23e202]: KB/s
+                - generic [ref=f23e203]: Optimum
+              - generic [ref=f23e204]: LAN W5500 100M Full
+          - generic [ref=f23e210]:
+            - generic [ref=f23e211]: FREE HEAP RAM
+            - generic [ref=f23e218]:
+              - generic [ref=f23e219]: "0"
+              - generic [ref=f23e220]: KB
+              - generic [ref=f23e221]: 72% Left
+        - generic [ref=f23e224]:
+          - generic [ref=f23e225]:
+            - generic [ref=f23e226]:
+              - generic [ref=f23e227]: 10 Data Beacon Terupdate (Buffer FIFO)
+              - generic [ref=f23e228]: Menampilkan 10 beacon paling mutakhir yang masuk via UART 1 Mbps
+            - 'textbox "Filter Major, Minor, atau Format (mis: 1-2, 100)..." [ref=f23e233]'
+          - table [ref=f23e235]:
+            - rowgroup [ref=f23e236]:
+              - row [ref=f23e237]:
+                - columnheader "#" [ref=f23e238]
+                - columnheader "Format" [ref=f23e239]
+                - columnheader "Major-Minor" [ref=f23e240]
+                - columnheader "RSSI" [ref=f23e241]
+                - columnheader "Battery" [ref=f23e242]
+                - columnheader "Waktu" [ref=f23e243]
+            - rowgroup [ref=f23e244]:
+              - row [ref=f23e245]:
+                - cell [ref=f23e246]:
+                  - text: Tekan tombol
+                  - strong [ref=f23e247]: Start Test
+                  - text: di atas untuk memulai streaming live.
+        - generic [ref=f23e248]:
+          - generic [ref=f23e249]:
+            - generic [ref=f23e250]:
+              - generic [ref=f23e251]: Analisa Grafik Performa (60 Detik)
+              - generic [ref=f23e252]: Tren dinamis pembacaan tag, publish MQTT, antrian FreeRTOS, dan buffer batch
+            - generic [ref=f23e253]:
+              - generic [ref=f23e254]: Tag Speed
+              - generic [ref=f23e256]: MQTT Speed
+              - generic [ref=f23e258]: Queue RTOS
+              - generic [ref=f23e260]: Batch Buffer
+              - generic [ref=f23e262]: Pkt / Batch
+              - generic [ref=f23e264]: Net Bandwidth
+          - generic [ref=f23e266]:
+            - generic:
+              - generic: 60 seconds
+              - generic: "0"
+      - generic [ref=f23e268]: © 2026 IOTARU ESP32 Gateway (SG-10). Live Diagnostic Suite.
+  - generic [ref=f23e269]:
+    - generic [ref=f23e271]:
+      - generic [ref=f23e272]: Pengaturan Sistem
+      - generic [ref=f23e273]: Pilih menu konfigurasi gateway IOTARU
+    - generic [ref=f23e274]:
+      - link "Device Settings Filter UUID, RSSI threshold & batching MQTT" [ref=f23e275] [cursor=pointer]:
+        - /url: /settings
+        - generic [ref=f23e280]:
+          - generic [ref=f23e281]: Device Settings
+          - generic [ref=f23e282]: Filter UUID, RSSI threshold & batching MQTT
+      - link "Auth & Network Settings Kredensial login, Wi-Fi & LAN Ethernet" [ref=f23e283] [cursor=pointer]:
+        - /url: /auth
+        - generic [ref=f23e288]:
+          - generic [ref=f23e289]: Auth & Network Settings
+          - generic [ref=f23e290]: Kredensial login, Wi-Fi & LAN Ethernet
+      - button "Batal" [ref=f23e291] [cursor=pointer]
+  - generic [ref=f23e292]:
+    - generic [ref=f23e294]:
+      - generic [ref=f23e295]: Kontrol Daya Perangkat
+      - generic [ref=f23e296]: Pilih tindakan untuk mikrokontroler ESP32
+    - generic [ref=f23e297]:
+      - button "Reboot Perangkat Mulai ulang sistem modul ESP32" [ref=f23e298] [cursor=pointer]:
+        - generic [ref=f23e302]:
+          - generic [ref=f23e303]: Reboot Perangkat
+          - generic [ref=f23e304]: Mulai ulang sistem modul ESP32
+      - button "Reset Konfigurasi (Factory) Kembalikan semua setelan NVS ke default" [ref=f23e305] [cursor=pointer]:
+        - generic [ref=f23e312]:
+          - generic [ref=f23e313]: Reset Konfigurasi (Factory)
+          - generic [ref=f23e314]: Kembalikan semua setelan NVS ke default
+      - button "Batal" [ref=f23e315] [cursor=pointer]

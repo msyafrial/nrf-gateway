@@ -1,0 +1,137 @@
+- generic [active] [ref=f7e1]:
+  - generic [ref=f7e2]:
+    - complementary [ref=f7e3]:
+      - generic [ref=f7e4]:
+        - img "IOTARU" [ref=f7e6]
+        - generic [ref=f7e7]: Administrator
+        - list [ref=f7e13]:
+          - listitem [ref=f7e14]:
+            - link "Overview" [ref=f7e15] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=f7e20]:
+            - link "Live Test Monitor" [ref=f7e21] [cursor=pointer]:
+              - /url: /test
+          - listitem [ref=f7e25]:
+            - link "Auth Settings" [ref=f7e26] [cursor=pointer]:
+              - /url: /auth
+          - listitem [ref=f7e31]:
+            - link "Device Settings" [ref=f7e32] [cursor=pointer]:
+              - /url: /settings
+          - listitem [ref=f7e37]:
+            - link "Update Firmware" [ref=f7e38] [cursor=pointer]:
+              - /url: /firmware
+          - listitem [ref=f7e43]:
+            - link "Reset Config" [ref=f7e44] [cursor=pointer]:
+              - /url: /reset
+          - listitem [ref=f7e51]:
+            - link "Reboot" [ref=f7e52] [cursor=pointer]:
+              - /url: /reboot
+          - listitem [ref=f7e56]:
+            - link "Logout" [ref=f7e57] [cursor=pointer]:
+              - /url: /logout
+    - main [ref=f7e62]:
+      - generic [ref=f7e63]:
+        - generic [ref=f7e64]: Live Test Monitor
+        - link "Keluar" [ref=f7e66] [cursor=pointer]:
+          - /url: /logout
+      - generic [ref=f7e71]:
+        - generic [ref=f7e72]:
+          - generic [ref=f7e77]:
+            - generic [ref=f7e78]: Pengujian BLE Gateway Realtime
+            - generic [ref=f7e79]: Tekan Start untuk memulai streaming telemetri & inspeksi 10 beacon
+          - generic [ref=f7e80]:
+            - generic [ref=f7e81]: STREAMING LIVE
+            - button "Stop Test" [ref=f7e235] [cursor=pointer]
+        - generic [ref=f7e86]:
+          - generic [ref=f7e87]:
+            - generic [ref=f7e88]: Tag Read Speed
+            - generic [ref=f7e92]: 0 pkt/s
+          - generic [ref=f7e93]:
+            - generic [ref=f7e94]: Unique Beacons
+            - generic [ref=f7e101]: 0 tags
+          - generic [ref=f7e102]:
+            - generic [ref=f7e103]: MQTT Publish Speed
+            - generic [ref=f7e107]: 0 batch/s
+          - generic [ref=f7e108]:
+            - generic [ref=f7e109]: Queue FreeRTOS
+            - generic [ref=f7e113]: 0 / 300
+          - generic [ref=f7e114]:
+            - generic [ref=f7e115]: Antrian Buffer Batch
+            - generic [ref=f7e120]: 0 / 100
+          - generic [ref=f7e121]:
+            - generic [ref=f7e122]: Pkt per Batch
+            - generic [ref=f7e128]: 0 pkt
+          - generic [ref=f7e129]:
+            - generic [ref=f7e130]: Net Bandwidth
+            - generic [ref=f7e134]: 0.00 KB/s
+          - generic [ref=f7e135]:
+            - generic [ref=f7e136]: Free Heap RAM
+            - generic [ref=f7e140]: 0 KB
+        - generic [ref=f7e141]:
+          - generic [ref=f7e142]:
+            - generic [ref=f7e143]:
+              - generic [ref=f7e144]: 10 Data Beacon Terupdate (Buffer FIFO)
+              - generic [ref=f7e145]: Menampilkan 10 beacon paling mutakhir yang masuk via UART 1 Mbps
+            - 'textbox "Filter Major, Minor, atau Format (mis: 1-2, 100)..." [ref=f7e150]'
+          - table [ref=f7e152]:
+            - rowgroup [ref=f7e153]:
+              - row [ref=f7e154]:
+                - columnheader "#" [ref=f7e155]
+                - columnheader "Format" [ref=f7e156]
+                - columnheader "Major-Minor" [ref=f7e157]
+                - columnheader "RSSI" [ref=f7e158]
+                - columnheader "Battery" [ref=f7e159]
+                - columnheader "Waktu" [ref=f7e160]
+            - rowgroup [ref=f7e161]:
+              - row [ref=f7e162]:
+                - cell [ref=f7e163]:
+                  - text: Tekan tombol
+                  - strong [ref=f7e164]: Start Test
+                  - text: di atas untuk memulai streaming live.
+        - generic [ref=f7e165]:
+          - generic [ref=f7e166]:
+            - generic [ref=f7e167]:
+              - generic [ref=f7e168]: Analisa Grafik Performa (60 Detik)
+              - generic [ref=f7e169]: Tren dinamis pembacaan tag, publish MQTT, antrian FreeRTOS, dan buffer batch
+            - generic [ref=f7e170]:
+              - generic [ref=f7e171]: Tag Speed
+              - generic [ref=f7e173]: MQTT Speed
+              - generic [ref=f7e175]: Queue RTOS
+              - generic [ref=f7e177]: Batch Buffer
+              - generic [ref=f7e179]: Pkt / Batch
+              - generic [ref=f7e181]: Net Bandwidth
+          - generic [ref=f7e183]:
+            - generic:
+              - generic: 60 seconds
+              - generic: "0"
+      - generic [ref=f7e185]: © 2026 IOTARU ESP32 Gateway (SG-10). Live Diagnostic Suite.
+  - generic [ref=f7e186]:
+    - generic [ref=f7e188]:
+      - generic [ref=f7e189]: Pengaturan Sistem
+      - generic [ref=f7e190]: Pilih menu konfigurasi gateway IOTARU
+    - generic [ref=f7e191]:
+      - link "Device Settings Filter UUID, RSSI threshold & batching MQTT" [ref=f7e192] [cursor=pointer]:
+        - /url: /settings
+        - generic [ref=f7e197]:
+          - generic [ref=f7e198]: Device Settings
+          - generic [ref=f7e199]: Filter UUID, RSSI threshold & batching MQTT
+      - link "Auth & Network Settings Kredensial login, Wi-Fi & LAN Ethernet" [ref=f7e200] [cursor=pointer]:
+        - /url: /auth
+        - generic [ref=f7e205]:
+          - generic [ref=f7e206]: Auth & Network Settings
+          - generic [ref=f7e207]: Kredensial login, Wi-Fi & LAN Ethernet
+      - button "Batal" [ref=f7e208] [cursor=pointer]
+  - generic [ref=f7e209]:
+    - generic [ref=f7e211]:
+      - generic [ref=f7e212]: Kontrol Daya Perangkat
+      - generic [ref=f7e213]: Pilih tindakan untuk mikrokontroler ESP32
+    - generic [ref=f7e214]:
+      - button "Reboot Perangkat Mulai ulang sistem modul ESP32" [ref=f7e215] [cursor=pointer]:
+        - generic [ref=f7e219]:
+          - generic [ref=f7e220]: Reboot Perangkat
+          - generic [ref=f7e221]: Mulai ulang sistem modul ESP32
+      - button "Reset Konfigurasi (Factory) Kembalikan semua setelan NVS ke default" [ref=f7e222] [cursor=pointer]:
+        - generic [ref=f7e229]:
+          - generic [ref=f7e230]: Reset Konfigurasi (Factory)
+          - generic [ref=f7e231]: Kembalikan semua setelan NVS ke default
+      - button "Batal" [ref=f7e232] [cursor=pointer]

@@ -32,7 +32,15 @@ static void supervisorTask(void *pvParameters) {
         // 2. Update throughput metrics
         Core::BeaconPipeline::updateMetrics();
 
-        // 3. Periodic Diagnostic Log (tiap 5 detik)
+        // 3. Auto-sync LED state to physical network & MQTT broker reality
+        Bsp::LedManager::autoSync(
+            Network::NetworkManager::isLinkUp(),
+            Network::NetworkManager::isConnected(),
+            Network::MqttService::isConnected(),
+            Network::NetworkManager::isApActive()
+        );
+
+        // 4. Periodic Diagnostic Log (tiap 5 detik)
         if (++loopCount % 5 == 0) {
             char activeIp[16] = {0};
             Network::NetworkManager::getActiveIp(activeIp, sizeof(activeIp));
@@ -53,8 +61,9 @@ extern "C" void app_main(void) {
     ESP_LOGI(TAG, ">>> IOTARU SG-10 ESP32 Gateway (Native ESP-IDF) <<<");
     ESP_LOGI(TAG, "==================================================");
 
-    // 0. Early Network Driver Protection
+    // 0. Early Network Driver Protection & LED WS2812B Hardware Init
     Network::NetworkManager::earlyInit(&s_ethW5500);
+    Bsp::LedManager::init(Pins::LED_WS2812);
 
     // 1. Cek tombol recovery fisik (Zero Boot Init - 100% Synchronous Blocking)
     Bsp::BootAction bootAction = Bsp::ButtonManager::checkBootRecovery(Pins::BUTTON_RESET);
@@ -68,11 +77,12 @@ extern "C" void app_main(void) {
         esp_restart();
     }
 
-    // 2. Inisialisasi LED WS2812B
-    Bsp::LedManager::init(Pins::LED_WS2812);
     if (enterConfigModeOnBoot) {
         Bsp::LedManager::setConfigMode(true);
     }
+
+    // Mulai task FreeRTOS WS2812B setelah tombol boot recovery selesai dievaluasi
+    Bsp::LedManager::startTask();
 
     // 3. Inisialisasi NVS Flash & Konfigurasi
     ESP_ERROR_CHECK(Core::ConfigStore::initNvs());
@@ -80,10 +90,10 @@ extern "C" void app_main(void) {
     Core::ConfigStore::initNvsConfiguration();
     Core::ConfigStore::loadConfig();
 
-    char devId[32], modId[32];
-    Core::ConfigStore::getMqttClientId(devId, sizeof(devId));
-    Core::ConfigStore::getModuleId(modId, sizeof(modId));
-    ESP_LOGI(TAG, "Gateway Identity: Module='%s', ClientID='%s'", modId, devId);
+    char device_id[32], module_id[32];
+    Core::ConfigStore::getDeviceId(device_id, sizeof(device_id));
+    Core::ConfigStore::getModuleId(module_id, sizeof(module_id));
+    ESP_LOGI(TAG, "Gateway Identity: Module='%s', DeviceID='%s'", module_id, device_id);
 
     // 4. Inisialisasi Core Data Pipeline (Antrean & Buffer)
     Core::BeaconPipeline::init();

@@ -11,6 +11,7 @@ static const char *TAG = "BOOT_RECOVERY";
 namespace Iotaru::Bsp {
 
 BootAction ButtonManager::checkBootRecovery(int buttonPin) {
+    gpio_reset_pin((gpio_num_t)buttonPin);
     gpio_set_direction((gpio_num_t)buttonPin, GPIO_MODE_INPUT);
     vTaskDelay(pdMS_TO_TICKS(50)); // Stabilisasi pull-up eksternal
 
@@ -25,8 +26,12 @@ BootAction ButtonManager::checkBootRecovery(int buttonPin) {
     }
 
     if (!buttonPressed) {
+        ESP_LOGI(TAG, "Pin Recovery %d HIGH (Pull-up normal = %d). Melanjutkan boot...", 
+                 buttonPin, gpio_get_level((gpio_num_t)buttonPin));
         return BootAction::BOOT_NORMAL;
     }
+
+    ESP_LOGW(TAG, "Pin Recovery %d terbaca LOW (0V)! Tombol terdeteksi ditekan.", buttonPin);
 
     ESP_LOGW(TAG, "=======================================================");
     ESP_LOGW(TAG, "Tombol recovery terdeteksi ditekan saat power-on!");
@@ -58,8 +63,10 @@ BootAction ButtonManager::checkBootRecovery(int buttonPin) {
         if (elapsedSec > lastReportSec) {
             lastReportSec = elapsedSec;
             if (elapsedSec < 5) {
+                LedManager::writeRawPixels(0xFF0000, 0xFF0000);
                 ESP_LOGI(TAG, "Menahan tombol: %lu / 5 detik [MERAH SOLID] (Lepas = Batal)...", (unsigned long)elapsedSec);
             } else if (elapsedSec < 10) {
+                LedManager::writeRawPixels(0x0000FF, 0x0000FF);
                 ESP_LOGI(TAG, "Menahan tombol: %lu / 10 detik [BIRU SOLID] (Lepas = Mode Config, Tahan = Reset Total)...", (unsigned long)elapsedSec);
             }
         }

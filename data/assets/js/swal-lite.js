@@ -11,26 +11,26 @@
     const style = document.createElement("style");
     style.id = styleId;
     style.textContent = `
-      .swal-lite-overlay{position:fixed;inset:0;background:rgba(15,23,42,.6);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;opacity:0;transition:opacity .2s ease}
+      .swal-lite-overlay{position:fixed;inset:0;background:rgba(2,6,23,0.75);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;opacity:0;transition:opacity .2s cubic-bezier(0.16,1,0.3,1)}
       .swal-lite-overlay.show{opacity:1}
-      .swal-lite-box{background:#fff;border-radius:16px;padding:24px 20px;max-width:380px;width:100%;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,.2);transform:scale(.92);transition:transform .2s ease;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+      .swal-lite-box{background:linear-gradient(135deg,rgba(15,23,42,0.96) 0%,rgba(30,41,59,0.92) 100%);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px 20px;max-width:400px;width:100%;text-align:center;box-shadow:0 20px 45px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1);transform:scale(.92);transition:transform .2s cubic-bezier(0.16,1,0.3,1);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
       .swal-lite-overlay.show .swal-lite-box{transform:scale(1)}
       .swal-lite-icon{width:56px;height:56px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;border-radius:50%}
       .swal-lite-icon svg{width:32px;height:32px}
-      .swal-lite-icon.success{background:#ecfdf5;color:#10b981}
-      .swal-lite-icon.error{background:#fef2f2;color:#ef4444}
-      .swal-lite-icon.warning{background:#fffbeb;color:#f59e0b}
-      .swal-lite-icon.info{background:#f0f9ff;color:#0284c7}
-      .swal-lite-title{font-size:1.25rem;font-weight:700;color:#1e293b;margin-bottom:8px;line-height:1.3}
-      .swal-lite-text{font-size:.92rem;color:#64748b;line-height:1.5;margin-bottom:20px}
-      .swal-lite-actions{display:flex;gap:10px;justify-content:center}
-      .swal-lite-btn{flex:1;min-height:42px;border:none;border-radius:10px;font-size:.92rem;font-weight:600;cursor:pointer;transition:all .15s;padding:8px 16px;font-family:inherit}
+      .swal-lite-icon.success{background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3)}
+      .swal-lite-icon.error{background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3)}
+      .swal-lite-icon.warning{background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3)}
+      .swal-lite-icon.info{background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.3)}
+      .swal-lite-title{font-size:1.15rem;font-weight:700;color:#f8fafc;margin-bottom:10px;line-height:1.3}
+      .swal-lite-text{font-size:.9rem;color:#94a3b8;line-height:1.55;margin-bottom:22px}
+      .swal-lite-actions{display:flex;gap:12px;justify-content:center}
+      .swal-lite-btn{flex:1;min-height:42px;border:none;border-radius:10px;font-size:.9rem;font-weight:600;cursor:pointer;transition:all .15s ease;padding:9px 16px;font-family:inherit;display:inline-flex;align-items:center;justify-content:center}
       .swal-lite-btn:active{transform:scale(.97)}
       .swal-lite-confirm{background:#2ca8ff;color:#fff}
       .swal-lite-confirm:hover{background:#1b94e8}
-      .swal-lite-cancel{background:#e2e8f0;color:#475569}
-      .swal-lite-cancel:hover{background:#cbd5e1}
-      .swal-lite-spinner{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#2ca8ff;border-radius:50%;animation:swal-spin .7s linear infinite;margin:8px auto 16px}
+      .swal-lite-cancel{background:rgba(51,65,85,0.7);color:#cbd5e1;border:1px solid rgba(255,255,255,0.08)}
+      .swal-lite-cancel:hover{background:rgba(71,85,105,0.9);color:#f8fafc}
+      .swal-lite-spinner{width:36px;height:36px;border:3px solid rgba(255,255,255,0.1);border-top-color:#38bdf8;border-radius:50%;animation:swal-spin .7s linear infinite;margin:8px auto 16px}
       @keyframes swal-spin{to{transform:rotate(360deg)}}
     `;
     document.head.appendChild(style);

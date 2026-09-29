@@ -1,0 +1,2 @@
+[     362ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://192.168.8.161/assets/js/app.js:0
+[ 3071448ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_TIMED_OUT @ http://192.168.8.161/api/v1/system/version:0

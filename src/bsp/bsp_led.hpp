@@ -8,6 +8,7 @@ namespace Iotaru::Bsp {
 class LedManager {
 public:
     static void init(int pin = Pins::LED_WS2812, uint8_t brightness = 40);
+    static void startTask();
     
     // Kontrol Status LED
     static void setSysState(SysLedState state);
@@ -25,7 +26,7 @@ public:
     
     // Polling animasi 20ms (dipanggil otomatis oleh FreeRTOS task)
     static void tick();
-    static void autoSync(bool netConnected, bool mqttConnected, bool isSoftAp);
+    static void autoSync(bool linkUp, bool ipAcquired, bool mqttConnected, bool isSoftAp);
     
     // Direct synchronous show untuk fase Zero-Boot Recovery (tanpa FreeRTOS task)
     static void writeRawPixels(uint32_t color0, uint32_t color1, uint8_t brightness = 40);

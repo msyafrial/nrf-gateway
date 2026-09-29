@@ -18,19 +18,79 @@
 #include <cstring>
 #include <cstdio>
 #include <atomic>
+#include <esp_timer.h>
 
 static const char *TAG = "WebServer";
+
+static inline uint32_t get_millis() {
+    return static_cast<uint32_t>(esp_timer_get_time() / 1000);
+}
 
 namespace Iotaru::Web::Server {
 
 static httpd_handle_t s_server = nullptr;
 static bool s_fs_mounted = false;
-static std::atomic<int> s_active_ws_subscribers{0};
+
+struct WsClientSlot {
+    int fd;
+    bool is_subscribed;
+    uint32_t last_activity_ms;
+    UserRole role;
+    char token[Session::TOKEN_LEN + 1];
+};
+
 static constexpr size_t MAX_WS_CLIENTS = 4;
-static int s_ws_fds[MAX_WS_CLIENTS] = {-1, -1, -1, -1};
+static WsClientSlot s_ws_slots[MAX_WS_CLIENTS];
 static SemaphoreHandle_t s_ws_mutex = nullptr;
 
 static TaskHandle_t s_telemetry_task = nullptr;
+
+static void init_ws_slots() {
+    for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
+        s_ws_slots[i].fd = -1;
+        s_ws_slots[i].is_subscribed = false;
+        s_ws_slots[i].last_activity_ms = 0;
+        s_ws_slots[i].role = UserRole::NONE;
+        s_ws_slots[i].token[0] = '\0';
+    }
+}
+
+static bool allocate_ws_slot(int fd, UserRole role, const char *token = nullptr) {
+    if (!s_ws_mutex) return false;
+    xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
+    bool ok = false;
+    for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
+        if (s_ws_slots[i].fd == -1 || s_ws_slots[i].fd == fd) {
+            s_ws_slots[i].fd = fd;
+            s_ws_slots[i].is_subscribed = false;
+            s_ws_slots[i].last_activity_ms = get_millis();
+            s_ws_slots[i].role = role;
+            if (token && token[0] != '\0') {
+                strlcpy(s_ws_slots[i].token, token, sizeof(s_ws_slots[i].token));
+            }
+            ok = true;
+            break;
+        }
+    }
+    xSemaphoreGive(s_ws_mutex);
+    return ok;
+}
+
+static void release_ws_slot(int fd) {
+    if (!s_ws_mutex) return;
+    xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
+    for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
+        if (s_ws_slots[i].fd == fd) {
+            s_ws_slots[i].fd = -1;
+            s_ws_slots[i].is_subscribed = false;
+            s_ws_slots[i].last_activity_ms = 0;
+            s_ws_slots[i].role = UserRole::NONE;
+            s_ws_slots[i].token[0] = '\0';
+            break;
+        }
+    }
+    xSemaphoreGive(s_ws_mutex);
+}
 
 bool is_filesystem_ready() {
     if (!s_fs_mounted) return false;
@@ -43,40 +103,25 @@ httpd_handle_t get_handle() {
 }
 
 int get_active_ws_subscribers() {
-    return s_active_ws_subscribers.load();
+    if (!s_ws_mutex) return 0;
+    int count = 0;
+    xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
+    for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
+        if (s_ws_slots[i].fd != -1 && s_ws_slots[i].is_subscribed) {
+            count++;
+        }
+    }
+    xSemaphoreGive(s_ws_mutex);
+    return count;
 }
 
 void set_active_ws_subscribers(int count) {
-    s_active_ws_subscribers.store(count < 0 ? 0 : count);
+    (void)count; // Handled per client session slot
 }
 
 // -------------------------------------------------------------
-// WebSocket Helpers
+// WebSocket Broadcasting (RFC 6455 & Anti-Backpressure)
 // -------------------------------------------------------------
-static void add_ws_fd(int fd) {
-    if (!s_ws_mutex) return;
-    xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
-    for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
-        if (s_ws_fds[i] == -1 || s_ws_fds[i] == fd) {
-            s_ws_fds[i] = fd;
-            break;
-        }
-    }
-    xSemaphoreGive(s_ws_mutex);
-}
-
-static void remove_ws_fd(int fd) {
-    if (!s_ws_mutex) return;
-    xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
-    for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
-        if (s_ws_fds[i] == fd) {
-            s_ws_fds[i] = -1;
-            break;
-        }
-    }
-    xSemaphoreGive(s_ws_mutex);
-}
-
 void broadcast_ws_text(const char *payload) {
     if (!s_server || !payload || !s_ws_mutex) return;
 
@@ -84,72 +129,160 @@ void broadcast_ws_text(const char *payload) {
     ws_pkt.payload = (uint8_t *)payload;
     ws_pkt.len = strlen(payload);
     ws_pkt.type = HTTPD_WS_TYPE_TEXT;
+    ws_pkt.final = true; // Kepatuhan penuh RFC 6455
 
     xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
     for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
-        int fd = s_ws_fds[i];
-        if (fd != -1) {
+        if (s_ws_slots[i].fd != -1 && s_ws_slots[i].is_subscribed) {
+            int fd = s_ws_slots[i].fd;
             esp_err_t ret = httpd_ws_send_frame_async(s_server, fd, &ws_pkt);
             if (ret != ESP_OK) {
-                ESP_LOGD(TAG, "Gagal kirim frame WS ke fd %d, menutup...", fd);
-                s_ws_fds[i] = -1;
+                // Hanya putuskan jika koneksi socket memang sudah hangus/ditutup
+                if (ret == ESP_ERR_INVALID_STATE || ret == ESP_FAIL || ret == ESP_ERR_NOT_FOUND) {
+                    ESP_LOGD(TAG, "Koneksi WS fd %d terputus (ret=0x%x), membersihkan slot...", fd, ret);
+                    s_ws_slots[i].fd = -1;
+                    s_ws_slots[i].is_subscribed = false;
+                    s_ws_slots[i].role = UserRole::NONE;
+                }
             }
         }
     }
     xSemaphoreGive(s_ws_mutex);
 }
 
+// -------------------------------------------------------------
+// Pre-Handshake Verification (Otentikasi Aman RFC 6455)
+// -------------------------------------------------------------
+#ifdef CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT
+static esp_err_t ws_pre_handshake_cb(httpd_req_t *req) {
+    char token[Session::TOKEN_LEN + 1] = {0};
+    UserRole role = Session::validate(req, token, sizeof(token));
+    if (role == UserRole::NONE) {
+        ESP_LOGW(TAG, "WS Handshake ditolak: Tidak terotentikasi (URI: %s)", req->uri ? req->uri : "NULL");
+        return ESP_FAIL;
+    }
+    int fd = httpd_req_to_sockfd(req);
+    if (!allocate_ws_slot(fd, role, token)) {
+        ESP_LOGW(TAG, "WS Handshake ditolak: Slot klien penuh (fd %d)", fd);
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "WS Handshake disetujui (fd %d, role: %s)", fd,
+             role == UserRole::ADMIN ? "admin" : "teknisi");
+    return ESP_OK;
+}
+#endif
+
+// -------------------------------------------------------------
+// WebSocket Request & Frame Handler (Two-Step Ingestion)
+// Dipanggil oleh ESP-IDF saat paket/frame WebSocket masuk
+// -------------------------------------------------------------
 static esp_err_t ws_handler(httpd_req_t *req) {
     int fd = httpd_req_to_sockfd(req);
 
-    if (req->method == HTTP_GET) {
-        // Handshake validation
-        UserRole role = Session::validate(req);
-        if (role == UserRole::NONE) {
-            ESP_LOGW(TAG, "Handshake WS ditolak: Tidak terotentikasi (fd %d)", fd);
-            return ESP_FAIL;
-        }
-        ESP_LOGI(TAG, "Handshake WS berhasil (fd %d)", fd);
-        add_ws_fd(fd);
-        return ESP_OK;
-    }
-
-    uint8_t buf[256];
+    // 1. Tahap 1: Dapatkan metadata & ukuran frame yang masuk (max_len = 0)
     httpd_ws_frame_t ws_pkt = {};
-    ws_pkt.payload = buf;
     ws_pkt.type = HTTPD_WS_TYPE_TEXT;
-
-    esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, sizeof(buf) - 1);
+    esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
     if (ret != ESP_OK) {
-        remove_ws_fd(fd);
+        ESP_LOGW(TAG, "Gagal membaca header frame WS (fd %d, ret=0x%x)", fd, ret);
+        release_ws_slot(fd);
         return ret;
     }
 
-    buf[ws_pkt.len] = '\0';
-    const char *msg = reinterpret_cast<const char *>(buf);
+    // 2. Tangani frame kontrol: PING -> balas PONG
+    if (ws_pkt.type == HTTPD_WS_TYPE_PING) {
+        httpd_ws_frame_t pong_pkt = {};
+        pong_pkt.type = HTTPD_WS_TYPE_PONG;
+        pong_pkt.final = true;
+        return httpd_ws_send_frame_async(req->handle, fd, &pong_pkt);
+    }
 
-    if (strstr(msg, "\"action\":\"start\"") || strstr(msg, "\"action\": \"start\"")) {
-        s_active_ws_subscribers++;
-        ESP_LOGI(TAG, "WS Test Subscriber bertambah: %d", s_active_ws_subscribers.load());
-    } else if (strstr(msg, "\"action\":\"stop\"") || strstr(msg, "\"action\": \"stop\"")) {
-        int cur = s_active_ws_subscribers.load();
-        if (cur > 0) s_active_ws_subscribers--;
-        ESP_LOGI(TAG, "WS Test Subscriber berkurang: %d", s_active_ws_subscribers.load());
+    // 3. Tangani frame kontrol: CLOSE
+    if (ws_pkt.type == HTTPD_WS_TYPE_CLOSE) {
+        ESP_LOGI(TAG, "Client menutup koneksi WS (CLOSE frame fd %d)", fd);
+        release_ws_slot(fd);
+        return ESP_OK;
+    }
+
+    // 4. Tahap 2: Baca payload data teks jika ada
+    if (ws_pkt.type == HTTPD_WS_TYPE_TEXT && ws_pkt.len > 0) {
+        char stack_buf[256];
+        char *buf = stack_buf;
+        if (ws_pkt.len >= sizeof(stack_buf)) {
+            buf = (char *)malloc(ws_pkt.len + 1);
+            if (!buf) {
+                ESP_LOGE(TAG, "OOM alokasi WS payload (%zu bytes)", ws_pkt.len);
+                return ESP_ERR_NO_MEM;
+            }
+        }
+
+        ws_pkt.payload = (uint8_t *)buf;
+        ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Gagal membaca payload frame WS (fd %d, ret=0x%x)", fd, ret);
+            if (buf != stack_buf) free(buf);
+            release_ws_slot(fd);
+            return ret;
+        }
+        buf[ws_pkt.len] = '\0';
+
+        // Pastikan slot teralokasi (fallback jika pre-handshake cb tidak aktif di menuconfig)
+        allocate_ws_slot(fd, UserRole::ADMIN);
+
+        xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
+        for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
+            if (s_ws_slots[i].fd == fd) {
+                s_ws_slots[i].last_activity_ms = get_millis();
+                if (strstr(buf, "\"action\":\"start\"") || strstr(buf, "\"action\": \"start\"") || strstr(buf, "start")) {
+                    s_ws_slots[i].is_subscribed = true;
+                    Session::touch(s_ws_slots[i].token);
+                    Core::BeaconPipeline::flushLiveBeacons();
+                    ESP_LOGI(TAG, "WS Test Subscriber AKTIF & Live Buffer Di-flush (fd %d)", fd);
+                } else if (strstr(buf, "\"action\":\"stop\"") || strstr(buf, "\"action\": \"stop\"") || strstr(buf, "stop")) {
+                    s_ws_slots[i].is_subscribed = false;
+                    ESP_LOGI(TAG, "WS Test Subscriber STOP (fd %d)", fd);
+                }
+                break;
+            }
+        }
+        xSemaphoreGive(s_ws_mutex);
+
+        if (buf != stack_buf) {
+            free(buf);
+        }
     }
 
     return ESP_OK;
 }
 
 // -------------------------------------------------------------
-// Live Telemetry Broadcast
+// Live Telemetry Broadcast (Adaptive & Zero-DRAM Leak)
 // -------------------------------------------------------------
 void broadcast_live_ws_stats() {
     if (Ota::is_in_progress()) return; // Total silence during OTA flashing
-    if (s_active_ws_subscribers.load() <= 0) return;
+
+    // Periksa apakah ada minimal 1 subscriber aktif sebelum alokasi JSON
+    bool has_subscribers = false;
+    if (s_ws_mutex && xSemaphoreTake(s_ws_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
+            if (s_ws_slots[i].fd != -1 && s_ws_slots[i].is_subscribed) {
+                has_subscribers = true;
+                // Auto-keepalive session saat "Start Test" berjalan!
+                Session::touch(s_ws_slots[i].token);
+            }
+        }
+        xSemaphoreGive(s_ws_mutex);
+    }
+
+    // Efisiensi Industri: Jika tidak ada yang menonton, hindari alokasi memori & CPU
+    if (!has_subscribers) return;
 
     cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "beacons_read", Core::BeaconPipeline::getTotalBeaconsRead());
     cJSON_AddNumberToObject(root, "read_speed", Core::BeaconPipeline::getReadSpeed());
     cJSON_AddNumberToObject(root, "mqtt_speed", Core::BeaconPipeline::getMqttSpeed());
+    cJSON_AddNumberToObject(root, "mqtt_published", Core::BeaconPipeline::getTotalMqttPublished());
+    cJSON_AddNumberToObject(root, "dropped_count", Core::BeaconPipeline::getTotalDropped());
     cJSON_AddNumberToObject(root, "free_heap", esp_get_free_heap_size() / 1024);
     cJSON_AddNumberToObject(root, "queue_load", Core::BeaconPipeline::getQueueLoad());
     cJSON_AddNumberToObject(root, "batch_load", Network::MqttService::getBatchBufferLoad());
@@ -186,9 +319,9 @@ void broadcast_live_ws_stats() {
 }
 
 static void telemetry_task_func(void *arg) {
-    ESP_LOGI(TAG, "Web Telemetry broadcast task aktif (100ms interval)");
+    ESP_LOGI(TAG, "Web Telemetry broadcast task aktif (250ms adaptive interval)");
     while (true) {
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(250));
         Ota::check_watchdog();
         broadcast_live_ws_stats();
     }
@@ -224,11 +357,12 @@ bool init() {
     if (!s_ws_mutex) {
         s_ws_mutex = xSemaphoreCreateMutex();
     }
+    init_ws_slots();
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.ctrl_port = 32768;
-    config.max_open_sockets = 7;
+    config.max_open_sockets = 16; // Support 3 laptops (parallel keep-alive pool) + WS clients
     config.max_uri_handlers = 32;
     config.stack_size = 8192;
     config.task_priority = 5;
@@ -242,12 +376,15 @@ bool init() {
         return false;
     }
 
-    // Register WebSocket route /ws (zero-initialized struct)
+    // Register WebSocket route /ws* (wildcard matches both /ws and /ws?token=...)
     httpd_uri_t uri_ws = {};
-    uri_ws.uri = "/ws";
+    uri_ws.uri = "/ws*";
     uri_ws.method = HTTP_GET;
     uri_ws.handler = ws_handler;
     uri_ws.is_websocket = true;
+#ifdef CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT
+    uri_ws.ws_pre_handshake_cb = ws_pre_handshake_cb;
+#endif
     httpd_register_uri_handler(s_server, &uri_ws);
 
     // Register all HTTP & REST routes

@@ -1,4 +1,5 @@
 #include "EthernetW5500.hpp"
+#include "bsp_led.hpp"
 #include "esp_eth_mac_w5500.h"
 #include "esp_eth_phy_w5500.h"
 #include "esp_eth_netif_glue.h"
@@ -51,6 +52,7 @@ void EthernetW5500::onEthEvent(void* arg, esp_event_base_t base, int32_t id, voi
     switch (id) {
         case ETHERNET_EVENT_CONNECTED:
             s_connected = true;
+            Bsp::LedManager::setComState(ComLedState::CONNECTING);
             esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);
             ESP_LOGI(TAG, "Kabel LAN W5500 Terhubung (Link Up) | MAC: %02X:%02X:%02X:%02X:%02X:%02X",
                      mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
@@ -59,6 +61,7 @@ void EthernetW5500::onEthEvent(void* arg, esp_event_base_t base, int32_t id, voi
         case ETHERNET_EVENT_DISCONNECTED:
             s_connected = false;
             s_hasIp = false;
+            Bsp::LedManager::setComState(ComLedState::DISCONNECTED);
             ESP_LOGW(TAG, "Kabel LAN W5500 Terputus (Link Down)!");
             break;
 

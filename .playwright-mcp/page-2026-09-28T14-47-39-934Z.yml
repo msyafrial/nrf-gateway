@@ -1,0 +1,240 @@
+- generic [ref=f13e1]:
+  - generic [ref=f13e2]:
+    - complementary [ref=f13e3]:
+      - generic [ref=f13e4]:
+        - img "IOTARU" [ref=f13e6]
+        - generic [ref=f13e7]: Administrator
+        - list [ref=f13e13]:
+          - listitem [ref=f13e14]:
+            - link "Overview" [ref=f13e15] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=f13e20]:
+            - link "Live Test Monitor" [ref=f13e21] [cursor=pointer]:
+              - /url: /test
+          - listitem [ref=f13e25]:
+            - link "Auth Settings" [ref=f13e26] [cursor=pointer]:
+              - /url: /auth
+          - listitem [ref=f13e31]:
+            - link "Device Settings" [ref=f13e32] [cursor=pointer]:
+              - /url: /settings
+          - listitem [ref=f13e37]:
+            - link "Update Firmware" [ref=f13e38] [cursor=pointer]:
+              - /url: /firmware
+          - listitem [ref=f13e43]:
+            - link "Reset Config" [ref=f13e44] [cursor=pointer]:
+              - /url: /reset
+          - listitem [ref=f13e51]:
+            - link "Reboot" [ref=f13e52] [cursor=pointer]:
+              - /url: /reboot
+          - listitem [ref=f13e56]:
+            - link "Logout" [ref=f13e57] [cursor=pointer]:
+              - /url: /logout
+    - main [ref=f13e62]:
+      - generic [ref=f13e63]:
+        - generic [ref=f13e64]: Auth Settings Admin
+        - link "Keluar" [ref=f13e66] [cursor=pointer]:
+          - /url: /logout
+      - generic [ref=f13e72]:
+        - generic [ref=f13e73]:
+          - generic [ref=f13e78]:
+            - generic [ref=f13e79]: Kredensial Administrator (Akses Penuh)
+            - generic [ref=f13e80]: Kontrol otoritas master sistem web dan pengaturan gateway
+          - generic [ref=f13e81]:
+            - generic [ref=f13e82]:
+              - generic [ref=f13e83]: Username Admin
+              - textbox "Username Admin" [ref=f13e84]:
+                - /placeholder: admin
+                - text: admin
+            - generic [ref=f13e85]:
+              - generic [ref=f13e86]: Password Admin
+              - generic [ref=f13e87]:
+                - textbox "Password Admin" [ref=f13e88]: admin
+                - button "Tahan untuk melihat password" [ref=f13e89] [cursor=pointer]
+        - generic [ref=f13e95]:
+          - generic [ref=f13e101]:
+            - generic [ref=f13e102]: Kredensial Akun Teknisi (Akses Lapangan)
+            - generic [ref=f13e103]: Akun teknisi untuk konfigurasi jaringan lokal di lapangan
+          - generic [ref=f13e104]:
+            - generic [ref=f13e105]:
+              - generic [ref=f13e106]: Username Teknisi
+              - textbox "Username Teknisi" [ref=f13e107]:
+                - /placeholder: user
+                - text: user
+            - generic [ref=f13e108]:
+              - generic [ref=f13e109]: Password Teknisi
+              - generic [ref=f13e110]:
+                - textbox "Password Teknisi" [ref=f13e111]: user
+                - button "Tahan untuk melihat password" [ref=f13e112] [cursor=pointer]
+        - generic [ref=f13e118]:
+          - generic [ref=f13e124]:
+            - generic [ref=f13e125]: Metode Koneksi Jaringan Gateway
+            - generic [ref=f13e126]: "Pilih jalur transmisi utama: Wi-Fi atau Kabel LAN Ethernet"
+          - generic [ref=f13e129]:
+            - button "Wi-Fi" [ref=f13e130] [cursor=pointer]
+            - button "Ethernet (LAN)" [ref=f13e131] [cursor=pointer]
+        - generic [ref=f13e270]:
+          - generic [ref=f13e277]:
+            - generic [ref=f13e278]: Pengaturan Wi-Fi
+            - generic [ref=f13e279]: Kredensial access point dan penugasan IP Wi-Fi
+          - generic [ref=f13e280]:
+            - generic [ref=f13e281]:
+              - generic [ref=f13e282]: WIFI SSID
+              - generic [ref=f13e283]:
+                - textbox "WIFI SSID" [ref=f13e284]:
+                  - /placeholder: Nama SSID (Ketik atau Scan)
+                  - text: C43
+                - button "Pindai Wi-Fi di Sekitar" [active] [ref=f13e285] [cursor=pointer]
+            - generic [ref=f13e292]:
+              - generic [ref=f13e293]: WIFI Password
+              - generic [ref=f13e294]:
+                - textbox "WIFI Password" [ref=f13e295]:
+                  - /placeholder: Password Wi-Fi
+                  - text: Eyro1234
+                - button "Tahan untuk melihat password" [ref=f13e296] [cursor=pointer]
+            - generic [ref=f13e302]:
+              - generic [ref=f13e303]: Mode Penugasan IP Wi-Fi
+              - combobox "Mode Penugasan IP Wi-Fi" [ref=f13e304]:
+                - option "DHCP (Otomatis dari Router)" [selected]
+                - option "IP Statis (Manual)"
+            - generic [ref=f13e305]:
+              - generic [ref=f13e306]: IP Address
+              - textbox "IP Address" [disabled] [ref=f13e307]:
+                - /placeholder: Otomatis via DHCP
+                - text: 192.168.1.100
+            - generic [ref=f13e308]:
+              - generic [ref=f13e309]: Gateway
+              - textbox "Gateway" [disabled] [ref=f13e310]:
+                - /placeholder: Otomatis via DHCP
+                - text: 192.168.1.1
+            - generic [ref=f13e311]:
+              - generic [ref=f13e312]: Subnet Mask
+              - textbox "Subnet Mask" [disabled] [ref=f13e313]:
+                - /placeholder: Otomatis via DHCP
+                - text: 255.255.255.0
+            - generic [ref=f13e314]:
+              - generic [ref=f13e315]: DNS Server (Primary)
+              - textbox "DNS Server (Primary)" [ref=f13e316]:
+                - /placeholder: Kosongkan jika pakai IP Gateway
+                - text: 8.8.8.8
+            - generic [ref=f13e317]:
+              - generic [ref=f13e318]: Secondary DNS (Opsional)
+              - textbox "Secondary DNS (Opsional)" [ref=f13e319]:
+                - /placeholder: Kosongkan jika tanpa DNS sekunder
+        - generic [ref=f13e159]:
+          - generic [ref=f13e168]:
+            - generic [ref=f13e169]: Hotspot Mode Konfigurasi (SoftAP)
+            - generic [ref=f13e170]: Keamanan akses Wi-Fi Hotspot darurat gateway (Eksklusif Administrator)
+          - generic [ref=f13e171]:
+            - generic [ref=f13e172]:
+              - generic [ref=f13e173]: SSID Hotspot Gateway
+              - textbox "SSID Hotspot Gateway" [disabled] [ref=f13e174]: SG-10-e8b89a33
+            - generic [ref=f13e175]:
+              - generic [ref=f13e176]: Password Hotspot SoftAP (WPA2)
+              - generic [ref=f13e177]:
+                - textbox "Password Hotspot SoftAP (WPA2)" [ref=f13e178]:
+                  - /placeholder: Minimal 8 karakter
+                  - text: "12345678"
+                - button "Tahan untuk melihat password" [ref=f13e179] [cursor=pointer]
+        - generic [ref=f13e185]:
+          - generic [ref=f13e190]:
+            - generic [ref=f13e191]: Broker Telemetri MQTT Gateway
+            - generic [ref=f13e192]: Konfigurasi host server, port, dan kredensial publish beacon
+          - generic [ref=f13e193]:
+            - generic [ref=f13e194]:
+              - generic [ref=f13e195]: MQTT Host / Broker IP
+              - textbox "MQTT Host / Broker IP" [ref=f13e196]:
+                - /placeholder: socket.cubeacon.com
+                - text: socket.cubeacon.com
+            - generic [ref=f13e197]:
+              - generic [ref=f13e198]: MQTT Port
+              - spinbutton "MQTT Port" [ref=f13e199]: "1884"
+            - generic [ref=f13e200]:
+              - generic [ref=f13e201]: Client ID (Otomatis Hardware MAC)
+              - textbox "Client ID (Otomatis Hardware MAC)" [ref=f13e202]: e8b89a33
+            - generic [ref=f13e203]:
+              - generic [ref=f13e204]: MQTT Username
+              - textbox "MQTT Username" [ref=f13e205]:
+                - /placeholder: eyroMQTT
+                - text: eyroMQTT
+            - generic [ref=f13e206]:
+              - generic [ref=f13e207]: MQTT Password
+              - generic [ref=f13e208]:
+                - textbox "MQTT Password" [ref=f13e209]:
+                  - /placeholder: Password MQTT
+                  - text: eyroMQTT1234
+                - button "Tahan untuk melihat password" [ref=f13e210] [cursor=pointer]
+        - button "Simpan Pembaruan" [ref=f13e217] [cursor=pointer]
+      - generic [ref=f13e222]: © 2026 IOTARU ESP32 Gateway (SG-10).
+  - generic [ref=f13e321]:
+    - generic [ref=f13e322]:
+      - generic [ref=f13e323]: Pilih Jaringan Wi-Fi
+      - button "×" [ref=f13e331] [cursor=pointer]
+    - generic [ref=f13e332]:
+      - generic [ref=f13e333]: Ditemukan 7 jaringan
+      - button "Scan Ulang" [ref=f13e335] [cursor=pointer]
+    - generic [ref=f13e341]:
+      - generic [ref=f13e350] [cursor=pointer]:
+        - generic [ref=f13e351]:
+          - img "Terproteksi Password" [ref=f13e353]
+          - generic [ref=f13e356]: anjinglu
+        - generic [ref=f13e357]: "-50 dBm"
+      - generic [ref=f13e364] [cursor=pointer]:
+        - generic [ref=f13e365]:
+          - img "Terproteksi Password" [ref=f13e367]
+          - generic [ref=f13e370]: saiful0202
+        - generic [ref=f13e371]: "-70 dBm"
+      - generic [ref=f13e378] [cursor=pointer]:
+        - generic [ref=f13e379]:
+          - img "Terproteksi Password" [ref=f13e381]
+          - generic [ref=f13e384]: Riska
+        - generic [ref=f13e385]: "-71 dBm"
+      - generic [ref=f13e392] [cursor=pointer]:
+        - generic [ref=f13e393]:
+          - img "Terproteksi Password" [ref=f13e395]
+          - generic [ref=f13e398]: TAUCHIT
+        - generic [ref=f13e399]: "-87 dBm"
+      - generic [ref=f13e406] [cursor=pointer]:
+        - generic [ref=f13e407]:
+          - img "Terproteksi Password" [ref=f13e409]
+          - generic [ref=f13e412]: vivo Y22
+        - generic [ref=f13e413]: "-89 dBm"
+      - generic [ref=f13e420] [cursor=pointer]:
+        - generic [ref=f13e421]:
+          - img "Terproteksi Password" [ref=f13e423]
+          - generic [ref=f13e426]: C2J_WIFI
+        - generic [ref=f13e427]: "-90 dBm"
+      - generic [ref=f13e434] [cursor=pointer]:
+        - generic [ref=f13e435]:
+          - img "Terproteksi Password" [ref=f13e437]
+          - generic [ref=f13e440]: AL
+        - generic [ref=f13e441]: "-93 dBm"
+  - generic [ref=f13e223]:
+    - generic [ref=f13e225]:
+      - generic [ref=f13e226]: Pengaturan Sistem
+      - generic [ref=f13e227]: Pilih menu konfigurasi gateway IOTARU
+    - generic [ref=f13e228]:
+      - link "Device Settings Filter UUID, RSSI threshold & batching MQTT" [ref=f13e229] [cursor=pointer]:
+        - /url: /settings
+        - generic [ref=f13e234]:
+          - generic [ref=f13e235]: Device Settings
+          - generic [ref=f13e236]: Filter UUID, RSSI threshold & batching MQTT
+      - link "Auth & Network Settings Kredensial login, Wi-Fi & LAN Ethernet" [ref=f13e237] [cursor=pointer]:
+        - /url: /auth
+        - generic [ref=f13e242]:
+          - generic [ref=f13e243]: Auth & Network Settings
+          - generic [ref=f13e244]: Kredensial login, Wi-Fi & LAN Ethernet
+      - button "Batal" [ref=f13e245] [cursor=pointer]
+  - generic [ref=f13e246]:
+    - generic [ref=f13e248]:
+      - generic [ref=f13e249]: Kontrol Daya Perangkat
+      - generic [ref=f13e250]: Pilih tindakan untuk mikrokontroler ESP32
+    - generic [ref=f13e251]:
+      - button "Reboot Perangkat Mulai ulang sistem modul ESP32" [ref=f13e252] [cursor=pointer]:
+        - generic [ref=f13e256]:
+          - generic [ref=f13e257]: Reboot Perangkat
+          - generic [ref=f13e258]: Mulai ulang sistem modul ESP32
+      - button "Reset Konfigurasi (Factory) Kembalikan semua setelan NVS ke default" [ref=f13e259] [cursor=pointer]:
+        - generic [ref=f13e266]:
+          - generic [ref=f13e267]: Reset Konfigurasi (Factory)
+          - generic [ref=f13e268]: Kembalikan semua setelan NVS ke default
+      - button "Batal" [ref=f13e269] [cursor=pointer]

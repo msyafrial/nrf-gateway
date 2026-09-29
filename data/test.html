@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="id">
 
 <head>
@@ -329,150 +329,275 @@
 <!-- ================= END AP MODE CONFIG BANNER COMPONENT ================= -->
         <!-- Test Control Bar -->
         <div class="test-control-card">
-          <div class="test-control-info">
-            <div class="bento-icon cyan">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-              </svg>
+          <div class="test-control-top">
+            <div class="test-control-title-area">
+              <div class="test-title-left">
+                <div class="test-header-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                  </svg>
+                </div>
+                <div class="test-title-text">
+                  <h2 class="test-title">Pengujian BLE Gateway</h2>
+                  <div class="test-subtitle">Streaming real-time inspeksi beacon</div>
+                </div>
+              </div>
+              <div class="status-pill ready" id="testStatusBadge">
+                <span class="status-dot"></span>
+                <span id="testStatusText">STANDBY</span>
+              </div>
             </div>
-            <div>
-              <div class="machine-title">Pengujian BLE Gateway Realtime</div>
-              <div class="machine-subtitle">Tekan Start untuk memulai streaming telemetri & inspeksi 10 beacon</div>
+            <div class="test-control-actions">
+              <button type="button" class="btn-start" id="btnStartTest">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+                <span>Start Test</span>
+              </button>
+              <button type="button" class="btn-stop" id="btnStopTest" style="display:none;" disabled>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+                <span>Stop Test</span>
+              </button>
+              <button type="button" class="btn-export" id="btnExportCsv" title="Export CSV Data Pengujian">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>Export CSV</span>
+              </button>
             </div>
           </div>
-          <div class="test-control-actions">
-            <div class="status-pill" id="testStatusBadge"
-              style="background:rgba(148,163,184,0.12);border-color:rgba(148,163,184,0.3);color:#94a3b8;">
-              <span id="testStatusText">STANDBY / STOPPED</span>
+          <div class="test-session-stats">
+            <div class="session-stat-item">
+              <span class="session-stat-label">Elapsed:</span>
+              <span class="session-stat-val cyan" id="sessionElapsedTime">00:00:00</span>
             </div>
-            <button type="button" class="btn-start" id="btnStartTest">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <polygon points="5 3 19 12 5 21 5 3" />
-              </svg>
-              Start Test
-            </button>
-            <button type="button" class="btn-stop" id="btnStopTest" style="display:none;" disabled>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="6" width="12" height="12" rx="2" />
-              </svg>
-              Stop Test
-            </button>
+            <div class="session-stat-item">
+              <span class="session-stat-label">Rx:</span>
+              <span class="session-stat-val green" id="sessionPacketsReceived">0</span>
+            </div>
+            <div class="session-stat-item">
+              <span class="session-stat-label">Tx:</span>
+              <span class="session-stat-val green" id="sessionPacketsSent">0</span>
+            </div>
+            <div class="session-stat-item">
+              <span class="session-stat-label">Drop:</span>
+              <span class="session-stat-val cyan" id="sessionDropRate">0 (0.00%)</span>
+            </div>
           </div>
         </div>
 
-        <!-- Realtime Throughput & Performance HUD -->
+        <!-- Realtime Throughput & Performance HUD (2-Column Mobile Default, 4-Column Desktop) -->
         <div class="throughput-hud">
-          <div class="hud-card">
-            <div class="hud-card-header">
-              <span class="hud-card-label">Tag Read Speed</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2">
-                <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-              </svg>
+          <!-- 1. Tag Read Speed (Cyan) - No progress bar, No Nominal badge -->
+          <div class="hud-card-v2 card-cyan">
+            <div class="hud-header">
+              <span class="hud-label">TAG READ SPEED</span>
+              <div class="hud-icon cyan">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+                  <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
+                  <circle cx="12" cy="12" r="2"/>
+                  <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+                  <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/>
+                </svg>
+              </div>
             </div>
-            <div class="hud-card-val cyan">
-              <span id="stat_read_speed">0</span>
-              <span class="hud-card-unit">pkt/s</span>
-            </div>
-          </div>
-
-                    <div class="hud-card">
-            <div class="hud-card-header">
-              <span class="hud-card-label">Unique Beacons</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-            </div>
-            <div class="hud-card-val" style="color:#38bdf8;">
-              <span id="stat_unique_tags">0</span>
-              <span class="hud-card-unit">tags</span>
-            </div>
-          </div>
-<div class="hud-card">
-            <div class="hud-card-header">
-              <span class="hud-card-label">MQTT Publish Speed</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2">
-                <path d="M5 12h14" />
-                <path d="m12 5 7 7-7 7" />
-              </svg>
-            </div>
-            <div class="hud-card-val emerald">
-              <span id="stat_mqtt_speed">0</span>
-              <span class="hud-card-unit">batch/s</span>
+            <div class="hud-body">
+              <div class="hud-val-row">
+                <span class="hud-val cyan" id="stat_read_speed">0</span>
+                <span class="hud-unit">pkt/s</span>
+              </div>
+              <div class="hud-sub-stats">
+                <span>Avg: <strong id="stat_read_avg">0.0</strong> pkt/s</span>
+                <span>Max: <strong id="stat_read_max">0</strong> pkt/s</span>
+              </div>
             </div>
           </div>
 
-
-
-          <div class="hud-card">
-            <div class="hud-card-header">
-              <span class="hud-card-label">Queue FreeRTOS</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2">
-                <rect width="18" height="18" x="3" y="3" rx="2" />
-                <path d="M3 9h18" />
-                <path d="M9 21V9" />
-              </svg>
+          <!-- 2. Unique Beacons (Lavender) - No progress bar, with [iBeacon] badge + Sub-stats (Option 3) -->
+          <div class="hud-card-v2 card-lavender">
+            <div class="hud-header">
+              <span class="hud-label">UNIQUE BEACONS</span>
+              <div class="hud-icon lavender">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="m7 7 10 10-5 5V2l5 5L7 17"/>
+                </svg>
+              </div>
             </div>
-            <div class="hud-card-val amber">
-              <span id="stat_queue_load">0 / 300</span>
-            </div>
-          </div>
-
-                    <div class="hud-card">
-            <div class="hud-card-header">
-              <span class="hud-card-label">Antrian Buffer Batch</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2">
-                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-                <path d="m3.3 7 8.7 5 8.7-5" />
-                <path d="M12 22V12" />
-              </svg>
-            </div>
-            <div class="hud-card-val" style="color:#f43f5e;">
-              <span id="stat_batch_load">0 / 100</span>
-            </div>
-          </div>
-          <div class="hud-card">
-            <div class="hud-card-header">
-              <span class="hud-card-label">Pkt per Batch</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2">
-                <polygon points="12 2 2 7 12 12 22 7 12 2" />
-                <polyline points="2 17 12 22 22 17" />
-                <polyline points="2 12 12 17 22 12" />
-              </svg>
-            </div>
-            <div class="hud-card-val" style="color:#818cf8;">
-              <span id="stat_batch_pkt_size">0</span>
-              <span class="hud-card-unit">pkt</span>
-            </div>
-          </div>
-          <div class="hud-card">
-            <div class="hud-card-header">
-              <span class="hud-card-label">Net Bandwidth</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
-                <path d="M12 20v-6M6 20V10M18 20V4" />
-              </svg>
-            </div>
-            <div class="hud-card-val" style="color:#38bdf8;">
-              <span id="stat_net_bandwidth">0.00</span>
-              <span class="hud-card-unit">KB/s</span>
-            </div>
-          </div>
-<div class="hud-card">
-            <div class="hud-card-header">
-              <span class="hud-card-label">Free Heap RAM</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2">
-                <rect width="16" height="16" x="4" y="4" rx="2" />
-              </svg>
-            </div>
-            <div class="hud-card-val" style="color:#c084fc;">
-              <span id="stat_free_heap">0</span>
-              <span class="hud-card-unit">KB</span>
+            <div class="hud-body">
+              <div class="hud-val-row">
+                <div style="display:flex;align-items:baseline;gap:6px;">
+                  <span class="hud-val lavender" id="stat_unique_tags">0</span>
+                  <span class="hud-unit">tag</span>
+                </div>
+                <span class="hud-badge badge-lavender" id="stat_beacon_type">iBeacon</span>
+              </div>
+              <div class="hud-sub-stats">
+                <span>Sinyal: <strong id="stat_beacon_rssi">-</strong> (Avg)</span>
+              </div>
             </div>
           </div>
 
+          <!-- 3. MQTT Publish Speed (Mint Green) - No progress bar, No Nominal badge -->
+          <div class="hud-card-v2 card-emerald">
+            <div class="hud-header">
+              <span class="hud-label">MQTT PUBLISH SPEED</span>
+              <div class="hud-icon emerald">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
+                  <path d="M12 12v9"/>
+                  <path d="m16 16-4-4-4 4"/>
+                </svg>
+              </div>
+            </div>
+            <div class="hud-body">
+              <div class="hud-val-row">
+                <span class="hud-val emerald" id="stat_mqtt_speed">0</span>
+                <span class="hud-unit">pkt/s</span>
+              </div>
+              <div class="hud-sub-stats">
+                <span>Avg: <strong id="stat_mqtt_avg">0.0</strong> pkt/s</span>
+                <span>Max: <strong id="stat_mqtt_max">0</strong> pkt/s</span>
+              </div>
+            </div>
+          </div>
 
+          <!-- 4. Queue FreeRTOS (Amber / Load Safe) - With progress bar & badge -->
+          <div class="hud-card-v2 card-amber">
+            <div class="hud-header">
+              <span class="hud-label">QUEUE FREERTOS</span>
+              <div class="hud-icon slate">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="3" y1="6" x2="21" y2="6"/>
+                  <line x1="3" y1="12" x2="21" y2="12"/>
+                  <line x1="3" y1="18" x2="21" y2="18"/>
+                </svg>
+              </div>
+            </div>
+            <div class="hud-body">
+              <div class="hud-val-row">
+                <span class="hud-val white" id="stat_queue_load">0 / 300</span>
+                <span class="hud-badge badge-green" id="stat_queue_badge">0% Load Safe</span>
+              </div>
+              <div class="hud-progress-line">
+                <div class="hud-progress-fill fill-green" id="bar_queue_load" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5. Antrian Buffer Batch (Sky Blue) - With progress bar & badge -->
+          <div class="hud-card-v2 card-sky">
+            <div class="hud-header">
+              <span class="hud-label">ANTRIAN BUFFER BATCH</span>
+              <div class="hud-icon sky">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                  <polyline points="2 17 12 22 22 17"/>
+                  <polyline points="2 12 12 17 22 12"/>
+                </svg>
+              </div>
+            </div>
+            <div class="hud-body">
+              <div class="hud-val-row">
+                <span class="hud-val white" id="stat_batch_load">0 / 100</span>
+                <span class="hud-badge badge-cyan" id="stat_batch_badge">0% Buffer</span>
+              </div>
+              <div class="hud-progress-line">
+                <div class="hud-progress-fill fill-cyan" id="bar_batch_load" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 6. Net Bandwidth (Cyan) - No progress bar, with badge & sub-row info (Row 3, Col 2 on Mobile) -->
+          <div class="hud-card-v2 card-cyan">
+            <div class="hud-header">
+              <span class="hud-label">NET BANDWIDTH</span>
+              <div class="hud-icon cyan">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+                  <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                  <circle cx="12" cy="20" r="1" fill="currentColor"/>
+                </svg>
+              </div>
+            </div>
+            <div class="hud-body">
+              <div class="hud-val-row">
+                <span class="hud-val cyan" id="stat_net_bandwidth">0.00</span>
+                <span class="hud-unit">KB/s</span>
+                <span class="hud-badge badge-green" style="margin-left:auto;">Optimum</span>
+              </div>
+              <div class="hud-sub-stats link-info" id="stat_net_link">
+                <span class="signal-bars">
+                  <span class="bar b1 active"></span>
+                  <span class="bar b2 active"></span>
+                  <span class="bar b3 active"></span>
+                </span>
+                <span id="stat_net_link_text">WiFi 5GHz -48dBm</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 7. Pkt per Batch (Indigo) - With progress bar & badge (Row 4, Col 1 on Mobile) -->
+          <div class="hud-card-v2 card-indigo">
+            <div class="hud-header">
+              <span class="hud-label">PKT PER BATCH</span>
+              <div class="hud-icon indigo">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+                  <path d="m3.3 7 8.7 5 8.7-5"/>
+                  <path d="M12 22V12"/>
+                </svg>
+              </div>
+            </div>
+            <div class="hud-body">
+              <div class="hud-val-row">
+                <div style="display:flex;align-items:baseline;gap:6px;">
+                  <span class="hud-val white" id="stat_batch_pkt_size">0</span>
+                  <span class="hud-unit">/ 100 pkt</span>
+                </div>
+                <span class="hud-badge badge-slate" id="stat_batch_pkt_badge">Avg payload</span>
+              </div>
+              <div class="hud-progress-line">
+                <div class="hud-progress-fill fill-indigo" id="bar_batch_pkt" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 8. Free Heap RAM (Purple) - With progress bar & badge (Row 4, Col 2 on Mobile) -->
+          <div class="hud-card-v2 card-lavender">
+            <div class="hud-header">
+              <span class="hud-label">FREE HEAP RAM</span>
+              <div class="hud-icon purple">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect width="16" height="16" x="4" y="4" rx="2"/>
+                  <rect width="6" height="6" x="9" y="9"/>
+                  <path d="M15 2v2"/>
+                  <path d="M15 20v2"/>
+                  <path d="M2 15h2"/>
+                  <path d="M2 9h2"/>
+                  <path d="M20 15h2"/>
+                  <path d="M20 9h2"/>
+                  <path d="M9 2v2"/>
+                  <path d="M9 20v2"/>
+                </svg>
+              </div>
+            </div>
+            <div class="hud-body">
+              <div class="hud-val-row">
+                <span class="hud-val white" id="stat_free_heap">0</span>
+                <span class="hud-unit">KB</span>
+                <span class="hud-badge badge-green" id="stat_heap_badge" style="margin-left:auto;">72% Left</span>
+              </div>
+              <div class="hud-progress-line">
+                <div class="hud-progress-fill fill-purple" id="bar_free_heap" style="width: 72%;"></div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- 10-Row Realtime FIFO Beacon Table -->

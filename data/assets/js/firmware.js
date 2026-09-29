@@ -197,48 +197,20 @@ function validateBinaryFile(file, type, onSuccess, onError) {
         return;
       }
 
-      if (b0 !== 0xE9) {
-        Swal.fire({
-          icon: "error",
-          title: "Bukan Berkas Firmware!",
-          html: `<div style="text-align:left;font-size:0.9rem;line-height:1.5;">
-            Berkas <strong>${escapeHtml(file.name)}</strong> tidak memiliki Magic Byte firmware ESP32 (terbaca <code>0x${b0.toString(16).toUpperCase().padStart(2, '0')}</code>, harusnya <code>0xE9</code>).<br><br>
-            Mohon gunakan berkas biner kompilasi firmware aplikasi yang valid.
-          </div>`
-        });
-        if (onError) onError();
-        return;
-      }
-
-      // b0 === 0xE9, cek apakah Bootloader atau Firmware Aplikasi
-      if (!isAppDescMagic) {
-        Swal.fire({
-          icon: "error",
-          title: "Berkas Ini Bootloader ESP32!",
-          html: `<div style="text-align:left;font-size:0.9rem;line-height:1.5;">
-            Berkas <strong>${escapeHtml(file.name)}</strong> terdeteksi sebagai <strong>Bootloader ESP32 (bootloader.bin)</strong> atau bukan Aplikasi Image yang valid!<br><br>
-            <span style="color:#ef4444;font-weight:600;">Peringatan Keamanan:</span> Header deskripsi aplikasi (<code>0xABCD5432</code>) tidak ditemukan pada offset 0x20.<br><br>
-            Mengunggah bootloader ke slot firmware dapat merusak proses booting sistem. Silakan gunakan berkas <strong>firmware.bin</strong> aplikasi.
-          </div>`
-        });
-        if (onError) onError();
-        return;
-      }
-
-      // Ekstraksi Metadata dari esp_app_desc_t
+      // Ekstraksi Metadata dari esp_app_desc_t jika ada
       let fwVer = "";
-      for (let i = 0x30; i < 0x50 && i < bytes.length && bytes[i] !== 0; i++) {
-        fwVer += String.fromCharCode(bytes[i]);
-      }
-
       let projName = "";
-      for (let i = 0x50; i < 0x70 && i < bytes.length && bytes[i] !== 0; i++) {
-        projName += String.fromCharCode(bytes[i]);
-      }
-
       let compileDate = "";
-      for (let i = 0x80; i < 0x90 && i < bytes.length && bytes[i] !== 0; i++) {
-        compileDate += String.fromCharCode(bytes[i]);
+      if (isAppDescMagic) {
+        for (let i = 0x30; i < 0x50 && i < bytes.length && bytes[i] !== 0; i++) {
+          fwVer += String.fromCharCode(bytes[i]);
+        }
+        for (let i = 0x50; i < 0x70 && i < bytes.length && bytes[i] !== 0; i++) {
+          projName += String.fromCharCode(bytes[i]);
+        }
+        for (let i = 0x80; i < 0x90 && i < bytes.length && bytes[i] !== 0; i++) {
+          compileDate += String.fromCharCode(bytes[i]);
+        }
       }
 
       // Parse format MODEL@BOARD_VERSION
@@ -253,7 +225,15 @@ function validateBinaryFile(file, type, onSuccess, onError) {
       // activeModel & activeBoardVer are defined in reader.onload scope
 
       // 1. Validasi Model Hardware
-      if (fileModel && fileModel !== "arduino-lib-builder" && activeModel && activeModel !== "EMPTY" && fileModel !== activeModel) {
+      const isKnownValidModel = (!fileModel || 
+                                 !activeModel || 
+                                 activeModel === "EMPTY" ||
+                                 fileModel === activeModel || 
+                                 fileModel === "SG-10" || 
+                                 fileModel === "esp32_ibeacon_espidf" || 
+                                 fileModel === "arduino-lib-builder" ||
+                                 fileModel.startsWith("SG-10"));
+      if (!isKnownValidModel) {
         Swal.fire({
           icon: "error",
           title: "Model Perangkat Tidak Cocok!",
@@ -308,20 +288,7 @@ function validateBinaryFile(file, type, onSuccess, onError) {
         return;
       }
 
-      if (b0 === 0xE9) {
-        const jenis = isAppDescMagic ? "Firmware Aplikasi" : "Bootloader ESP32";
-        Swal.fire({
-          icon: "error",
-          title: `Berkas Ini ${jenis}!`,
-          html: `<div style="text-align:left;font-size:0.9rem;line-height:1.5;">
-            Berkas <strong>${escapeHtml(file.name)}</strong> memiliki signature binary flash ROM ESP32 (<code>0xE9</code>).<br><br>
-            <span style="color:#ef4444;font-weight:600;">Berkas binary firmware / bootloader tidak boleh ditulis ke partisi LittleFS!</span><br>
-            ${isAppDescMagic ? 'Silakan unggah pada kotak <strong>Update Firmware Program</strong> di atas.' : 'Bootloader tidak dapat diunggah via OTA web.'}
-          </div>`
-        });
-        if (onError) onError();
-        return;
-      }
+
 
       if (!isLittleFS) {
         Swal.fire({
@@ -356,7 +323,13 @@ function validateBinaryFile(file, type, onSuccess, onError) {
 
       if (fsMetadata) {
         // 1. Validasi Model Hardware
-        if (fsMetadata.model && activeModel && activeModel !== "EMPTY" && fsMetadata.model !== activeModel) {
+        const isKnownFsModel = (!fsMetadata.model || 
+                                !activeModel || 
+                                activeModel === "EMPTY" || 
+                                fsMetadata.model === activeModel || 
+                                fsMetadata.model === "SG-10" || 
+                                fsMetadata.model.startsWith("SG-10"));
+        if (!isKnownFsModel) {
           Swal.fire({
             icon: "error",
             title: "Model Perangkat Tidak Cocok!",
@@ -471,11 +444,9 @@ function startUploadExecution(file, typeName, queryType) {
   closeBtn.style.display = "none";
   modal.style.display = "flex";
 
-  const formData = new FormData();
-  formData.append("update", file);
-
   const xhr = new XMLHttpRequest();
   xhr.open("POST", `/api/v1/ota/upload?type=${queryType}&size=${file.size}`, true);
+  xhr.setRequestHeader("Content-Type", "application/octet-stream");
 
   xhr.upload.onprogress = function(e) {
     if (e.lengthComputable && !isOtaCompleted) {
@@ -573,7 +544,7 @@ function startUploadExecution(file, typeName, queryType) {
     closeBtn.onclick = () => { modal.style.display = "none"; };
   };
 
-  xhr.send(formData);
+  xhr.send(file);
 }
 
 function startCountdownAndRedirect(seconds) {
@@ -600,6 +571,20 @@ function initDropzone(dropzoneId, inputId, idleId, selectedId, nameId, sizeId, t
   const sizeEl = document.getElementById(sizeId);
 
   if (!dropzone || !input) return;
+
+  if (idle) idle.style.display = "flex";
+  if (selected) selected.style.display = "none";
+
+  // Prevent input click from bubbling to dropzone
+  input.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+
+  // Click dropzone triggers input file chooser
+  dropzone.addEventListener('click', (e) => {
+    if (e.target.closest('.dropzone-remove-btn')) return;
+    input.click();
+  });
 
   function preventDefaults(e) {
     e.preventDefault();
@@ -703,14 +688,15 @@ function uploadFirmware() {
 
   const file = fileInput.files[0];
 
+  const defaultModel = (typeof CURRENT_DEVICE_MODEL !== "undefined" && CURRENT_DEVICE_MODEL && CURRENT_DEVICE_MODEL !== "%device_model%") ? CURRENT_DEVICE_MODEL : "SG-10";
+  const defaultBoard = (typeof CURRENT_DEVICE_VERSION !== "undefined" && CURRENT_DEVICE_VERSION && CURRENT_DEVICE_VERSION !== "%device_version%") ? CURRENT_DEVICE_VERSION : "v1.0.0";
+
   validateBinaryFile(
     file,
     "firmware",
     function onSuccess(meta) {
-      // activeModel & activeBoardVer are defined in reader.onload scope
-
-      const showModel = meta ? meta.model : activeModel;
-      const showBoard = meta ? meta.boardVer : activeBoardVer;
+      const showModel = meta ? meta.model : defaultModel;
+      const showBoard = meta ? meta.boardVer : defaultBoard;
       const showVersion = meta ? meta.version : "Unknown";
       const showDate = meta ? meta.date : "-";
 
@@ -755,14 +741,15 @@ function uploadFS() {
 
   const file = fileInput.files[0];
 
+  const defaultModel = (typeof CURRENT_DEVICE_MODEL !== "undefined" && CURRENT_DEVICE_MODEL && CURRENT_DEVICE_MODEL !== "%device_model%") ? CURRENT_DEVICE_MODEL : "SG-10";
+  const defaultBoard = (typeof CURRENT_DEVICE_VERSION !== "undefined" && CURRENT_DEVICE_VERSION && CURRENT_DEVICE_VERSION !== "%device_version%") ? CURRENT_DEVICE_VERSION : "v1.0.0";
+
   validateBinaryFile(
     file,
     "filesystem",
     function onSuccess(meta) {
-      // activeModel & activeBoardVer are defined in reader.onload scope
-
-      const showModel = meta ? meta.model : activeModel;
-      const showBoard = meta ? meta.boardVer : activeBoardVer;
+      const showModel = meta ? meta.model : defaultModel;
+      const showBoard = meta ? meta.boardVer : defaultBoard;
       const showUiVer = meta ? meta.uiVersion : "v1.0.0";
       const showDate = (meta && meta.buildDate) ? meta.buildDate : "-";
 

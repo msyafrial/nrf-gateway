@@ -90,27 +90,11 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
     }
 
     if (target == TargetType::Firmware) {
-        // Validate ESP32 Image Magic 0xE9
-        if (chunk_len < 1 || first_chunk[0] != 0xE9) {
-            snprintf(out_err, err_len, "File bukan firmware ESP32 yang valid (Magic byte 0xE9 tidak cocok)!");
-            strncpy(s_status.error_msg, out_err, sizeof(s_status.error_msg) - 1);
-            abort();
-            return false;
-        }
-
-        // Validate App Image vs Bootloader via esp_app_desc_t magic 0xABCD5432 at offset 0x20
-        if (chunk_len >= 36) {
+        // Validate Model and Board Revision from esp_app_desc_t at offset 0x20 if metadata is present
+        if (chunk_len >= 112) {
             bool is_app_desc = (first_chunk[32] == 0x32 && first_chunk[33] == 0x54 &&
                                 first_chunk[34] == 0xCD && first_chunk[35] == 0xAB);
-            if (!is_app_desc) {
-                snprintf(out_err, err_len, "File terdeteksi sebagai Bootloader (bootloader.bin) atau bukan Firmware valid!");
-                strncpy(s_status.error_msg, out_err, sizeof(s_status.error_msg) - 1);
-                abort();
-                return false;
-            }
-
-            // Validate Model and Board Revision from esp_app_desc_t at offset 0x20
-            if (chunk_len >= 112) {
+            if (is_app_desc) {
                 const auto *incoming_app = reinterpret_cast<const esp_app_desc_t *>(&first_chunk[0x20]);
                 const char *incoming_proj = incoming_app->project_name;
                 const char *at_sign = strchr(incoming_proj, '@');
@@ -163,13 +147,6 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
         }
     } else {
         // Filesystem (LittleFS)
-        if (chunk_len >= 1 && first_chunk[0] == 0xE9) {
-            snprintf(out_err, err_len, "Error: Anda mengunggah file firmware/bootloader ke partisi Filesystem!");
-            strncpy(s_status.error_msg, out_err, sizeof(s_status.error_msg) - 1);
-            abort();
-            return false;
-        }
-
         if (chunk_len >= 16 && memcmp(&first_chunk[8], "littlefs", 8) != 0) {
             snprintf(out_err, err_len, "Error: Berkas bukan citra partisi LittleFS valid (signature 'littlefs' tidak cocok)!");
             strncpy(s_status.error_msg, out_err, sizeof(s_status.error_msg) - 1);

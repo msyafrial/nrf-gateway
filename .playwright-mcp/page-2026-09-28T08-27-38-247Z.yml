@@ -1,0 +1,118 @@
+- generic [active] [ref=f31e1]:
+  - generic [ref=f31e2]:
+    - complementary [ref=f31e3]:
+      - generic [ref=f31e4]:
+        - img "IOTARU" [ref=f31e6]
+        - generic [ref=f31e7]: Administrator
+        - list [ref=f31e13]:
+          - listitem [ref=f31e14]:
+            - link "Overview" [ref=f31e15] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=f31e20]:
+            - link "Live Test Monitor" [ref=f31e21] [cursor=pointer]:
+              - /url: /test
+          - listitem [ref=f31e25]:
+            - link "Auth Settings" [ref=f31e26] [cursor=pointer]:
+              - /url: /auth
+          - listitem [ref=f31e31]:
+            - link "Device Settings" [ref=f31e32] [cursor=pointer]:
+              - /url: /settings
+          - listitem [ref=f31e37]:
+            - link "Update Firmware" [ref=f31e38] [cursor=pointer]:
+              - /url: /firmware
+          - listitem [ref=f31e43]:
+            - link "Reset Config" [ref=f31e44] [cursor=pointer]:
+              - /url: /reset
+          - listitem [ref=f31e51]:
+            - link "Reboot" [ref=f31e52] [cursor=pointer]:
+              - /url: /reboot
+          - listitem [ref=f31e56]:
+            - link "Logout" [ref=f31e57] [cursor=pointer]:
+              - /url: /logout
+    - main [ref=f31e62]:
+      - generic [ref=f31e63]:
+        - generic [ref=f31e64]: Overview Gateway
+        - link "Keluar" [ref=f31e66] [cursor=pointer]:
+          - /url: /logout
+      - generic [ref=f31e71]:
+        - generic [ref=f31e72]:
+          - generic [ref=f31e78]:
+            - generic [ref=f31e79]: IOTARU SMART GUARD (SG-10)
+            - generic [ref=f31e80]: Industrial Smart BLE Beacon Gateway Controller
+          - generic [ref=f31e81]: Gateway Online
+        - generic [ref=f31e84]:
+          - generic [ref=f31e89]:
+            - generic [ref=f31e90]: Spesifikasi & Status Gateway
+            - generic [ref=f31e91]: Parameter identifikasi unit dan status konektivitas jaringan
+          - generic [ref=f31e92]:
+            - generic [ref=f31e93]:
+              - generic [ref=f31e94]: Model
+              - generic [ref=f31e95]: SG-10
+            - generic [ref=f31e96]:
+              - generic [ref=f31e97]: Manufacture
+              - generic [ref=f31e98]: IOTARU Tech
+            - generic [ref=f31e102]:
+              - generic [ref=f31e103]: Device ID (mDNS)
+              - code [ref=f31e105]: e8b89a33
+            - generic [ref=f31e106]:
+              - generic [ref=f31e107]: Device Version
+              - generic [ref=f31e108]: v1.0.0
+            - generic [ref=f31e109]:
+              - generic [ref=f31e110]: Firmware Version
+              - generic [ref=f31e111]: v1.0.1
+            - generic [ref=f31e113]:
+              - generic [ref=f31e114]: UI Version
+              - generic [ref=f31e115]: v1.0.0
+            - generic [ref=f31e117]:
+              - generic [ref=f31e118]: IP Address
+              - generic [ref=f31e119]: 192.168.8.161
+            - generic [ref=f31e120]:
+              - generic [ref=f31e121]: Running Mode
+              - generic [ref=f31e122]: Ethernet (100M Full)
+            - generic [ref=f31e124]:
+              - generic [ref=f31e125]: Signal Strength
+              - generic [ref=f31e126]: 100 Mbps (Full Duplex)
+            - generic [ref=f31e127]:
+              - generic [ref=f31e128]: MQTT Telemetri
+              - generic [ref=f31e129]: Connected
+        - generic [ref=f31e131]:
+          - generic [ref=f31e136]:
+            - generic [ref=f31e137]: Uji Diagnostik Realtime
+            - generic [ref=f31e138]: Pemantauan paket beacon nRF52840 berkecepatan tinggi
+          - paragraph [ref=f31e139]:
+            - text: Sistem gateway membaca ratusan paket iBeacon dan ibeacon_ext setiap detik melalui antarmuka UART 1 Mbps. Untuk melihat laju transmisi, kapasitas antrean FreeRTOS, dan inspeksi paket beacon realtime, silakan buka menu
+            - strong [ref=f31e140]: Live Test Monitor
+            - text: .
+          - link "Buka Live Test Monitor" [ref=f31e141] [cursor=pointer]:
+            - /url: /test
+      - generic [ref=f31e144]: © 2026 IOTARU ESP32 Gateway (SG-10). High-Reliability BLE Telemetry.
+  - generic [ref=f31e145]:
+    - generic [ref=f31e147]:
+      - generic [ref=f31e148]: Pengaturan Sistem
+      - generic [ref=f31e149]: Pilih menu konfigurasi gateway IOTARU
+    - generic [ref=f31e150]:
+      - link "Device Settings Filter UUID, RSSI threshold & batching MQTT" [ref=f31e151] [cursor=pointer]:
+        - /url: /settings
+        - generic [ref=f31e156]:
+          - generic [ref=f31e157]: Device Settings
+          - generic [ref=f31e158]: Filter UUID, RSSI threshold & batching MQTT
+      - link "Auth & Network Settings Kredensial login, Wi-Fi & LAN Ethernet" [ref=f31e159] [cursor=pointer]:
+        - /url: /auth
+        - generic [ref=f31e164]:
+          - generic [ref=f31e165]: Auth & Network Settings
+          - generic [ref=f31e166]: Kredensial login, Wi-Fi & LAN Ethernet
+      - button "Batal" [ref=f31e167] [cursor=pointer]
+  - generic [ref=f31e168]:
+    - generic [ref=f31e170]:
+      - generic [ref=f31e171]: Kontrol Daya Perangkat
+      - generic [ref=f31e172]: Pilih tindakan untuk mikrokontroler ESP32
+    - generic [ref=f31e173]:
+      - button "Reboot Perangkat Mulai ulang sistem modul ESP32" [ref=f31e174] [cursor=pointer]:
+        - generic [ref=f31e178]:
+          - generic [ref=f31e179]: Reboot Perangkat
+          - generic [ref=f31e180]: Mulai ulang sistem modul ESP32
+      - button "Reset Konfigurasi (Factory) Kembalikan semua setelan NVS ke default" [ref=f31e181] [cursor=pointer]:
+        - generic [ref=f31e188]:
+          - generic [ref=f31e189]: Reset Konfigurasi (Factory)
+          - generic [ref=f31e190]: Kembalikan semua setelan NVS ke default
+      - button "Batal" [ref=f31e191] [cursor=pointer]

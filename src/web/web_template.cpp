@@ -52,12 +52,14 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
     if (!out_buf || max_len == 0) return false;
     out_buf[0] = '\0';
 
-    if (key == "model") {
+    if (key == "model" || key == "device_model") {
         snprintf(out_buf, max_len, "%s", g_config.device_model[0] != '\0' ? g_config.device_model : "EMPTY");
     } else if (key == "ap_ssid") {
         Core::ConfigStore::getModuleId(out_buf, max_len);
     } else if (key == "device_id") {
-        snprintf(out_buf, max_len, "%s", g_deviceId);
+        Core::ConfigStore::getDeviceId(out_buf, max_len);
+    } else if (key == "mdns_hostname") {
+        Network::NetworkManager::getMdnsHostname(out_buf, max_len);
     } else if (key == "device_version") {
         snprintf(out_buf, max_len, "%s", g_config.device_version);
     } else if (key == "firmware_version") {

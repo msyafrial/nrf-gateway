@@ -217,23 +217,23 @@
             </div>
             <div class="bento-title-group">
               <div class="bento-title">Update Firmware Program (.bin)</div>
-              <div class="bento-sub">Unggah binary aplikasi ESP32 dengan validasi header otomatis (0xE9)</div>
+              <div class="bento-sub">Unggah binary aplikasi ESP32 dengan validasi header otomatis</div>
             </div>
           </div>
 
           <div class="bento-grid single">
             <div class="item full">
               <label>Pilih atau Tarik Berkas Firmware (.bin)</label>
-              <div class="bento-dropzone" id="dropzoneFirmware" onclick="document.getElementById('fileFirmware').click()">
+              <div class="bento-dropzone" id="dropzoneFirmware">
                 <input type="file" id="fileFirmware" accept=".bin" style="display:none;">
                 <div class="dropzone-idle" id="dropzoneFirmwareIdle">
                   <div class="dropzone-icon">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
                   </div>
                   <div class="dropzone-title">Klik atau seret file <strong>firmware.bin</strong> ke sini</div>
-                  <div class="dropzone-sub">Format berkas .bin (ESP32 Magic Byte 0xE9)</div>
+                  <div class="dropzone-sub">Format berkas .bin (Firmware ESP32)</div>
                 </div>
-                <div class="dropzone-selected-box" id="dropzoneFirmwareSelected">
+                <div class="dropzone-selected-box" id="dropzoneFirmwareSelected" style="display:none;">
                   <div class="dropzone-file-icon">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
                   </div>
@@ -278,7 +278,7 @@
           <div class="bento-grid single">
             <div class="item full">
               <label>Pilih atau Tarik Berkas LittleFS (.bin)</label>
-              <div class="bento-dropzone" id="dropzoneFS" onclick="document.getElementById('filesystem').click()">
+              <div class="bento-dropzone" id="dropzoneFS">
                 <input type="file" id="filesystem" accept=".bin" style="display:none;">
                 <div class="dropzone-idle" id="dropzoneFSIdle">
                   <div class="dropzone-icon">
@@ -287,7 +287,7 @@
                   <div class="dropzone-title">Klik atau seret file <strong>littlefs.bin</strong> ke sini</div>
                   <div class="dropzone-sub">Format berkas .bin (Partisi Web LittleFS)</div>
                 </div>
-                <div class="dropzone-selected-box" id="dropzoneFSSelected">
+                <div class="dropzone-selected-box" id="dropzoneFSSelected" style="display:none;">
                   <div class="dropzone-file-icon">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
                   </div>

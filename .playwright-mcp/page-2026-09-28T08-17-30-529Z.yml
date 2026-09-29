@@ -1,0 +1,213 @@
+- generic [active] [ref=f26e1]:
+  - generic [ref=f26e2]:
+    - complementary [ref=f26e3]:
+      - generic [ref=f26e4]:
+        - img "IOTARU" [ref=f26e6]
+        - generic [ref=f26e7]: Administrator
+        - list [ref=f26e13]:
+          - listitem [ref=f26e14]:
+            - link "Overview" [ref=f26e15] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=f26e20]:
+            - link "Live Test Monitor" [ref=f26e21] [cursor=pointer]:
+              - /url: /test
+          - listitem [ref=f26e25]:
+            - link "Auth Settings" [ref=f26e26] [cursor=pointer]:
+              - /url: /auth
+          - listitem [ref=f26e31]:
+            - link "Device Settings" [ref=f26e32] [cursor=pointer]:
+              - /url: /settings
+          - listitem [ref=f26e37]:
+            - link "Update Firmware" [ref=f26e38] [cursor=pointer]:
+              - /url: /firmware
+          - listitem [ref=f26e43]:
+            - link "Reset Config" [ref=f26e44] [cursor=pointer]:
+              - /url: /reset
+          - listitem [ref=f26e51]:
+            - link "Reboot" [ref=f26e52] [cursor=pointer]:
+              - /url: /reboot
+          - listitem [ref=f26e56]:
+            - link "Logout" [ref=f26e57] [cursor=pointer]:
+              - /url: /logout
+    - main [ref=f26e62]:
+      - generic [ref=f26e63]:
+        - generic [ref=f26e64]: Live Test Monitor
+        - link "Keluar" [ref=f26e66] [cursor=pointer]:
+          - /url: /logout
+      - generic [ref=f26e71]:
+        - generic [ref=f26e72]:
+          - generic [ref=f26e77]:
+            - generic [ref=f26e78]: Pengujian BLE Gateway Realtime
+            - generic [ref=f26e79]: Tekan Start untuk memulai streaming telemetri & inspeksi 10 beacon
+          - generic [ref=f26e80]:
+            - generic [ref=f26e81]: STREAMING LIVE
+            - button "Stop Test" [ref=f26e236] [cursor=pointer]
+        - generic [ref=f26e86]:
+          - generic [ref=f26e87]:
+            - generic [ref=f26e88]: Tag Read Speed
+            - generic [ref=f26e92]: 18 pkt/s
+          - generic [ref=f26e93]:
+            - generic [ref=f26e94]: Unique Beacons
+            - generic [ref=f26e101]: 4 tags
+          - generic [ref=f26e102]:
+            - generic [ref=f26e103]: MQTT Publish Speed
+            - generic [ref=f26e107]: 4 batch/s
+            - generic [ref=f26e108]: "Tot: 0 pkt"
+          - generic [ref=f26e109]:
+            - generic [ref=f26e110]: Queue FreeRTOS
+            - generic [ref=f26e114]: 0 / 300
+          - generic [ref=f26e115]:
+            - generic [ref=f26e116]: Antrian Buffer Batch
+            - generic [ref=f26e121]: 4 / 100
+          - generic [ref=f26e122]:
+            - generic [ref=f26e123]: Pkt per Batch
+            - generic [ref=f26e129]: 6 pkt
+          - generic [ref=f26e130]:
+            - generic [ref=f26e131]: Net Bandwidth
+            - generic [ref=f26e135]: 0.12 KB/s
+          - generic [ref=f26e136]:
+            - generic [ref=f26e137]: Free Heap RAM
+            - generic [ref=f26e141]: 170 KB
+        - generic [ref=f26e142]:
+          - generic [ref=f26e143]:
+            - generic [ref=f26e144]:
+              - generic [ref=f26e145]: 10 Data Beacon Terupdate (Buffer FIFO)
+              - generic [ref=f26e146]: Menampilkan 10 beacon paling mutakhir yang masuk via UART 1 Mbps
+            - 'textbox "Filter Major, Minor, atau Format (mis: 1-2, 100)..." [ref=f26e151]'
+          - table [ref=f26e153]:
+            - rowgroup [ref=f26e154]:
+              - row [ref=f26e155]:
+                - columnheader "#" [ref=f26e156]
+                - columnheader "Format" [ref=f26e157]
+                - columnheader "Major-Minor" [ref=f26e158]
+                - columnheader "RSSI" [ref=f26e159]
+                - columnheader "Battery" [ref=f26e160]
+                - columnheader "Waktu" [ref=f26e161]
+            - rowgroup [ref=f26e162]:
+              - row [ref=f26e419]:
+                - cell "1" [ref=f26e420]
+                - cell "iBeacon" [ref=f26e421]
+                - cell [ref=f26e423]:
+                  - strong [ref=f26e424]: 00800-01284
+                - cell "-62 dBm" [ref=f26e425]
+                - cell "-" [ref=f26e426]
+                - cell "15:17:30.143" [ref=f26e427]
+              - row [ref=f26e428]:
+                - cell "2" [ref=f26e429]
+                - cell "iBeacon" [ref=f26e430]
+                - cell [ref=f26e432]:
+                  - strong [ref=f26e433]: 00800-01282
+                - cell "-62 dBm" [ref=f26e434]
+                - cell "-" [ref=f26e435]
+                - cell "15:17:30.143" [ref=f26e436]
+              - row [ref=f26e437]:
+                - cell "3" [ref=f26e438]
+                - cell "iBeacon" [ref=f26e439]
+                - cell [ref=f26e441]:
+                  - strong [ref=f26e442]: 00800-01277
+                - cell "-76 dBm" [ref=f26e443]
+                - cell "-" [ref=f26e444]
+                - cell "15:17:30.143" [ref=f26e445]
+              - row [ref=f26e446]:
+                - cell "4" [ref=f26e447]
+                - cell "iBeacon" [ref=f26e448]
+                - cell [ref=f26e450]:
+                  - strong [ref=f26e451]: 00800-01269
+                - cell "-75 dBm" [ref=f26e452]
+                - cell "-" [ref=f26e453]
+                - cell "15:17:30.143" [ref=f26e454]
+              - row [ref=f26e455]:
+                - cell "5" [ref=f26e456]
+                - cell "iBeacon" [ref=f26e457]
+                - cell [ref=f26e459]:
+                  - strong [ref=f26e460]: 00800-01284
+                - cell "-57 dBm" [ref=f26e461]
+                - cell "-" [ref=f26e462]
+                - cell "15:17:30.143" [ref=f26e463]
+              - row [ref=f26e464]:
+                - cell "6" [ref=f26e465]
+                - cell "ibeacon_ext" [ref=f26e466]
+                - cell [ref=f26e468]:
+                  - strong [ref=f26e469]: 00800-01277
+                - cell "-73 dBm" [ref=f26e470]
+                - cell "100%" [ref=f26e471]
+                - cell "15:17:29.877" [ref=f26e472]
+              - row [ref=f26e473]:
+                - cell "7" [ref=f26e474]
+                - cell "ibeacon_ext" [ref=f26e475]
+                - cell [ref=f26e477]:
+                  - strong [ref=f26e478]: 00800-01269
+                - cell "-74 dBm" [ref=f26e479]
+                - cell "100%" [ref=f26e480]
+                - cell "15:17:29.877" [ref=f26e481]
+              - row [ref=f26e482]:
+                - cell "8" [ref=f26e483]
+                - cell "iBeacon" [ref=f26e484]
+                - cell [ref=f26e486]:
+                  - strong [ref=f26e487]: 00800-01284
+                - cell "-61 dBm" [ref=f26e488]
+                - cell "-" [ref=f26e489]
+                - cell "15:17:29.877" [ref=f26e490]
+              - row [ref=f26e491]:
+                - cell "9" [ref=f26e492]
+                - cell "iBeacon" [ref=f26e493]
+                - cell [ref=f26e495]:
+                  - strong [ref=f26e496]: 00800-01282
+                - cell "-58 dBm" [ref=f26e497]
+                - cell "-" [ref=f26e498]
+                - cell "15:17:29.877" [ref=f26e499]
+              - row [ref=f26e500]:
+                - cell "10" [ref=f26e501]
+                - cell "iBeacon" [ref=f26e502]
+                - cell [ref=f26e504]:
+                  - strong [ref=f26e505]: 00800-01277
+                - cell "-71 dBm" [ref=f26e506]
+                - cell "-" [ref=f26e507]
+                - cell "15:17:29.877" [ref=f26e508]
+        - generic [ref=f26e166]:
+          - generic [ref=f26e167]:
+            - generic [ref=f26e168]:
+              - generic [ref=f26e169]: Analisa Grafik Performa (60 Detik)
+              - generic [ref=f26e170]: Tren dinamis pembacaan tag, publish MQTT, antrian FreeRTOS, dan buffer batch
+            - generic [ref=f26e171]:
+              - generic [ref=f26e172]: Tag Speed
+              - generic [ref=f26e174]: MQTT Speed
+              - generic [ref=f26e176]: Queue RTOS
+              - generic [ref=f26e178]: Batch Buffer
+              - generic [ref=f26e180]: Pkt / Batch
+              - generic [ref=f26e182]: Net Bandwidth
+          - generic [ref=f26e184]:
+            - generic:
+              - generic: 60 seconds
+              - generic: "0"
+      - generic [ref=f26e186]: © 2026 IOTARU ESP32 Gateway (SG-10). Live Diagnostic Suite.
+  - generic [ref=f26e187]:
+    - generic [ref=f26e189]:
+      - generic [ref=f26e190]: Pengaturan Sistem
+      - generic [ref=f26e191]: Pilih menu konfigurasi gateway IOTARU
+    - generic [ref=f26e192]:
+      - link "Device Settings Filter UUID, RSSI threshold & batching MQTT" [ref=f26e193] [cursor=pointer]:
+        - /url: /settings
+        - generic [ref=f26e198]:
+          - generic [ref=f26e199]: Device Settings
+          - generic [ref=f26e200]: Filter UUID, RSSI threshold & batching MQTT
+      - link "Auth & Network Settings Kredensial login, Wi-Fi & LAN Ethernet" [ref=f26e201] [cursor=pointer]:
+        - /url: /auth
+        - generic [ref=f26e206]:
+          - generic [ref=f26e207]: Auth & Network Settings
+          - generic [ref=f26e208]: Kredensial login, Wi-Fi & LAN Ethernet
+      - button "Batal" [ref=f26e209] [cursor=pointer]
+  - generic [ref=f26e210]:
+    - generic [ref=f26e212]:
+      - generic [ref=f26e213]: Kontrol Daya Perangkat
+      - generic [ref=f26e214]: Pilih tindakan untuk mikrokontroler ESP32
+    - generic [ref=f26e215]:
+      - button "Reboot Perangkat Mulai ulang sistem modul ESP32" [ref=f26e216] [cursor=pointer]:
+        - generic [ref=f26e220]:
+          - generic [ref=f26e221]: Reboot Perangkat
+          - generic [ref=f26e222]: Mulai ulang sistem modul ESP32
+      - button "Reset Konfigurasi (Factory) Kembalikan semua setelan NVS ke default" [ref=f26e223] [cursor=pointer]:
+        - generic [ref=f26e230]:
+          - generic [ref=f26e231]: Reset Konfigurasi (Factory)
+          - generic [ref=f26e232]: Kembalikan semua setelan NVS ke default
+      - button "Batal" [ref=f26e233] [cursor=pointer]

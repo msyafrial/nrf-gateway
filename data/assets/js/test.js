@@ -1,4 +1,4 @@
-﻿/**
+/**
  * IOTARU BLE Gateway Live Diagnostics & Monitor
  * High-Throughput Realtime Table & 60-Second Performance Telemetry Chart (Task Manager Style)
  */
@@ -11,22 +11,72 @@ document.addEventListener("DOMContentLoaded", function() {
   let currentFilter = "";
 
   // DOM Elements
+  // DOM Elements
   const btnStart = document.getElementById("btnStartTest");
   const btnStop = document.getElementById("btnStopTest");
+  const btnExportCsv = document.getElementById("btnExportCsv");
   const statusBadge = document.getElementById("testStatusBadge");
   const statusText = document.getElementById("testStatusText");
   const tableBody = document.getElementById("beaconTableBody");
   const filterInput = document.getElementById("tagFilterInput");
 
+  // Session Control Elements
+  const elSessionElapsed = document.getElementById("sessionElapsedTime");
+  const elSessionPktsRecv = document.getElementById("sessionPacketsReceived");
+  const elSessionPktsSent = document.getElementById("sessionPacketsSent");
+  const elSessionDropRate = document.getElementById("sessionDropRate");
+
   // Metrics elements
   const elReadSpeed = document.getElementById("stat_read_speed");
-  const elMqttSpeed = document.getElementById("stat_mqtt_speed");
-  const elFreeHeap = document.getElementById("stat_free_heap");
-  const elQueueLoad = document.getElementById("stat_queue_load");
+  const elReadAvg = document.getElementById("stat_read_avg");
+  const elReadMax = document.getElementById("stat_read_max");
+
   const elUniqueTags = document.getElementById("stat_unique_tags");
+  const elBeaconType = document.getElementById("stat_beacon_type");
+  const elBeaconRssi = document.getElementById("stat_beacon_rssi");
+
+  const elMqttSpeed = document.getElementById("stat_mqtt_speed");
+  const elMqttAvg = document.getElementById("stat_mqtt_avg");
+  const elMqttMax = document.getElementById("stat_mqtt_max");
+
+  const elQueueLoad = document.getElementById("stat_queue_load");
+  const elQueueBadge = document.getElementById("stat_queue_badge");
+  const barQueueLoad = document.getElementById("bar_queue_load");
+
   const elBatchLoad = document.getElementById("stat_batch_load");
+  const elBatchBadge = document.getElementById("stat_batch_badge");
+  const barBatchLoad = document.getElementById("bar_batch_load");
+
   const elBatchPktSize = document.getElementById("stat_batch_pkt_size");
+  const elBatchPktBadge = document.getElementById("stat_batch_pkt_badge");
+  const barBatchPkt = document.getElementById("bar_batch_pkt");
+
   const elNetBandwidth = document.getElementById("stat_net_bandwidth");
+  const elNetLinkText = document.getElementById("stat_net_link_text");
+
+  const elFreeHeap = document.getElementById("stat_free_heap");
+  const elHeapBadge = document.getElementById("stat_heap_badge");
+  const barFreeHeap = document.getElementById("bar_free_heap");
+
+  // Session State
+  let sessionStartTime = null;
+  let sessionTimerInterval = null;
+  let sessionTotalRecv = 0;
+  let sessionTotalSent = 0;
+  let sessionStartBeaconsRead = null;
+  let sessionStartMqttPublished = null;
+  let sessionStartDropped = null;
+  let sessionDropped = 0;
+  let curTotalDropped = 0;
+  let fullSessionLog = [];
+  let readSpeedSamples = [];
+  let mqttSpeedSamples = [];
+  let rssiSamples = [];
+  let maxReadSpeed = 0;
+  let maxMqttSpeed = 0;
+
+  // Keepalive interval during testing to prevent session timeout
+  let keepAliveTimer = null;
 
   // Telemetry Snapshot for 1Hz Chart Recording
   let curReadSpeed = 0;
@@ -45,12 +95,100 @@ document.addEventListener("DOMContentLoaded", function() {
   let chartInterval = null;
   let hoverIndex = -1;
 
-  function getWsUrl() {
-    if (location.hostname === "" || location.hostname === "localhost" || location.hostname === "127.0.0.1") {
-      return "ws://192.168.4.1/ws";
+  function updateSessionTimer() {
+    if (!sessionStartTime) return;
+    const elapsedMs = Date.now() - sessionStartTime;
+    const hours = Math.floor(elapsedMs / 3600000);
+    const mins = Math.floor((elapsedMs % 3600000) / 60000);
+    const secs = Math.floor((elapsedMs % 60000) / 1000);
+    const timeFormatted = `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    if (elSessionElapsed) elSessionElapsed.textContent = timeFormatted;
+  }
+
+  function updateDropRate() {
+    if (elSessionPktsRecv) elSessionPktsRecv.textContent = sessionTotalRecv.toLocaleString();
+    if (elSessionPktsSent) elSessionPktsSent.textContent = sessionTotalSent.toLocaleString();
+    if (elSessionDropRate) {
+      if (sessionTotalSent === 0) {
+        elSessionDropRate.textContent = `${sessionDropped.toLocaleString()} (0.00%)`;
+      } else {
+        const rate = (sessionDropped / sessionTotalSent) * 100;
+        elSessionDropRate.textContent = `${sessionDropped.toLocaleString()} (${rate.toFixed(2)}%)`;
+      }
     }
-    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    return `${protocol}//${location.host}/ws`;
+  }
+
+  function exportToCsv() {
+    const dataToExport = fullSessionLog.length > 0 ? fullSessionLog : packetStreamHistory;
+    if (dataToExport.length === 0) {
+      if (typeof Swal !== "undefined") {
+        Swal.fire({
+          icon: "info",
+          title: "Belum Ada Data",
+          text: "Mulai pengujian (Start Test) terlebih dahulu untuk mengumpulkan log beacon.",
+          confirmButtonColor: "#0284c7"
+        });
+      } else {
+        alert("Belum ada data beacon untuk diekspor. Jalankan pengujian terlebih dahulu.");
+      }
+      return;
+    }
+
+    let csvContent = "\uFEFFNo,Waktu,Tipe Beacon,Tag / MAC,RSSI (dBm),Baterai (%)\r\n";
+    dataToExport.forEach((item, index) => {
+      const timeStr = item.timeStr || formatTime(item.time);
+      const codeStr = item.code || "BLE";
+      const tagStr = item.tag || "-";
+      const rssiStr = item.rssi !== undefined && item.rssi !== null ? `${item.rssi}` : "-";
+      const battStr = item.batt !== undefined && item.batt !== null && item.batt !== 0 ? `${item.batt}%` : "-";
+      csvContent += `${index + 1},"${timeStr}","${codeStr}","${tagStr}","${rssiStr}","${battStr}"\r\n`;
+    });
+
+    const now = new Date();
+    const dateStr = now.toISOString().replace(/[-:T]/g, "").slice(0, 14);
+    const filename = `ble_gateway_telemetry_${dateStr}.csv`;
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function fetchNetworkInfo() {
+    fetch("/api/v1/system/version", { cache: "no-store" })
+      .then(res => res.json())
+      .then(data => {
+        if (!elNetLinkText) return;
+        if (data.active_mode === "Ethernet" || data.net_mode === "Ethernet") {
+          const spd = data.eth_speed || 100;
+          const dpx = data.eth_duplex || "Full";
+          elNetLinkText.textContent = `LAN W5500 ${spd}M ${dpx}`;
+        } else {
+          elNetLinkText.textContent = "WiFi Station Online";
+        }
+      })
+      .catch(() => {});
+  }
+
+  function getWsUrl() {
+    let base = "";
+    if (location.hostname === "" || location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+      base = "ws://192.168.4.1/ws";
+    } else {
+      const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      base = `${protocol}//${location.host}/ws`;
+    }
+    const token = sessionStorage.getItem("authToken");
+    if (token) {
+      base += (base.includes("?") ? "&" : "?") + `token=${encodeURIComponent(token)}`;
+    }
+    return base;
   }
 
   function formatTime(d) {
@@ -123,6 +261,36 @@ document.addEventListener("DOMContentLoaded", function() {
     // Hitung unique beacons selama sesi test berjalan
     uniqueBeaconsSet.add(beacon.tag);
     if (elUniqueTags) elUniqueTags.textContent = uniqueBeaconsSet.size;
+
+    // Catat RSSI untuk kalkulasi rolling average sinyal
+    if (beacon.rssi !== undefined && beacon.rssi !== null) {
+      rssiSamples.push(beacon.rssi);
+      if (rssiSamples.length > 50) rssiSamples.shift();
+      if (elBeaconRssi && rssiSamples.length > 0) {
+        const avgRssi = Math.round(rssiSamples.reduce((a, b) => a + b, 0) / rssiSamples.length);
+        elBeaconRssi.textContent = `${avgRssi} dBm`;
+      }
+    }
+
+    // Deteksi tipe beacon
+    if (elBeaconType && beacon.code) {
+      if (beacon.code.toLowerCase().includes("ext")) {
+        elBeaconType.textContent = "iBeacon Ext";
+      } else {
+        elBeaconType.textContent = "iBeacon";
+      }
+    }
+
+    // Rekam ke log lengkap sesi (untuk CSV export)
+    fullSessionLog.push({
+      code: beacon.code || "BLE",
+      tag: beacon.tag,
+      rssi: beacon.rssi,
+      batt: beacon.batt,
+      time: new Date(),
+      timeStr: formatTime(new Date())
+    });
+    if (fullSessionLog.length > 5000) fullSessionLog.shift();
 
     // Saat filter aktif, paket yang tidak cocok DIBUANG dan TIDAK disimpan ke riwayat
     const filterVal = currentFilter.toLowerCase().trim();
@@ -464,26 +632,81 @@ document.addEventListener("DOMContentLoaded", function() {
           if (msg.read_speed !== undefined) {
             curReadSpeed = msg.read_speed;
             if (elReadSpeed) elReadSpeed.textContent = curReadSpeed;
+            readSpeedSamples.push(curReadSpeed);
+            if (readSpeedSamples.length > 60) readSpeedSamples.shift();
+            const avgRead = (readSpeedSamples.reduce((a, b) => a + b, 0) / readSpeedSamples.length).toFixed(1);
+            maxReadSpeed = Math.max(maxReadSpeed, curReadSpeed);
+            if (elReadAvg) elReadAvg.textContent = avgRead;
+            if (elReadMax) elReadMax.textContent = maxReadSpeed;
           }
           if (msg.mqtt_speed !== undefined) {
             curMqttSpeed = msg.mqtt_speed;
             if (elMqttSpeed) elMqttSpeed.textContent = curMqttSpeed;
+            mqttSpeedSamples.push(curMqttSpeed);
+            if (mqttSpeedSamples.length > 60) mqttSpeedSamples.shift();
+            const avgMqtt = (mqttSpeedSamples.reduce((a, b) => a + b, 0) / mqttSpeedSamples.length).toFixed(1);
+            maxMqttSpeed = Math.max(maxMqttSpeed, curMqttSpeed);
+            if (elMqttAvg) elMqttAvg.textContent = avgMqtt;
+            if (elMqttMax) elMqttMax.textContent = maxMqttSpeed;
           }
-          if (msg.free_heap !== undefined && elFreeHeap) {
-            elFreeHeap.textContent = (msg.free_heap > 1024) ? Math.round(msg.free_heap / 1024) : msg.free_heap;
+          if (msg.beacons_read !== undefined) {
+            if (sessionStartBeaconsRead === null) {
+              sessionStartBeaconsRead = msg.beacons_read;
+            }
+            sessionTotalRecv = Math.max(0, msg.beacons_read - sessionStartBeaconsRead);
+            updateDropRate();
+          }
+          if (msg.mqtt_published !== undefined) {
+            if (sessionStartMqttPublished === null) {
+              sessionStartMqttPublished = msg.mqtt_published;
+            }
+            sessionTotalSent = Math.max(0, msg.mqtt_published - sessionStartMqttPublished);
+            updateDropRate();
+          }
+          if (msg.dropped_count !== undefined) {
+            curTotalDropped = msg.dropped_count;
+            if (sessionStartDropped === null) {
+              sessionStartDropped = curTotalDropped;
+            }
+            sessionDropped = Math.max(0, curTotalDropped - sessionStartDropped);
+            updateDropRate();
+          }
+          if (msg.free_heap !== undefined) {
+            const heapKb = (msg.free_heap > 1024) ? Math.round(msg.free_heap / 1024) : msg.free_heap;
+            if (elFreeHeap) elFreeHeap.textContent = heapKb;
+            const heapPct = Math.min(100, Math.max(0, Math.round((heapKb / 320) * 100)));
+            if (barFreeHeap) barFreeHeap.style.width = heapPct + "%";
+            if (elHeapBadge) elHeapBadge.textContent = `${heapPct}% Left`;
           }
           if (msg.queue_load !== undefined) {
             curQueueLoad = (typeof msg.queue_load === "number") ? msg.queue_load : parseInt(msg.queue_load, 10) || 0;
-            if (elQueueLoad) elQueueLoad.textContent = (typeof msg.queue_load === "number") ? `${msg.queue_load} / 300` : msg.queue_load;
+            const qMax = 300;
+            const qPct = Math.min(100, Math.round((curQueueLoad / qMax) * 100));
+            if (elQueueLoad) elQueueLoad.textContent = (typeof msg.queue_load === "number") ? `${msg.queue_load} / ${qMax}` : msg.queue_load;
+            if (barQueueLoad) barQueueLoad.style.width = qPct + "%";
+            if (elQueueBadge) {
+              if (qPct > 75) {
+                elQueueBadge.className = "hud-badge badge-amber";
+                elQueueBadge.textContent = `${qPct}% High Load`;
+              } else {
+                elQueueBadge.className = "hud-badge badge-green";
+                elQueueBadge.textContent = `${qPct}% Load Safe`;
+              }
+            }
           }
           if (msg.batch_load !== undefined) {
             curBatchLoad = msg.batch_load;
             if (msg.batch_max !== undefined) curBatchMax = msg.batch_max;
+            const bPct = Math.min(100, Math.round((curBatchLoad / curBatchMax) * 100));
             if (elBatchLoad) elBatchLoad.textContent = `${curBatchLoad} / ${curBatchMax}`;
+            if (barBatchLoad) barBatchLoad.style.width = bPct + "%";
+            if (elBatchBadge) elBatchBadge.textContent = `${bPct}% Buffer`;
           }
           if (msg.batch_pkt_size !== undefined) {
             curBatchPktSize = msg.batch_pkt_size;
+            const pPct = Math.min(100, Math.round((curBatchPktSize / 100) * 100));
             if (elBatchPktSize) elBatchPktSize.textContent = curBatchPktSize;
+            if (barBatchPkt) barBatchPkt.style.width = pPct + "%";
           }
           if (msg.net_bandwidth !== undefined) {
             curNetBandwidth = (typeof msg.net_bandwidth === "number") ? msg.net_bandwidth : (parseFloat(msg.net_bandwidth) || 0.0);
@@ -544,6 +767,33 @@ document.addEventListener("DOMContentLoaded", function() {
       statusBadge.className = "status-pill";
       statusBadge.innerHTML = `<span class="pulse-dot"></span><span id="testStatusText">STREAMING LIVE</span>`;
 
+      // Reset Session Metrics & Timers
+      sessionStartTime = Date.now();
+      sessionTotalRecv = 0;
+      sessionTotalSent = 0;
+      sessionStartBeaconsRead = null;
+      sessionStartMqttPublished = null;
+      sessionStartDropped = null;
+      sessionDropped = 0;
+      curTotalDropped = 0;
+      fullSessionLog = [];
+      readSpeedSamples = [];
+      mqttSpeedSamples = [];
+      rssiSamples = [];
+      maxReadSpeed = 0;
+      maxMqttSpeed = 0;
+
+      if (elSessionElapsed) elSessionElapsed.textContent = "00:00:00";
+      if (sessionTimerInterval) clearInterval(sessionTimerInterval);
+      sessionTimerInterval = setInterval(updateSessionTimer, 1000);
+      updateDropRate();
+
+      if (elReadAvg) elReadAvg.textContent = "0.0";
+      if (elReadMax) elReadMax.textContent = "0";
+      if (elMqttAvg) elMqttAvg.textContent = "0.0";
+      if (elMqttMax) elMqttMax.textContent = "0";
+      if (elBeaconRssi) elBeaconRssi.textContent = "-";
+
       // Reset Unique Beacon Counter & Batch Pkt Size
       uniqueBeaconsSet.clear();
       if (elUniqueTags) elUniqueTags.textContent = "0";
@@ -558,6 +808,14 @@ document.addEventListener("DOMContentLoaded", function() {
       sampleChartData(); // Sample initial data point immediately
       chartInterval = setInterval(sampleChartData, 1000); // 1Hz sampling rate
 
+      // Start keepalive ping every 60 seconds during testing
+      if (keepAliveTimer) clearInterval(keepAliveTimer);
+      keepAliveTimer = setInterval(() => {
+        if (isTesting) {
+          fetch("/api/v1/auth/check", { cache: "no-store" }).catch(() => {});
+        }
+      }, 60000);
+
       initWebSocket();
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ action: "start" }));
@@ -565,32 +823,151 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   }
 
-  // Stop Test Button
-  if (btnStop) {
-    btnStop.addEventListener("click", function() {
-      isTesting = false;
+  // Centralized Stop Test Handler
+  function stopTest() {
+    if (!isTesting) return;
+    isTesting = false;
+
+    if (btnStop) {
       btnStop.disabled = true;
       btnStop.style.display = "none";
+    }
+    if (btnStart) {
       btnStart.disabled = false;
       btnStart.style.display = "inline-flex";
+    }
 
+    if (statusBadge) {
       statusBadge.className = "status-pill";
       statusBadge.style.background = "rgba(148, 163, 184, 0.12)";
       statusBadge.style.borderColor = "rgba(148, 163, 184, 0.3)";
       statusBadge.style.color = "#94a3b8";
-      statusBadge.innerHTML = `<span>STANDBY / STOPPED</span>`;
+      statusBadge.innerHTML = `<span>STANDBY</span>`;
+    }
 
-      // Freeze Chart (Stop sampling interval so technician can inspect curve)
-      if (chartInterval) {
-        clearInterval(chartInterval);
-        chartInterval = null;
-      }
-      drawChart();
+    // Freeze Session Timer (Keep elapsed time visible for inspection)
+    if (sessionTimerInterval) {
+      clearInterval(sessionTimerInterval);
+      sessionTimerInterval = null;
+    }
 
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action: "stop" }));
+    // Freeze Chart (Stop sampling interval so technician can inspect curve)
+    if (chartInterval) {
+      clearInterval(chartInterval);
+      chartInterval = null;
+    }
+    if (keepAliveTimer) {
+      clearInterval(keepAliveTimer);
+      keepAliveTimer = null;
+    }
+    drawChart();
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: "stop" }));
+    }
+  }
+
+  // Stop Test Button
+  if (btnStop) {
+    btnStop.addEventListener("click", stopTest);
+  }
+
+  // =================================================================
+  // NAVIGATION GUARD & ACTIVE TEST WARNING
+  // =================================================================
+  function confirmLeavePage(targetUrl) {
+    if (!isTesting) {
+      window.location.href = targetUrl;
+      return;
+    }
+
+    if (typeof Swal !== "undefined") {
+      Swal.fire({
+        title: "Sesi Pengujian Sedang Berjalan",
+        html: "Pengujian live beacon sedang aktif. Jika Anda berpindah halaman, koneksi pengujian akan dihentikan dan seluruh data sesi uji yang belum diekspor akan hilang.<br><br>Yakin ingin tetap berpindah halaman?",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Lanjut",
+        confirmButtonColor: "#ef4444",
+        cancelButtonText: "Batal",
+        cancelButtonColor: "#64748b"
+      }).then((result) => {
+        if (result.isConfirmed) {
+          stopTest();
+          window.location.href = targetUrl;
+        }
+      });
+    } else {
+      const leave = confirm("Pengujian live beacon sedang aktif. Jika Anda berpindah halaman, koneksi pengujian akan dihentikan dan seluruh data sesi uji yang belum diekspor akan hilang.\n\nTetap lanjut berpindah halaman?");
+      if (leave) {
+        stopTest();
+        window.location.href = targetUrl;
       }
-    });
+    }
+  }
+
+  // Intercept all internal navigation link clicks when testing
+  document.addEventListener("click", function(e) {
+    if (!isTesting) return;
+
+    const link = e.target.closest("a");
+    if (!link) return;
+
+    const href = link.getAttribute("href");
+    if (!href || href === "#" || href.startsWith("javascript:") || href.startsWith("blob:") || href.startsWith("data:")) {
+      return;
+    }
+
+    // Allow download links (e.g. export CSV created dynamically)
+    if (link.hasAttribute("download")) {
+      return;
+    }
+
+    // Ignore links targeting same test page
+    const pathname = window.location.pathname;
+    if (href === pathname || href === "/test" || href === "/test.html" || href.startsWith("#")) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+    confirmLeavePage(link.href);
+  }, true);
+
+  // Intercept power sheet buttons (Reboot & Factory Reset) if clicked during test
+  const sheetBtnReboot = document.getElementById("sheetBtnReboot");
+  if (sheetBtnReboot) {
+    sheetBtnReboot.addEventListener("click", function(e) {
+      if (isTesting) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        confirmLeavePage("/reboot");
+      }
+    }, true);
+  }
+  const sheetBtnReset = document.getElementById("sheetBtnReset");
+  if (sheetBtnReset) {
+    sheetBtnReset.addEventListener("click", function(e) {
+      if (isTesting) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        confirmLeavePage("/reset");
+      }
+    }, true);
+  }
+
+  // Browser-level reload / close tab guard
+  window.addEventListener("beforeunload", function(e) {
+    if (isTesting) {
+      e.preventDefault();
+      e.returnValue = "Pengujian live beacon sedang aktif. Jika Anda meninggalkan halaman, pengujian akan dihentikan dan data sesi uji akan hilang.";
+      return e.returnValue;
+    }
+  });
+
+  // Export CSV Button
+  if (btnExportCsv) {
+    btnExportCsv.addEventListener("click", exportToCsv);
   }
 
   // Filter Search Input
@@ -613,26 +990,77 @@ document.addEventListener("DOMContentLoaded", function() {
       if (msg.read_speed !== undefined) {
         curReadSpeed = msg.read_speed;
         if (elReadSpeed) elReadSpeed.textContent = curReadSpeed;
+        readSpeedSamples.push(curReadSpeed);
+        if (readSpeedSamples.length > 60) readSpeedSamples.shift();
+        const avgRead = (readSpeedSamples.reduce((a, b) => a + b, 0) / readSpeedSamples.length).toFixed(1);
+        maxReadSpeed = Math.max(maxReadSpeed, curReadSpeed);
+        if (elReadAvg) elReadAvg.textContent = avgRead;
+        if (elReadMax) elReadMax.textContent = maxReadSpeed;
       }
       if (msg.mqtt_speed !== undefined) {
         curMqttSpeed = msg.mqtt_speed;
         if (elMqttSpeed) elMqttSpeed.textContent = curMqttSpeed;
+        mqttSpeedSamples.push(curMqttSpeed);
+        if (mqttSpeedSamples.length > 60) mqttSpeedSamples.shift();
+        const avgMqtt = (mqttSpeedSamples.reduce((a, b) => a + b, 0) / mqttSpeedSamples.length).toFixed(1);
+        maxMqttSpeed = Math.max(maxMqttSpeed, curMqttSpeed);
+        if (elMqttAvg) elMqttAvg.textContent = avgMqtt;
+        if (elMqttMax) elMqttMax.textContent = maxMqttSpeed;
       }
-      if (msg.free_heap !== undefined && elFreeHeap) {
-        elFreeHeap.textContent = (msg.free_heap > 1024) ? Math.round(msg.free_heap / 1024) : msg.free_heap;
+      if (msg.mqtt_published !== undefined) {
+        if (sessionStartMqttPublished === null) {
+          sessionStartMqttPublished = msg.mqtt_published;
+        }
+        sessionTotalSent = Math.max(0, msg.mqtt_published - sessionStartMqttPublished);
+        if (sessionTotalRecv < sessionTotalSent) {
+          sessionTotalRecv = sessionTotalSent;
+        }
+        updateDropRate();
+      }
+      if (msg.dropped_count !== undefined) {
+        curTotalDropped = msg.dropped_count;
+        if (sessionStartDropped === null) {
+          sessionStartDropped = curTotalDropped;
+        }
+        sessionDropped = Math.max(0, curTotalDropped - sessionStartDropped);
+        updateDropRate();
+      }
+      if (msg.free_heap !== undefined) {
+        const heapKb = (msg.free_heap > 1024) ? Math.round(msg.free_heap / 1024) : msg.free_heap;
+        if (elFreeHeap) elFreeHeap.textContent = heapKb;
+        const heapPct = Math.min(100, Math.max(0, Math.round((heapKb / 320) * 100)));
+        if (barFreeHeap) barFreeHeap.style.width = heapPct + "%";
+        if (elHeapBadge) elHeapBadge.textContent = `${heapPct}% Left`;
       }
       if (msg.queue_load !== undefined) {
         curQueueLoad = (typeof msg.queue_load === "number") ? msg.queue_load : parseInt(msg.queue_load, 10) || 0;
-        if (elQueueLoad) elQueueLoad.textContent = (typeof msg.queue_load === "number") ? `${msg.queue_load} / 300` : msg.queue_load;
+        const qMax = 300;
+        const qPct = Math.min(100, Math.round((curQueueLoad / qMax) * 100));
+        if (elQueueLoad) elQueueLoad.textContent = (typeof msg.queue_load === "number") ? `${msg.queue_load} / ${qMax}` : msg.queue_load;
+        if (barQueueLoad) barQueueLoad.style.width = qPct + "%";
+        if (elQueueBadge) {
+          if (qPct > 75) {
+            elQueueBadge.className = "hud-badge badge-amber";
+            elQueueBadge.textContent = `${qPct}% High Load`;
+          } else {
+            elQueueBadge.className = "hud-badge badge-green";
+            elQueueBadge.textContent = `${qPct}% Load Safe`;
+          }
+        }
       }
       if (msg.batch_load !== undefined) {
         curBatchLoad = msg.batch_load;
         if (msg.batch_max !== undefined) curBatchMax = msg.batch_max;
+        const bPct = Math.min(100, Math.round((curBatchLoad / curBatchMax) * 100));
         if (elBatchLoad) elBatchLoad.textContent = `${curBatchLoad} / ${curBatchMax}`;
+        if (barBatchLoad) barBatchLoad.style.width = bPct + "%";
+        if (elBatchBadge) elBatchBadge.textContent = `${bPct}% Buffer`;
       }
       if (msg.batch_pkt_size !== undefined) {
         curBatchPktSize = msg.batch_pkt_size;
+        const pPct = Math.min(100, Math.round((curBatchPktSize / 100) * 100));
         if (elBatchPktSize) elBatchPktSize.textContent = curBatchPktSize;
+        if (barBatchPkt) barBatchPkt.style.width = pPct + "%";
       }
       if (msg.net_bandwidth !== undefined) {
         curNetBandwidth = (typeof msg.net_bandwidth === "number") ? msg.net_bandwidth : (parseFloat(msg.net_bandwidth) || 0.0);
@@ -659,17 +1087,24 @@ document.addEventListener("DOMContentLoaded", function() {
       if (chartData.length > 60) chartData.shift();
       drawChart();
     },
+    exportToCsv: exportToCsv,
+    stopTest: stopTest,
+    confirmLeavePage: confirmLeavePage,
     getState: function() {
       return {
         isTesting: isTesting,
         uniqueCount: uniqueBeaconsSet.size,
         historyCount: packetStreamHistory.length,
+        fullSessionLogCount: fullSessionLog.length,
         chartDataPoints: chartData.length,
-        currentFilter: currentFilter
+        currentFilter: currentFilter,
+        sessionTotalRecv: sessionTotalRecv,
+        sessionTotalSent: sessionTotalSent
       };
     }
   };
 
-  // Initial Empty Chart Drawing
+  // Initializations
+  fetchNetworkInfo();
   drawChart();
 });

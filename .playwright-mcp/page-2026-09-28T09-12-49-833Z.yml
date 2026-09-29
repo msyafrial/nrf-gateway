@@ -1,0 +1,98 @@
+- generic [active] [ref=f48e1]:
+  - generic [ref=f48e2]:
+    - complementary [ref=f48e3]:
+      - generic [ref=f48e4]:
+        - img "IOTARU" [ref=f48e6]
+        - generic [ref=f48e7]: Administrator
+        - list [ref=f48e13]:
+          - listitem [ref=f48e14]:
+            - link "Overview" [ref=f48e15] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=f48e20]:
+            - link "Live Test Monitor" [ref=f48e21] [cursor=pointer]:
+              - /url: /test
+          - listitem [ref=f48e25]:
+            - link "Auth Settings" [ref=f48e26] [cursor=pointer]:
+              - /url: /auth
+          - listitem [ref=f48e31]:
+            - link "Device Settings" [ref=f48e32] [cursor=pointer]:
+              - /url: /settings
+          - listitem [ref=f48e37]:
+            - link "Update Firmware" [ref=f48e38] [cursor=pointer]:
+              - /url: /firmware
+          - listitem [ref=f48e43]:
+            - link "Reset Config" [ref=f48e44] [cursor=pointer]:
+              - /url: /reset
+          - listitem [ref=f48e51]:
+            - link "Reboot" [ref=f48e52] [cursor=pointer]:
+              - /url: /reboot
+          - listitem [ref=f48e56]:
+            - link "Logout" [ref=f48e57] [cursor=pointer]:
+              - /url: /logout
+    - main [ref=f48e62]:
+      - generic [ref=f48e63]:
+        - generic [ref=f48e64]: Update Firmware & LittleFS
+        - link "Keluar" [ref=f48e66] [cursor=pointer]:
+          - /url: /logout
+      - generic [ref=f48e71]:
+        - generic [ref=f48e72]:
+          - generic [ref=f48e78]:
+            - generic [ref=f48e79]: Update Firmware Program (.bin)
+            - generic [ref=f48e80]: Unggah binary aplikasi ESP32 dengan validasi header otomatis
+          - generic [ref=f48e81]:
+            - generic [ref=f48e82]:
+              - generic [ref=f48e83]: Pilih atau Tarik Berkas Firmware (.bin)
+              - generic [ref=f48e84] [cursor=pointer]:
+                - generic:
+                  - generic:
+                    - text: Klik atau seret file
+                    - strong: firmware.bin
+                    - text: ke sini
+                  - generic: Format berkas .bin (Firmware ESP32)
+            - button "Unggah & Update Firmware" [ref=f48e86] [cursor=pointer]
+        - generic [ref=f48e90]:
+          - generic [ref=f48e95]:
+            - generic [ref=f48e96]: Update Filesystem Web Dashboard (LittleFS .bin)
+            - generic [ref=f48e97]: Perbarui file antarmuka web dan skrip tanpa mengubah firmware program
+          - generic [ref=f48e98]:
+            - generic [ref=f48e99]:
+              - generic [ref=f48e100]: Pilih atau Tarik Berkas LittleFS (.bin)
+              - generic [ref=f48e101] [cursor=pointer]:
+                - generic:
+                  - generic:
+                    - text: Klik atau seret file
+                    - strong: littlefs.bin
+                    - text: ke sini
+                  - generic: Format berkas .bin (Partisi Web LittleFS)
+            - button "Unggah & Update Filesystem" [ref=f48e103] [cursor=pointer]
+      - generic [ref=f48e107]: © 2026 IOTARU ESP32 Gateway (SG-10). OTA Safe Flashing Engine.
+  - generic [ref=f48e108]:
+    - generic [ref=f48e110]:
+      - generic [ref=f48e111]: Pengaturan Sistem
+      - generic [ref=f48e112]: Pilih menu konfigurasi gateway IOTARU
+    - generic [ref=f48e113]:
+      - link "Device Settings Filter UUID, RSSI threshold & batching MQTT" [ref=f48e114] [cursor=pointer]:
+        - /url: /settings
+        - generic [ref=f48e119]:
+          - generic [ref=f48e120]: Device Settings
+          - generic [ref=f48e121]: Filter UUID, RSSI threshold & batching MQTT
+      - link "Auth & Network Settings Kredensial login, Wi-Fi & LAN Ethernet" [ref=f48e122] [cursor=pointer]:
+        - /url: /auth
+        - generic [ref=f48e127]:
+          - generic [ref=f48e128]: Auth & Network Settings
+          - generic [ref=f48e129]: Kredensial login, Wi-Fi & LAN Ethernet
+      - button "Batal" [ref=f48e130] [cursor=pointer]
+  - generic [ref=f48e131]:
+    - generic [ref=f48e133]:
+      - generic [ref=f48e134]: Kontrol Daya Perangkat
+      - generic [ref=f48e135]: Pilih tindakan untuk mikrokontroler ESP32
+    - generic [ref=f48e136]:
+      - button "Reboot Perangkat Mulai ulang sistem modul ESP32" [ref=f48e137] [cursor=pointer]:
+        - generic [ref=f48e141]:
+          - generic [ref=f48e142]: Reboot Perangkat
+          - generic [ref=f48e143]: Mulai ulang sistem modul ESP32
+      - button "Reset Konfigurasi (Factory) Kembalikan semua setelan NVS ke default" [ref=f48e144] [cursor=pointer]:
+        - generic [ref=f48e151]:
+          - generic [ref=f48e152]: Reset Konfigurasi (Factory)
+          - generic [ref=f48e153]: Kembalikan semua setelan NVS ke default
+      - button "Batal" [ref=f48e154] [cursor=pointer]

@@ -1,0 +1,67 @@
+- generic [ref=f33e2]:
+  - complementary [ref=f33e3]:
+    - generic [ref=f33e4]:
+      - img "IOTARU" [ref=f33e6]
+      - generic [ref=f33e7]: Administrator
+      - list [ref=f33e13]:
+        - listitem [ref=f33e14]:
+          - link "Overview" [ref=f33e15] [cursor=pointer]:
+            - /url: /
+        - listitem [ref=f33e20]:
+          - link "Live Test Monitor" [ref=f33e21] [cursor=pointer]:
+            - /url: /test
+        - listitem [ref=f33e25]:
+          - link "Auth Settings" [ref=f33e26] [cursor=pointer]:
+            - /url: /auth
+        - listitem [ref=f33e31]:
+          - link "Device Settings" [ref=f33e32] [cursor=pointer]:
+            - /url: /settings
+        - listitem [ref=f33e37]:
+          - link "Update Firmware" [ref=f33e38] [cursor=pointer]:
+            - /url: /firmware
+        - listitem [ref=f33e43]:
+          - link "Reset Config" [ref=f33e44] [cursor=pointer]:
+            - /url: /reset
+        - listitem [ref=f33e51]:
+          - link "Reboot" [ref=f33e52] [cursor=pointer]:
+            - /url: /reboot
+        - listitem [ref=f33e56]:
+          - link "Logout" [ref=f33e57] [cursor=pointer]:
+            - /url: /logout
+  - main [ref=f33e62]:
+    - generic [ref=f33e63]:
+      - generic [ref=f33e64]: Update Firmware & LittleFS
+      - link "Keluar" [ref=f33e66] [cursor=pointer]:
+        - /url: /logout
+    - generic [ref=f33e71]:
+      - generic [ref=f33e72]:
+        - generic [ref=f33e78]:
+          - generic [ref=f33e79]: Update Firmware Program (.bin)
+          - generic [ref=f33e80]: Unggah binary aplikasi ESP32 dengan validasi header otomatis (0xE9)
+        - generic [ref=f33e81]:
+          - generic [ref=f33e82]:
+            - generic [ref=f33e83]: Pilih atau Tarik Berkas Firmware (.bin)
+            - generic [ref=f33e84] [cursor=pointer]:
+              - generic:
+                - generic:
+                  - text: Klik atau seret file
+                  - strong: firmware.bin
+                  - text: ke sini
+                - generic: Format berkas .bin (ESP32 Magic Byte 0xE9)
+          - button "Unggah & Update Firmware" [ref=f33e86] [cursor=pointer]
+      - generic [ref=f33e90]:
+        - generic [ref=f33e95]:
+          - generic [ref=f33e96]: Update Filesystem Web Dashboard (LittleFS .bin)
+          - generic [ref=f33e97]: Perbarui file antarmuka web dan skrip tanpa mengubah firmware program
+        - generic [ref=f33e98]:
+          - generic [ref=f33e99]:
+            - generic [ref=f33e100]: Pilih atau Tarik Berkas LittleFS (.bin)
+            - generic [ref=f33e101] [cursor=pointer]:
+              - generic:
+                - generic:
+                  - text: Klik atau seret file
+                  - strong: littlefs.bin
+                  - text: ke sini
+                - generic: Format berkas .bin (Partisi Web LittleFS)
+          - button "Unggah & Update Filesystem" [ref=f33e103] [cursor=pointer]
+    - generic [ref=f33e107]: © 2026 IOTARU ESP32 Gateway (SG-10). OTA Safe Flashing Engine.

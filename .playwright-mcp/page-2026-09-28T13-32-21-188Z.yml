@@ -1,0 +1,25 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - img "IOTARU" [ref=e5]
+    - generic [ref=e6]: Autentikasi Gateway SG-10
+    - generic [ref=e7]: Masuk sebagai Administrator atau Teknisi Lapangan
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: Username
+        - textbox "Username" [ref=e11]:
+          - /placeholder: Masukkan username
+          - text: admin
+      - generic [ref=e12]:
+        - generic [ref=e13]: Password
+        - generic [ref=e14]:
+          - textbox "Password" [active] [ref=e15]:
+            - /placeholder: Masukkan password
+            - text: admin
+          - button "Tahan untuk melihat password" [ref=e16] [cursor=pointer]
+      - button "Masuk ke Sistem" [ref=e22] [cursor=pointer]
+  - generic [ref=e24]:
+    - generic [ref=e29]: Sesi Penuh (Maks. 2 Perangkat)
+    - generic [ref=e31]:
+      - text: Saat ini sudah ada 2 perangkat yang sedang aktif login ke sistem gateway.
+      - generic [ref=e32]: Demi keamanan dan integritas konfigurasi, silakan logout terlebih dahulu di salah satu perangkat lain sebelum login di perangkat ini.
+    - button "Mengerti" [ref=e34] [cursor=pointer]

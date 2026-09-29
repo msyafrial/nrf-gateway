@@ -1,231 +1,274 @@
-<mxfile host="Electron" modified="2026-09-27T12:25:00.000Z" agent="Antigravity" version="21.6.8" type="device">
-  <diagram id="pipeline-diagram" name="IOTARU SG-10 Pipeline">
-    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1300" background="#060b13" math="0" shadow="0">
+<mxfile host="app.diagrams.net" agent="Antigravity">
+  <diagram id="ultra-detailed-architecture" name="IOTARU Full System Flowchart">
+    <mxGraphModel dx="1136" dy="589" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1850" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-
-        <!-- ================= CONTAINER 1: nRF52840 ================= -->
-        <mxCell id="c_nrf" value="1. BLE Co-Processor (nRF52840)" style="swimlane;whiteSpace=wrap;html=1;fillColor=rgba(15,23,42,0.85);strokeColor=#38bdf8;fontColor=#38bdf8;fontStyle=1;fontSize=14;startSize=30;rounded=1;arcSize=8;shadow=1;" vertex="1" parent="1">
-          <mxGeometry x="40" y="40" width="300" height="1180" as="geometry" />
+        <mxCell id="bg_col1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;dashed=1;fontStyle=1;fontSize=14;verticalAlign=top;align=center;spacingTop=12;labelBackgroundColor=none;" value="1. BOOT, HARDWARE &amp; CONFIG (src/main.cpp &amp; src/bsp/*)" vertex="1">
+          <mxGeometry height="1750" width="410" x="40" y="40" as="geometry" />
         </mxCell>
-
-        <mxCell id="nrf_scan" value="BLE Radio Scanner&#xa;(Channel 37, 38, 39)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e293b;strokeColor=#38bdf8;fontColor=#f8fafc;fontStyle=1;fontSize=12;" vertex="1" parent="c_nrf">
-          <mxGeometry x="40" y="60" width="220" height="60" as="geometry" />
+        <mxCell id="bg_col2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;dashed=1;fontStyle=1;fontSize=14;verticalAlign=top;align=center;spacingTop=12;labelBackgroundColor=none;" value="2. CORE 0 (PRO_CPU) INGESTION &amp; FILTER PIPELINE (src/core/beacon_pipeline.*)" vertex="1">
+          <mxGeometry height="1750" width="670" x="480" y="40" as="geometry" />
         </mxCell>
-
-        <mxCell id="nrf_parse" value="Parse Advertisement&#xa;(iBeacon / Extended Packet)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e293b;strokeColor=#38bdf8;fontColor=#f8fafc;fontSize=12;" vertex="1" parent="c_nrf">
-          <mxGeometry x="40" y="160" width="220" height="60" as="geometry" />
+        <mxCell id="bg_col3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;dashed=1;fontStyle=1;fontSize=14;verticalAlign=top;align=center;spacingTop=12;labelBackgroundColor=none;" value="3. CORE 1 (APP_CPU) MQTT BATCH PUBLISHER (src/network/*)" vertex="1">
+          <mxGeometry height="1750" width="530" x="1180" y="40" as="geometry" />
         </mxCell>
-
-        <mxCell id="nrf_pack" value="Pack 25-Byte Binary Frame&#xa;[Header 0xAA 0x55, Payload, CRC]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e293b;strokeColor=#38bdf8;fontColor=#f8fafc;fontSize=12;" vertex="1" parent="c_nrf">
-          <mxGeometry x="40" y="260" width="220" height="60" as="geometry" />
+        <mxCell id="bg_col4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;dashed=1;fontStyle=1;fontSize=14;verticalAlign=top;align=center;spacingTop=12;labelBackgroundColor=none;" value="4. CORE 1 (APP_CPU) WEB SERVER &amp; WEBSOCKET (src/web/*)" vertex="1">
+          <mxGeometry height="1750" width="540" x="1740" y="40" as="geometry" />
         </mxCell>
-
-        <mxCell id="nrf_tx" value="UART TX (Pin 17)&#xa;Baudrate 1.000.000 bps (1 Mbps)" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#0284c7;strokeColor=#38bdf8;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="c_nrf">
-          <mxGeometry x="40" y="360" width="220" height="60" as="geometry" />
+        <mxCell id="c1_main" parent="1" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fontStyle=1;fontSize=11;spacing=4;labelBackgroundColor=none;" value="[APP MAIN ORCHESTRATOR]&#xa;File: src/main.cpp&#xa;Func: app_main()&#xa;Action: Inisialisasi NVS, BSP, Net, MQTT, Web Server" vertex="1">
+          <mxGeometry height="75" width="360" x="65" y="90" as="geometry" />
         </mxCell>
-
-        <mxCell id="e_nrf1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#38bdf8;strokeWidth=2;" edge="1" parent="c_nrf" source="nrf_scan" target="nrf_parse">
+        <mxCell id="c1_config" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=14;fontSize=10;spacing=2;labelBackgroundColor=none;" value="[NVS CONFIG STORE]&#xa;File: src/core/config_store.cpp&#xa;Func: ConfigStore::loadConfig()&#xa;Var: Iotaru::g_config (POD Struct) &amp; g_deviceId&#xa;Keys: dev_model, rssi_min, filter_uuid, batch_max, restart_sch..." vertex="1">
+          <mxGeometry height="105" width="360" x="65" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="c1_button" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fontStyle=1;spacing=4;labelBackgroundColor=none;" value="[BOOT RECOVERY BUTTON CHECKER]&#xa;File: src/bsp/bsp_button.cpp&#xa;Func: BspButton::checkBootAction()&#xa;Hardware: Pin GPIO 34 (Active Low 10k Pull-Up)&#xa;Logic: &lt;5s Batal, 5-10s Hotspot AP, &gt;10s Factory Reset" vertex="1">
+          <mxGeometry height="85" width="360" x="65" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="c1_led" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[WS2812B NEOPIXEL STATUS TASK]&#xa;File: src/bsp/bsp_led.cpp&#xa;Func: s_ledTask(void* pvParameters)&#xa;Hardware: Pin GPIO 13 (Dual Daisy-Chain LED: SYS &amp; COM)&#xa;Var: s_sysState, s_comState | Timing: Bitbang Cycle &lt;60µs" vertex="1">
+          <mxGeometry height="85" width="360" x="65" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="c1_netmgr" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[NETWORK MANAGER INIT]&#xa;File: src/network/net_manager.cpp&#xa;Func: NetManager::init() / setConnectionMode()&#xa;Modes: Ethernet W5500 SPI DMA (Mode 1) / Wi-Fi STA (Mode 0)&#xa;Features: SNTP GMT+7 WIB, Static IP, Secondary DNS" vertex="1">
+          <mxGeometry height="85" width="360" x="65" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="c1_watchdog" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[DISCONNECT WATCHDOG &amp; AUTO-RESTART]&#xa;File: src/network/net_manager.cpp&#xa;Func: NetManager::watchdogTask()&#xa;Var: g_config.discon_rst (Default: 30 Menit Offline)&#xa;Var: g_config.restart_schedule (Scheduled Daily Reboot e.g. 03:00)" vertex="1">
+          <mxGeometry height="85" width="360" x="65" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_nrf" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fontStyle=1;spacing=4;labelBackgroundColor=none;" value="[BLE CO-PROCESSOR nRF52840]&#xa;File: External Radio Firmware (Channel 37, 38, 39)&#xa;Protocol: Packing frame biner 25-byte&#xa;Byte Map: [0..1: 0xAA 0x55, 2..17: UUID, 18..19: Major, 20..21: Minor, 22: RSSI, 23: Batt, 24: CRC]" vertex="1">
+          <mxGeometry height="75" width="410" x="510" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_uart" parent="1" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fontStyle=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[UART2 HARDWARE ISR &amp; EVENT TASK]&#xa;File: src/bsp/bsp_uart.cpp&#xa;Func: uart_event_task(void* pvParameters)&#xa;Pin: GPIO 16 (RX2 @ 1.000.000 bps 8N1)&#xa;Var: s_uartQueue, dtmp[1024] | Core: CORE 0 (PRO_CPU)" vertex="1">
+          <mxGeometry height="75" width="410" x="510" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_parser" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[STREAM PARSER STATE MACHINE]&#xa;File: src/core/beacon_pipeline.cpp&#xa;Func: BeaconPipeline::processByte(uint8_t byte)&#xa;Var: s_parserState (SYNC_1 -&gt; SYNC_2 -&gt; COLLECT_DATA)&#xa;Buffer: uint8_t s_rxFrameBuffer[25], s_rxIndex" vertex="1">
+          <mxGeometry height="75" width="410" x="510" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_crc_calc" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[FAST XOR CHECKSUM EVALUATION]&#xa;File: src/utils/crc_utils.hpp&#xa;Func: CrcUtils::isValidXorChecksum(s_rxFrameBuffer, 25)&#xa;Formula: XOR(byte[0] ^ ... ^ byte[23]) == byte[24]" vertex="1">
+          <mxGeometry height="65" width="410" x="510" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_crc_chk" parent="1" style="rhombus;whiteSpace=wrap;html=1;fontStyle=1;fontSize=11;labelBackgroundColor=none;" value="CRC XOR&#xa;Valid?" vertex="1">
+          <mxGeometry height="75" width="200" x="615" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_drop_crc" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=2;labelBackgroundColor=none;" value="[DISCARD FRAME]&#xa;Var: s_crcErrorCount++&#xa;Reset: s_parserState = SYNC_1" vertex="1">
+          <mxGeometry height="55" width="165" x="960" y="530" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_rssi_chk" parent="1" style="rhombus;whiteSpace=wrap;html=1;fontStyle=1;fontSize=10;labelBackgroundColor=none;" value="Filter 1: RSSI Threshold&#xa;packet.rssi &gt;= g_config.rssi_min?" vertex="1">
+          <mxGeometry height="75" width="250" x="590" y="635" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_drop_rssi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=2;labelBackgroundColor=none;" value="[DISCARD FRAME]&#xa;Signal Weak (&lt; rssi_min)&#xa;Ignore Weak Bleed Beacon" vertex="1">
+          <mxGeometry height="55" width="165" x="960" y="645" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_uuid_chk" parent="1" style="rhombus;whiteSpace=wrap;html=1;fontStyle=1;fontSize=10;labelBackgroundColor=none;" value="Filter 2: UUID En?&#xa;filter_uuid_en == 1 &amp; Match 16B?" vertex="1">
+          <mxGeometry height="75" width="260" x="585" y="750" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_drop_uuid" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=2;labelBackgroundColor=none;" value="[DISCARD FRAME]&#xa;UUID Target Mismatch&#xa;memcmp() != 0" vertex="1">
+          <mxGeometry height="55" width="165" x="960" y="760" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_major_chk" parent="1" style="rhombus;whiteSpace=wrap;html=1;fontStyle=1;fontSize=10;labelBackgroundColor=none;" value="Filter 3: Major En?&#xa;filter_major_en == 1 &amp; Tag Match?" vertex="1">
+          <mxGeometry height="75" width="260" x="585" y="865" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_drop_major" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=2;labelBackgroundColor=none;" value="[DISCARD FRAME]&#xa;Major Tag Mismatch&#xa;matchMajorFilter() == false" vertex="1">
+          <mxGeometry height="55" width="165" x="960" y="875" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_pass" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontStyle=1;fontSize=11;spacing=4;labelBackgroundColor=none;" value="[PACKET VALIDATED &amp; PASSED ALL FILTERS]&#xa;Func: BeaconPipeline::pushPacket(BeaconPacket packet)&#xa;Var: s_readCount++ (Atomic uint32_t Read Speed HUD)&#xa;Status: Ready for Queue Dispatch" vertex="1">
+          <mxGeometry height="75" width="410" x="510" y="980" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_q_chk" parent="1" style="rhombus;whiteSpace=wrap;html=1;fontStyle=1;fontSize=10;labelBackgroundColor=none;" value="s_beaconQueue Penuh?&#xa;(Items == 300)" vertex="1">
+          <mxGeometry height="75" width="200" x="740" y="1090" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_q_drop" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=2;labelBackgroundColor=none;" value="[DROP OLDEST PACKET]&#xa;Func: xQueueReceive(s_beaconQueue, &amp;oldest, 0)&#xa;Ensures Zero Ingestion Stalling" vertex="1">
+          <mxGeometry height="55" width="240" x="720" y="1200" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_queue" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=14;fontStyle=1;fontSize=10;spacing=2;labelBackgroundColor=none;" value="[FREERTOS BEACON QUEUE]&#xa;File: src/core/beacon_pipeline.cpp&#xa;Func: xQueueSend(s_beaconQueue, &amp;packet, 0)&#xa;Var: QueueHandle_t s_beaconQueue (300 Slots)&#xa;Payload: struct BeaconPacket (Packed)" vertex="1">
+          <mxGeometry height="110" width="300" x="690" y="1310" as="geometry" />
+        </mxCell>
+        <mxCell id="c2_live_buf" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=14;fontStyle=1;fontSize=10;spacing=2;labelBackgroundColor=none;" value="[LIVE CIRCULAR FIFO BUFFER]&#xa;File: src/core/beacon_pipeline.cpp&#xa;Func: recordLiveBeacon(const BeaconPacket&amp; p)&#xa;Mutex: xSemaphoreTake(s_liveBufMutex, pdMS_TO_TICKS(5))&#xa;Var: LiveBeaconItem s_liveBeaconBuf[50], s_liveBeaconCount" vertex="1">
+          <mxGeometry height="110" width="180" x="500" y="1310" as="geometry" />
+        </mxCell>
+        <mxCell id="c3_mqtt_task" parent="1" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fontStyle=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[MQTT PUBLISHER TASK]&#xa;File: src/network/mqtt_service.cpp&#xa;Func: MqttService::publisherTask(void* pvParameters)&#xa;Core Affinity: CORE 1 (APP_CPU) | Priority: tskIDLE_PRIORITY + 3&#xa;Action: Loop pembaca antrean FreeRTOS s_beaconQueue" vertex="1">
+          <mxGeometry height="75" width="440" x="1225" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="c3_mqtt_read" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="Func: xQueueReceive(s_beaconQueue, &amp;pkt, waitTicks)&#xa;Var: BeaconPacket pkt&#xa;Action: Ekstraksi paket dari antrean tanpa membebani Core 0" vertex="1">
+          <mxGeometry height="65" width="440" x="1225" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="c3_mqtt_append" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[BATCH BUFFER AGGREGATION ENGINE]&#xa;Func: appendToBatch(pkt)&#xa;Var: uint8_t m_batchBuffer[4096], m_batchCount&#xa;Encoding: Format Biner 6B (Major, Minor, RSSI, Batt)&#xa;Encoding: Format Biner 7B (+ 1B Frame Type: 0x01 Std, 0x02 Ext)" vertex="1">
+          <mxGeometry height="85" width="440" x="1225" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="c3_mqtt_cond" parent="1" style="rhombus;whiteSpace=wrap;html=1;fontStyle=1;fontSize=10;labelBackgroundColor=none;" value="Trigger Batch Flush?&#xa;m_batchCount &gt;= batch_max (100)&#xa;ATAU elapsed_ms &gt;= batch_flush (300ms)?" vertex="1">
+          <mxGeometry height="85" width="290" x="1300" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="c3_mqtt_flush" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontStyle=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[PUBLISH BATCH TO BROKER]&#xa;Func: MqttService::flushBatch()&#xa;API: esp_mqtt_client_publish(m_client, topic, m_batchBuffer, len, 1, 0)&#xa;Topic: beacon/%device_id% (Subtopic terikat Device ID)&#xa;Var: m_mqttPublishCount++ (Batch/s HUD Speed)" vertex="1">
+          <mxGeometry height="80" width="440" x="1225" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="c3_mqtt_bandwidth" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[EGRESS BANDWIDTH CALCULATION]&#xa;Formula: Payload + MQTT Header + TCP/IP (40B) + L2 Ethernet (18B)&#xa;Var: m_netBandwidth (Throughput aktual dalam satuan KB/s)&#xa;Status: Live Telemetry Metric untuk Grafik 60 Detik" vertex="1">
+          <mxGeometry height="75" width="440" x="1225" y="665" as="geometry" />
+        </mxCell>
+        <mxCell id="c3_eth_driver" parent="1" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fontStyle=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[PHYSICAL NETWORK DRIVER W5500 SPI DMA]&#xa;File: src/network/drivers/EthernetW5500.cpp&#xa;Pins: CS 26, SCK 18, MISO 19, MOSI 23, RST 15, INT 14&#xa;Speed: 25 MHz (SPI_MASTER_FREQ_25M) via Kontroler SPI2 (VSPI)&#xa;Stack: Native esp_eth MAC/PHY &amp; esp_netif (lwIP)" vertex="1">
+          <mxGeometry height="85" width="440" x="1225" y="775" as="geometry" />
+        </mxCell>
+        <mxCell id="c3_mqtt_downlink" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[MQTT DOWNLINK RPC COMMAND HANDLER]&#xa;File: src/network/mqtt_service.cpp&#xa;Topic: cmd/%device_id% (QoS 1)&#xa;Payloads: {&quot;cmd&quot;:&quot;reboot&quot;} -&gt; esp_restart()&#xa;Payloads: {&quot;cmd&quot;:&quot;status&quot;} -&gt; publish status immediately" vertex="1">
+          <mxGeometry height="80" width="440" x="1225" y="890" as="geometry" />
+        </mxCell>
+        <mxCell id="c4_ws_task" parent="1" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fontStyle=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[WEBSOCKET BROADCASTER TASK]&#xa;File: src/web/web_server.cpp&#xa;Func: WebServer::wsBroadcastTask(void* pvParameters)&#xa;Core Affinity: CORE 1 (Interval 100 ms Periodik / 10 Hz)&#xa;Action: Mengirimkan paket live monitor &amp; metrik HUD ke browser" vertex="1">
+          <mxGeometry height="75" width="440" x="1790" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="c4_ws_clients" parent="1" style="rhombus;whiteSpace=wrap;html=1;fontStyle=1;fontSize=10;labelBackgroundColor=none;" value="Ada Klien Web Aktif?&#xa;Func: httpd_get_client_list() &gt; 0&#xa;Endpoint: /ws" vertex="1">
+          <mxGeometry height="80" width="270" x="1875" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="c4_ws_drain" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[DRAIN LIVE BEACON BUFFER]&#xa;File: src/core/beacon_pipeline.cpp&#xa;Func: BeaconPipeline::drainLiveBeacons(outBuf, 50)&#xa;Mutex: xSemaphoreTake(s_liveBufMutex, pdMS_TO_TICKS(5))&#xa;Var: Copy buffer ke array lokal &amp; reset s_liveBeaconCount = 0" vertex="1">
+          <mxGeometry height="80" width="440" x="1790" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="c4_ws_json" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[METRICS SERIALIZER &amp; JSON PACKER]&#xa;Fields: read_speed, unique_beacons, mqtt_speed, queue_load,&#xa;batch_load, net_bandwidth, free_heap, packets: [{format, tag, rssi, batt}]&#xa;Design: Nol alokasi dinamis string heap" vertex="1">
+          <mxGeometry height="75" width="440" x="1790" y="435" as="geometry" />
+        </mxCell>
+        <mxCell id="c4_ws_send" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontStyle=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[ASYNC WEBSOCKET FRAME TRANSMIT]&#xa;API: httpd_ws_send_frame_async(server, fd, &amp;frame)&#xa;Flag: HTTPD_WS_TYPE_TEXT&#xa;Feature: Non-blocking, zero contention dengan task MQTT" vertex="1">
+          <mxGeometry height="75" width="440" x="1790" y="545" as="geometry" />
+        </mxCell>
+        <mxCell id="c4_web_ui" parent="1" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fontStyle=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[FRONTEND BROWSER CLIENT (TEST PAGE)]&#xa;File: data/test.html &amp; data/assets/js/test.js&#xa;UI Elements: 8-Card Responsive HUD Grid&#xa;Visual: Windows Task Manager Style 60-Second Realtime Chart" vertex="1">
+          <mxGeometry height="75" width="440" x="1790" y="655" as="geometry" />
+        </mxCell>
+        <mxCell id="c4_web_template" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[ZERO-FOUC CHUNKED STREAMING TEMPLATE ENGINE]&#xa;File: src/web/web_template.cpp&#xa;Func: WebTemplate::sendChunkedTemplate(req, filepath, &amp;subst)&#xa;Mechanism: Stream chunk 512B via httpd_resp_send_chunk()&#xa;Tokens: In-flight replace %model%, %device_id%, %ap_ssid%" vertex="1">
+          <mxGeometry height="85" width="440" x="1790" y="765" as="geometry" />
+        </mxCell>
+        <mxCell id="c4_ota_service" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;spacing=4;labelBackgroundColor=none;" value="[CARRIER-GRADE DUAL OTA ENGINE]&#xa;File: src/web/ota_service.cpp&#xa;Pre-Flight Checks: Rejection 0x50AA (partitions.bin), Validasi 0xE9&#xa;Validation: Signature MODEL@BOARD_VERSION pada offset 0x50&#xa;Safety: Rollback guard via esp_ota_mark_app_valid_cancel_rollback()" vertex="1">
+          <mxGeometry height="95" width="440" x="1790" y="885" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c1_1" edge="1" parent="1" source="c1_main" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c1_config">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_nrf2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#38bdf8;strokeWidth=2;" edge="1" parent="c_nrf" source="nrf_parse" target="nrf_pack">
+        <mxCell id="e_c1_2" edge="1" parent="1" source="c1_config" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c1_button">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_nrf3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#38bdf8;strokeWidth=2;" edge="1" parent="c_nrf" source="nrf_pack" target="nrf_tx">
+        <mxCell id="e_c1_3" edge="1" parent="1" source="c1_button" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c1_led">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-
-        <!-- ================= CONTAINER 2: CORE 0 ================= -->
-        <mxCell id="c_core0" value="2. ESP32 Core 0 (PRO_CPU) - Pipeline Ingestion Engine" style="swimlane;whiteSpace=wrap;html=1;fillColor=rgba(15,23,42,0.85);strokeColor=#818cf8;fontColor=#818cf8;fontStyle=1;fontSize=14;startSize=30;rounded=1;arcSize=8;shadow=1;" vertex="1" parent="1">
-          <mxGeometry x="380" y="40" width="560" height="1180" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_rx" value="ESP32 GPIO 16 (UART2 RX)&#xa;Hardware FIFO ISR (Core 0)" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#312e81;strokeColor=#818cf8;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="c_core0">
-          <mxGeometry x="160" y="60" width="240" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_ring" value="FreeRTOS Ring-Buffer (4096 Byte)&#xa;uart_event_task Handler" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e1b4b;strokeColor=#818cf8;fontColor=#f8fafc;fontSize=12;" vertex="1" parent="c_core0">
-          <mxGeometry x="160" y="140" width="240" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_sync" value="Stream Parser State Machine&#xa;Deteksi Sync Byte 0xAA, 0x55" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e1b4b;strokeColor=#818cf8;fontColor=#f8fafc;fontSize=12;" vertex="1" parent="c_core0">
-          <mxGeometry x="160" y="220" width="240" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_crc_calc" value="Hitung Fast XOR Checksum&#xa;(Byte 0..23 vs Byte 24)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e1b4b;strokeColor=#818cf8;fontColor=#f8fafc;fontSize=12;" vertex="1" parent="c_core0">
-          <mxGeometry x="160" y="300" width="240" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_crc_chk" value="CRC XOR&#xa;Valid?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#431407;strokeColor=#f59e0b;fontColor=#fde68a;fontStyle=1;fontSize=11;" vertex="1" parent="c_core0">
-          <mxGeometry x="210" y="380" width="140" height="70" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_drop_crc" value="Drop Paket&#xa;(err_crc++)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#450a0a;strokeColor=#ef4444;fontColor=#fca5a5;fontSize=11;" vertex="1" parent="c_core0">
-          <mxGeometry x="20" y="390" width="110" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_rssi_chk" value="RSSI &gt;= rssi_min?&#xa;(misal: -100 dBm)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#431407;strokeColor=#f59e0b;fontColor=#fde68a;fontStyle=1;fontSize=11;" vertex="1" parent="c_core0">
-          <mxGeometry x="200" y="480" width="160" height="70" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_drop_rssi" value="Drop Paket&#xa;(Sinyal Lemah)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#450a0a;strokeColor=#ef4444;fontColor=#fca5a5;fontSize=11;" vertex="1" parent="c_core0">
-          <mxGeometry x="20" y="490" width="110" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_uuid_chk" value="UUID Filter Aktif?&#xa;(filter_uuid_en == 1)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#431407;strokeColor=#f59e0b;fontColor=#fde68a;fontStyle=1;fontSize=11;" vertex="1" parent="c_core0">
-          <mxGeometry x="195" y="580" width="170" height="70" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_uuid_match" value="16-Byte UUID&#xa;Cocok?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#431407;strokeColor=#f59e0b;fontColor=#fde68a;fontStyle=1;fontSize=11;" vertex="1" parent="c_core0">
-          <mxGeometry x="20" y="580" width="130" height="70" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_major_chk" value="Major Filter Aktif?&#xa;(filter_major_en == 1)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#431407;strokeColor=#f59e0b;fontColor=#fde68a;fontStyle=1;fontSize=11;" vertex="1" parent="c_core0">
-          <mxGeometry x="195" y="680" width="170" height="70" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_major_match" value="Major Tag&#xa;Cocok (0..65535)?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#431407;strokeColor=#f59e0b;fontColor=#fde68a;fontStyle=1;fontSize=11;" vertex="1" parent="c_core0">
-          <mxGeometry x="20" y="680" width="130" height="70" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_valid" value="Paket Lolos Seluruh Filter!&#xa;m_readCount++ (Atomic Count)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;fontColor=#a7f3d0;fontStyle=1;fontSize=12;" vertex="1" parent="c_core0">
-          <mxGeometry x="160" y="780" width="240" height="50" as="geometry" />
-        </mxCell>
-
-        <!-- Dispatch Branch -->
-        <mxCell id="c0_q_chk" value="beaconQueue Penuh?&#xa;(size == 300)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#431407;strokeColor=#f59e0b;fontColor=#fde68a;fontSize=11;" vertex="1" parent="c_core0">
-          <mxGeometry x="320" y="870" width="160" height="70" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_q_drop" value="Drop Paket Terlama&#xa;xQueueReceive(oldest)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#450a0a;strokeColor=#ef4444;fontColor=#fca5a5;fontSize=11;" vertex="1" parent="c_core0">
-          <mxGeometry x="400" y="970" width="140" height="40" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_q_send" value="xQueueSend(packet)&#xa;s_beaconQueue" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#047857;strokeColor=#34d399;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="c_core0">
-          <mxGeometry x="270" y="1050" width="160" height="80" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c0_live_buf" value="recordLiveBeacon()&#xa;Lock Mutex 5ms&#xa;s_liveBeaconBuf (Maks 50)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#4338ca;strokeColor=#818cf8;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="c_core0">
-          <mxGeometry x="40" y="1050" width="170" height="80" as="geometry" />
-        </mxCell>
-
-        <!-- Edges in Core 0 -->
-        <mxCell id="e_c0_1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#818cf8;strokeWidth=2;" edge="1" parent="c_core0" source="c0_rx" target="c0_ring" />
-        <mxCell id="e_c0_2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#818cf8;strokeWidth=2;" edge="1" parent="c_core0" source="c0_ring" target="c0_sync" />
-        <mxCell id="e_c0_3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#818cf8;strokeWidth=2;" edge="1" parent="c_core0" source="c0_sync" target="c0_crc_calc" />
-        <mxCell id="e_c0_4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#818cf8;strokeWidth=2;" edge="1" parent="c_core0" source="c0_crc_calc" target="c0_crc_chk" />
-        
-        <mxCell id="e_c0_crc_no" value="Tidak" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#ef4444;fontColor=#fca5a5;" edge="1" parent="c_core0" source="c0_crc_chk" target="c0_drop_crc" />
-        <mxCell id="e_c0_crc_yes" value="Valid" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#10b981;fontColor=#a7f3d0;" edge="1" parent="c_core0" source="c0_crc_chk" target="c0_rssi_chk" />
-        
-        <mxCell id="e_c0_rssi_no" value="Tidak" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#ef4444;fontColor=#fca5a5;" edge="1" parent="c_core0" source="c0_rssi_chk" target="c0_drop_rssi" />
-        <mxCell id="e_c0_rssi_yes" value="Lolos" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#10b981;fontColor=#a7f3d0;" edge="1" parent="c_core0" source="c0_rssi_chk" target="c0_uuid_chk" />
-        
-        <mxCell id="e_c0_uuid_act" value="Aktif" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#818cf8;fontColor=#c7d2fe;" edge="1" parent="c_core0" source="c0_uuid_chk" target="c0_uuid_match" />
-        <mxCell id="e_c0_uuid_off" value="OFF" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#10b981;fontColor=#a7f3d0;" edge="1" parent="c_core0" source="c0_uuid_chk" target="c0_major_chk" />
-        <mxCell id="e_c0_uuid_pass" value="Cocok" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#10b981;fontColor=#a7f3d0;" edge="1" parent="c_core0" source="c0_uuid_match" target="c0_major_chk" />
-        
-        <mxCell id="e_c0_maj_act" value="Aktif" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#818cf8;fontColor=#c7d2fe;" edge="1" parent="c_core0" source="c0_major_chk" target="c0_major_match" />
-        <mxCell id="e_c0_maj_off" value="OFF" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#10b981;fontColor=#a7f3d0;" edge="1" parent="c_core0" source="c0_major_chk" target="c0_valid" />
-        <mxCell id="e_c0_maj_pass" value="Cocok" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#10b981;fontColor=#a7f3d0;" edge="1" parent="c_core0" source="c0_major_match" target="c0_valid" />
-        
-        <mxCell id="e_c0_disp_q" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#10b981;" edge="1" parent="c_core0" source="c0_valid" target="c0_q_chk" />
-        <mxCell id="e_c0_disp_live" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#818cf8;" edge="1" parent="c_core0" source="c0_valid" target="c0_live_buf" />
-        
-        <mxCell id="e_c0_q_full" value="Ya" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#ef4444;fontColor=#fca5a5;" edge="1" parent="c_core0" source="c0_q_chk" target="c0_q_drop" />
-        <mxCell id="e_c0_q_free" value="Ada Slot" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#10b981;fontColor=#a7f3d0;" edge="1" parent="c_core0" source="c0_q_chk" target="c0_q_send" />
-        <mxCell id="e_c0_drop_push" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#10b981;" edge="1" parent="c_core0" source="c0_q_drop" target="c0_q_send" />
-
-
-        <!-- ================= CONTAINER 3: CORE 1 ================= -->
-        <mxCell id="c_core1" value="3. ESP32 Core 1 (APP_CPU) - Batch Aggregator &amp; Delivery" style="swimlane;whiteSpace=wrap;html=1;fillColor=rgba(15,23,42,0.85);strokeColor=#34d399;fontColor=#34d399;fontStyle=1;fontSize=14;startSize=30;rounded=1;arcSize=8;shadow=1;" vertex="1" parent="1">
-          <mxGeometry x="980" y="40" width="680" height="1180" as="geometry" />
-        </mxCell>
-
-        <!-- Sub-flow MQTT -->
-        <mxCell id="c1_mqtt_task" value="MQTT Service Task&#xa;(Read beaconQueue FreeRTOS)" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#064e3b;strokeColor=#34d399;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="c_core1">
-          <mxGeometry x="60" y="160" width="240" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c1_mqtt_buf" value="Append ke Batch Buffer 4096B&#xa;(Format Biner 6B / 7B)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#022c22;strokeColor=#34d399;fontColor=#f8fafc;fontSize=12;" vertex="1" parent="c_core1">
-          <mxGeometry x="60" y="270" width="240" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c1_mqtt_flush_chk" value="batch_count &gt;= batch_max&#xa;ATAU Timer batch_flush?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#431407;strokeColor=#f59e0b;fontColor=#fde68a;fontStyle=1;fontSize=11;" vertex="1" parent="c_core1">
-          <mxGeometry x="80" y="370" width="200" height="80" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c1_mqtt_pub" value="Publish Batch ke MQTT Broker&#xa;Topik: beacon/%device_id%&#xa;Hitung Egress Net Bandwidth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#065f46;strokeColor=#10b981;fontColor=#f8fafc;fontStyle=1;fontSize=12;" vertex="1" parent="c_core1">
-          <mxGeometry x="60" y="500" width="240" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c1_netif" value="Physical Network Stack&#xa;W5500 SPI DMA (25 MHz) / Wi-Fi" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#1e293b;strokeColor=#38bdf8;fontColor=#38bdf8;fontStyle=1;fontSize=12;" vertex="1" parent="c_core1">
-          <mxGeometry x="60" y="610" width="240" height="50" as="geometry" />
-        </mxCell>
-
-        <!-- Sub-flow WebSocket -->
-        <mxCell id="c1_ws_task" value="WebSocket Broadcaster Task&#xa;(Interval 100 ms Periodic)" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#312e81;strokeColor=#818cf8;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="c_core1">
-          <mxGeometry x="380" y="160" width="240" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c1_ws_client_chk" value="Ada Klien Terhubung&#xa;di /ws?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#431407;strokeColor=#f59e0b;fontColor=#fde68a;fontStyle=1;fontSize=11;" vertex="1" parent="c_core1">
-          <mxGeometry x="420" y="260" width="160" height="70" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c1_ws_json" value="Drain Live Buffer (Maks 50)&#xa;Serialisasi JSON + HUD Metrics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e1b4b;strokeColor=#818cf8;fontColor=#f8fafc;fontSize=12;" vertex="1" parent="c_core1">
-          <mxGeometry x="380" y="380" width="240" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c1_ws_send" value="httpd_ws_send_frame_async()&#xa;Kirim Paket WebSocket Non-Blocking" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;fontColor=#a7f3d0;fontStyle=1;fontSize=12;" vertex="1" parent="c_core1">
-          <mxGeometry x="380" y="500" width="240" height="60" as="geometry" />
-        </mxCell>
-
-        <mxCell id="c1_ui" value="Browser Web UI Dashboard&#xa;Live Throughput HUD &amp; 60s Chart" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#1e293b;strokeColor=#38bdf8;fontColor=#38bdf8;fontStyle=1;fontSize=12;" vertex="1" parent="c_core1">
-          <mxGeometry x="380" y="610" width="240" height="50" as="geometry" />
-        </mxCell>
-
-        <!-- Edges in Core 1 -->
-        <mxCell id="e_c1_m1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#34d399;strokeWidth=2;" edge="1" parent="c_core1" source="c1_mqtt_task" target="c1_mqtt_buf" />
-        <mxCell id="e_c1_m2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#34d399;strokeWidth=2;" edge="1" parent="c_core1" source="c1_mqtt_buf" target="c1_mqtt_flush_chk" />
-        <mxCell id="e_c1_m3" value="Kirim" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#10b981;strokeWidth=2;fontColor=#a7f3d0;" edge="1" parent="c_core1" source="c1_mqtt_flush_chk" target="c1_mqtt_pub" />
-        <mxCell id="e_c1_m4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#38bdf8;strokeWidth=2;" edge="1" parent="c_core1" source="c1_mqtt_pub" target="c1_netif" />
-
-        <mxCell id="e_c1_w1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#818cf8;strokeWidth=2;" edge="1" parent="c_core1" source="c1_ws_task" target="c1_ws_client_chk" />
-        <mxCell id="e_c1_w2" value="Ada" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#10b981;strokeWidth=2;fontColor=#a7f3d0;" edge="1" parent="c_core1" source="c1_ws_client_chk" target="c1_ws_json" />
-        <mxCell id="e_c1_w3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#818cf8;strokeWidth=2;" edge="1" parent="c_core1" source="c1_ws_json" target="c1_ws_send" />
-        <mxCell id="e_c1_w4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#38bdf8;strokeWidth=2;" edge="1" parent="c_core1" source="c1_ws_send" target="c1_ui" />
-
-
-        <!-- ================= CROSS-CONTAINER CONNECTIONS ================= -->
-        <!-- nRF TX to ESP32 RX -->
-        <mxCell id="e_nrf_to_esp" value="UART Frame (25B)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#38bdf8;strokeWidth=3;fontColor=#38bdf8;fontStyle=1;" edge="1" parent="1" source="nrf_tx" target="c0_rx">
+        <mxCell id="e_c1_4" edge="1" parent="1" source="c1_led" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c1_netmgr">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <!-- Core 0 Queue to Core 1 MQTT Task -->
-        <mxCell id="e_queue_to_mqtt" value="FreeRTOS Queue (300 Slot)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34d399;strokeWidth=3;fontColor=#34d399;fontStyle=1;" edge="1" parent="1" source="c0_q_send" target="c1_mqtt_task">
+        <mxCell id="e_c1_5" edge="1" parent="1" source="c1_netmgr" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c1_watchdog">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_nrf_uart" edge="1" parent="1" source="c2_nrf" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=3;fontColor=default;fontStyle=1;fontSize=10;labelBackgroundColor=none;" target="c2_uart" value="UART2 (RX GPIO 16) @ 1 Mbps">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_1" edge="1" parent="1" source="c2_uart" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c2_parser">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_2" edge="1" parent="1" source="c2_parser" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c2_crc_calc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_3" edge="1" parent="1" source="c2_crc_calc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c2_crc_chk">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_crc_no" edge="1" parent="1" source="c2_crc_chk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c2_drop_crc" value="Korup (No)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_crc_yes" edge="1" parent="1" source="c2_crc_chk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c2_rssi_chk" value="Valid (Yes)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_rssi_no" edge="1" parent="1" source="c2_rssi_chk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c2_drop_rssi" value="Lemah (No)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_rssi_yes" edge="1" parent="1" source="c2_rssi_chk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c2_uuid_chk" value="Lolos (Yes)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_uuid_no" edge="1" parent="1" source="c2_uuid_chk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c2_drop_uuid" value="Mismatch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_uuid_yes" edge="1" parent="1" source="c2_uuid_chk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c2_major_chk" value="Lolos / OFF">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_maj_no" edge="1" parent="1" source="c2_major_chk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c2_drop_major" value="Mismatch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_maj_yes" edge="1" parent="1" source="c2_major_chk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c2_pass" value="Lolos / OFF">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_disp_q" edge="1" parent="1" source="c2_pass" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c2_q_chk" value="Push ke Queue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_disp_live" edge="1" parent="1" source="c2_pass" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c2_live_buf" value="Push ke Live FIFO">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="730" y="1190" />
-              <mxPoint x="960" y="1190" />
-              <mxPoint x="960" y="230" />
+              <mxPoint x="590" y="1070" />
+              <mxPoint x="590" y="1310" />
             </Array>
           </mxGeometry>
         </mxCell>
-
-        <!-- Core 0 Live Buf to Core 1 WS Task -->
-        <mxCell id="e_live_to_ws" value="Shared Mutex Buffer" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#818cf8;strokeWidth=2;dashed=1;fontColor=#818cf8;fontStyle=1;" edge="1" parent="1" source="c0_live_buf" target="c1_ws_task">
+        <mxCell id="e_c2_q_full" edge="1" parent="1" source="c2_q_chk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c2_q_drop" value="Penuh (Yes)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c2_q_free" edge="1" parent="1" source="c2_q_chk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c2_queue" value="Ada Slot (No)">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="500" y="1210" />
-              <mxPoint x="970" y="1210" />
-              <mxPoint x="970" y="210" />
+              <mxPoint x="710" y="1127" />
+              <mxPoint x="710" y="1310" />
             </Array>
           </mxGeometry>
         </mxCell>
-
+        <mxCell id="e_c2_drop_send" edge="1" parent="1" source="c2_q_drop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c2_queue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_queue_to_mqtt" edge="1" parent="1" source="c2_queue" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=3;fontColor=default;fontStyle=1;fontSize=11;labelBackgroundColor=none;" target="c3_mqtt_read" value="FreeRTOS Queue (300 Slots) Across Core 0 -&gt; Core 1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="840" y="1480" />
+              <mxPoint x="1160" y="1480" />
+              <mxPoint x="1160" y="232" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_live_to_ws" edge="1" parent="1" source="c2_live_buf" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=3;fontColor=default;fontStyle=1;fontSize=11;dashed=1;labelBackgroundColor=none;" target="c4_ws_drain" value="Shared Mutex (5ms) drainLiveBeacons()">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="590" y="1530" />
+              <mxPoint x="1725" y="1530" />
+              <mxPoint x="1725" y="360" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_c3_1" edge="1" parent="1" source="c3_mqtt_task" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c3_mqtt_read">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c3_2" edge="1" parent="1" source="c3_mqtt_read" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c3_mqtt_append">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c3_3" edge="1" parent="1" source="c3_mqtt_append" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c3_mqtt_cond">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c3_4" edge="1" parent="1" source="c3_mqtt_cond" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c3_mqtt_flush" value="Kirim Batch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c3_5" edge="1" parent="1" source="c3_mqtt_flush" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c3_mqtt_bandwidth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c3_6" edge="1" parent="1" source="c3_mqtt_bandwidth" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c3_eth_driver" value="Publish via SPI DMA 25 MHz">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c3_7" edge="1" parent="1" source="c3_eth_driver" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c3_mqtt_downlink">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c4_1" edge="1" parent="1" source="c4_ws_task" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c4_ws_clients">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c4_2" edge="1" parent="1" source="c4_ws_clients" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c4_ws_drain" value="Ada Klien (Yes)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c4_3" edge="1" parent="1" source="c4_ws_drain" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c4_ws_json">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c4_4" edge="1" parent="1" source="c4_ws_json" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c4_ws_send">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c4_5" edge="1" parent="1" source="c4_ws_send" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;fontColor=default;fontSize=10;labelBackgroundColor=none;" target="c4_web_ui" value="Stream JSON Frame (100 ms)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c4_6" edge="1" parent="1" source="c4_web_ui" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c4_web_template">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c4_7" edge="1" parent="1" source="c4_web_template" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;labelBackgroundColor=none;fontColor=default;" target="c4_ota_service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>

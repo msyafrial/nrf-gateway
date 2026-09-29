@@ -24,16 +24,25 @@ public:
     
     // Snapshot Live Beacons untuk WebSocket (Thread-Safe)
     static size_t copyLiveBeacons(LiveBeaconItem* outItems, size_t maxItems);
+    static void   flushLiveBeacons();
     
     // Kalkulasi Metrik Throughput (Dipanggil tiap 1 detik oleh esp_timer)
     static void updateMetrics();
 
+    // Pencatatan Metrik MQTT (Dipanggil oleh MqttService)
+    static void recordMqttPublish(uint32_t packetCount = 1, uint32_t batchCount = 1);
+    static void recordMqttFailed(uint32_t packetCount = 1);
+
     // Getter Metrik
     static uint32_t getReadSpeed();
     static uint32_t getMqttSpeed();
+    static uint32_t getMqttBatchSpeed();
     static uint32_t getTotalBeaconsRead();
     static uint32_t getTotalMqttPublished();
+    static uint32_t getTotalMqttBatches();
     static uint32_t getTotalMqttFailed();
+    static uint32_t getTotalQueueDropped();
+    static uint32_t getTotalDropped();
     static size_t   getQueueLoad();
     
     // Handle queue untuk task consumer (MQTT publisher di Core 1)

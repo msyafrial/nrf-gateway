@@ -33,11 +33,14 @@ static std::atomic<size_t> s_statLastBatchPktCount{0};
 static std::atomic<uint32_t> s_statWireBytesAcc{0};
 static std::atomic<float> s_statBandwidthKBps{0.0f};
 
-static void sanitizeToken(const char* input, char* output, size_t maxLen) {
+static void sanitizeToken(const char* input, char* output, size_t maxLen, bool forceLower = false) {
     if (!input || !output || maxLen == 0) return;
     size_t outIdx = 0;
     for (size_t i = 0; input[i] != '\0' && outIdx < maxLen - 1; ++i) {
         char c = input[i];
+        if (forceLower && (c >= 'A' && c <= 'Z')) {
+            c = static_cast<char>(c + ('a' - 'A'));
+        }
         if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
             (c >= '0' && c <= '9') || c == '-' || c == '_') {
             output[outIdx++] = c;
@@ -84,19 +87,21 @@ bool MqttService::buildBinaryPayload(const BeaconPacket& p, uint8_t* outBuf, siz
 }
 
 void MqttService::updateTopicNames() {
-    char cleanModel[32], cleanDevId[32];
-    char rawDevId[32];
-    Core::ConfigStore::getMqttClientId(rawDevId, sizeof(rawDevId));
+    char dev_model[32];
+    char device_id[32];
 
-    sanitizeToken(g_config.device_model[0] ? g_config.device_model : "SG-10", cleanModel, sizeof(cleanModel));
-    sanitizeToken(rawDevId, cleanDevId, sizeof(cleanDevId));
+    char raw_dev_id[16];
+    Core::ConfigStore::getDeviceId(raw_dev_id, sizeof(raw_dev_id));
 
-    snprintf(s_topicData, sizeof(s_topicData), "%s/data/%s", cleanModel, cleanDevId);
-    snprintf(s_topicStatus, sizeof(s_topicStatus), "%s/info/%s/status", cleanModel, cleanDevId);
-    snprintf(s_topicCmd, sizeof(s_topicCmd), "%s/cmd/%s", cleanModel, cleanDevId);
-    snprintf(s_topicRes, sizeof(s_topicRes), "%s/res/%s", cleanModel, cleanDevId);
+    sanitizeToken(g_config.device_model[0] ? g_config.device_model : "SG-10", dev_model, sizeof(dev_model));
+    sanitizeToken(raw_dev_id, device_id, sizeof(device_id), true /* force lowercase */);
 
-    ESP_LOGI(TAG, "Topik MQTT Dikonfigurasi:");
+    snprintf(s_topicData,   sizeof(s_topicData),   "%s/data/%s",        dev_model, device_id);
+    snprintf(s_topicStatus, sizeof(s_topicStatus), "%s/info/%s/status", dev_model, device_id);
+    snprintf(s_topicCmd,    sizeof(s_topicCmd),    "%s/cmd/%s",         dev_model, device_id);
+    snprintf(s_topicRes,    sizeof(s_topicRes),    "%s/res/%s",         dev_model, device_id);
+
+    ESP_LOGI(TAG, "Topik MQTT Dikonfigurasi (dev_model='%s', device_id='%s'):", dev_model, device_id);
     ESP_LOGI(TAG, "  -> Data   : %s", s_topicData);
     ESP_LOGI(TAG, "  -> Status : %s", s_topicStatus);
     ESP_LOGI(TAG, "  -> Cmd    : %s", s_topicCmd);
@@ -111,21 +116,22 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
             s_mqttConnected = true;
             strncpy(s_lastError, "Connected", sizeof(s_lastError));
             ESP_LOGI(TAG, "Terhubung ke broker MQTT!");
+            Bsp::LedManager::setComState(ComLedState::NORMAL);
 
             // 1. Kirim Birth Message (QoS 1, Retain 1)
-            char ipStr[16];
-            NetworkManager::getActiveIp(ipStr, sizeof(ipStr));
-            char birthPayload[256];
-            char devId[32];
-            Core::ConfigStore::getMqttClientId(devId, sizeof(devId));
+            char ip_str[16];
+            NetworkManager::getActiveIp(ip_str, sizeof(ip_str));
+            char birth_payload[256];
+            char device_id[32];
+            Core::ConfigStore::getDeviceId(device_id, sizeof(device_id));
 
-            snprintf(birthPayload, sizeof(birthPayload),
+            snprintf(birth_payload, sizeof(birth_payload),
                      "{\"status\":\"online\",\"device_id\":\"%s\",\"model\":\"%s\",\"ip\":\"%s\",\"firmware\":\"%s\"}",
-                     devId, g_config.device_model, ipStr, FIRMWARE_VERSION);
+                     device_id, g_config.device_model, ip_str, FIRMWARE_VERSION);
 
-            int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicStatus, birthPayload, strlen(birthPayload), 1, 1);
+            int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicStatus, birth_payload, strlen(birth_payload), 1, 1);
             if (msgId >= 0) {
-                s_statWireBytesAcc += calculateWireBytes(strlen(s_topicStatus), strlen(birthPayload), 1);
+                s_statWireBytesAcc += calculateWireBytes(strlen(s_topicStatus), strlen(birth_payload), 1);
             }
 
             // 2. Subscribe ke Topik Perintah (QoS 1)
@@ -138,6 +144,9 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
             s_mqttConnected = false;
             strncpy(s_lastError, "Disconnected", sizeof(s_lastError));
             ESP_LOGW(TAG, "Terputus dari broker MQTT!");
+            if (NetworkManager::isConnected()) {
+                Bsp::LedManager::setComState(ComLedState::MQTT_OFFLINE);
+            }
             break;
 
         case MQTT_EVENT_DATA: {
@@ -154,7 +163,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
                         snprintf(resBuf, sizeof(resBuf), "{\"res\":\"pong\",\"timestamp\":%u,\"status\":\"ok\"}", (unsigned int)nowMs);
                         esp_mqtt_client_publish(s_mqttClient, s_topicRes, resBuf, strlen(resBuf), 1, 0);
                     } else if (strstr(payload, "\"identify\"")) {
-                        Bsp::LedManager::setSysState(SysLedState::OTA); // Fast flash identify
+                        Bsp::LedManager::triggerIdentify(3000); // Kedip Biru 4 Hz selama 3 detik
                         char resBuf[128];
                         snprintf(resBuf, sizeof(resBuf), "{\"res\":\"identifying\",\"status\":\"ok\"}");
                         esp_mqtt_client_publish(s_mqttClient, s_topicRes, resBuf, strlen(resBuf), 1, 0);
@@ -230,7 +239,10 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                                                             batchLen, 0, 0);
                         if (msgId >= 0) {
                             s_statWireBytesAcc += calculateWireBytes(strlen(s_topicData), batchLen, 0);
-                            Bsp::LedManager::setComState(ComLedState::NORMAL);
+                            Bsp::LedManager::triggerTrafficBlip();
+                            Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
+                        } else {
+                            Core::BeaconPipeline::recordMqttFailed(batchCount);
                         }
                     }
                     s_statLastBatchPktCount = batchCount;
@@ -250,7 +262,10 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                                                             batchLen, 0, 0);
                         if (msgId >= 0) {
                             s_statWireBytesAcc += calculateWireBytes(strlen(s_topicData), batchLen, 0);
-                            Bsp::LedManager::setComState(ComLedState::NORMAL);
+                            Bsp::LedManager::triggerTrafficBlip();
+                            Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
+                        } else {
+                            Core::BeaconPipeline::recordMqttFailed(batchCount);
                         }
                     }
                     s_statLastBatchPktCount = batchCount;
@@ -272,7 +287,10 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                                                         batchLen, 0, 0);
                     if (msgId >= 0) {
                         s_statWireBytesAcc += calculateWireBytes(strlen(s_topicData), batchLen, 0);
-                        Bsp::LedManager::setComState(ComLedState::NORMAL);
+                        Bsp::LedManager::triggerTrafficBlip();
+                        Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
+                    } else {
+                        Core::BeaconPipeline::recordMqttFailed(batchCount);
                     }
                 }
                 s_statLastBatchPktCount = batchCount;
@@ -294,12 +312,12 @@ void MqttService::init() {
         char mqttUri[128];
         snprintf(mqttUri, sizeof(mqttUri), "mqtt://%s:%d", g_config.mqtt_host, g_config.mqtt_port);
 
-        char clientId[32];
-        Core::ConfigStore::getMqttClientId(clientId, sizeof(clientId));
+        char client_id[32];
+        Core::ConfigStore::getDeviceId(client_id, sizeof(client_id));
 
         esp_mqtt_client_config_t mqtt_cfg = {};
         mqtt_cfg.broker.address.uri = mqttUri;
-        mqtt_cfg.credentials.client_id = clientId;
+        mqtt_cfg.credentials.client_id = client_id;
         if (strlen(g_config.mqtt_user) > 0) {
             mqtt_cfg.credentials.username = g_config.mqtt_user;
         }

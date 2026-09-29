@@ -396,19 +396,11 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
         const isAppDesc = (bytes[32] === 0x32 && bytes[33] === 0x54 && bytes[34] === 0xCD && bytes[35] === 0xAB);
 
         if (targetType === 'filesystem') {
-          if (b0 === 0xE9) {
-            alert('Berkas yang dipilih adalah Firmware/Bootloader ESP32 (Magic Byte 0xE9), bukan citra LittleFS!');
-            return;
-          }
           if (!isLfs) {
             alert('Berkas bukan citra partisi LittleFS yang valid (signature "littlefs" tidak ditemukan pada offset 0x08)!');
             return;
           }
         } else if (targetType === 'firmware') {
-          if (b0 !== 0xE9) {
-            alert('Berkas bukan firmware ESP32 yang valid (Magic Byte harus 0xE9)!');
-            return;
-          }
           if (!isAppDesc) {
             alert('Berkas yang dipilih terdeteksi sebagai Bootloader ESP32 (bootloader.bin) atau bukan Firmware Aplikasi valid (Header 0xABCD5432 tidak cocok)!');
             return;
@@ -425,10 +417,14 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
       progressPercent.textContent = '10%';
 
       try {
-        const authData = new FormData();
+        const authData = new URLSearchParams();
         authData.append('username', 'admin');
         authData.append('password', pass);
-        const authRes = await fetch('/api/v1/auth/login', { method: 'POST', body: authData });
+        const authRes = await fetch('/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: authData
+        });
         if (!authRes.ok) {
           const errMsg = await authRes.text();
           throw new Error('Autentikasi Gagal: ' + errMsg);
@@ -444,6 +440,7 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
       const xhr = new XMLHttpRequest();
       const uploadUrl = '/api/v1/ota/upload?type=' + encodeURIComponent(targetType) + '&size=' + file.size;
       xhr.open('POST', uploadUrl, true);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
 
       xhr.upload.onprogress = function(e) {
         if (e.lengthComputable) {
@@ -481,9 +478,7 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
         progressBox.style.display = 'none';
       };
 
-      const payload = new FormData();
-      payload.append('file', file, file.name);
-      xhr.send(payload);
+      xhr.send(file);
     });
 
     async function rebootDevice() {
@@ -491,10 +486,14 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
       const pass = prompt('Masukkan password admin untuk reboot:', 'admin');
       if (!pass) return;
       try {
-        const authData = new FormData();
+        const authData = new URLSearchParams();
         authData.append('username', 'admin');
         authData.append('password', pass);
-        const rLogin = await fetch('/api/v1/auth/login', { method: 'POST', body: authData });
+        const rLogin = await fetch('/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: authData
+        });
         if (!rLogin.ok) throw new Error('Password salah!');
         await fetch('/api/v1/system/reboot', { method: 'POST' });
         alert('Gateway me-reboot... Halaman akan dimuat ulang dalam 6 detik.');

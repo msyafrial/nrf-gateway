@@ -1,0 +1,16 @@
+- generic [ref=f28e3]:
+  - img "IOTARU" [ref=f28e5]
+  - generic [ref=f28e6]: Autentikasi Gateway %model%
+  - generic [ref=f28e7]: Masuk sebagai Administrator atau Teknisi Lapangan
+  - generic [ref=f28e8]:
+    - generic [ref=f28e9]:
+      - generic [ref=f28e10]: Username
+      - textbox "Username" [active] [ref=f28e11]:
+        - /placeholder: Masukkan username
+    - generic [ref=f28e12]:
+      - generic [ref=f28e13]: Password
+      - generic [ref=f28e14]:
+        - textbox "Password" [ref=f28e15]:
+          - /placeholder: Masukkan password
+        - button "Tahan untuk melihat password" [ref=f28e16] [cursor=pointer]
+    - button "Masuk ke Sistem" [ref=f28e22] [cursor=pointer]

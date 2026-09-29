@@ -17,6 +17,7 @@ public:
     static void resetConfigToFactory();
 
     // Helper getters
+    static void getDeviceId(char* outBuf, size_t maxLen);
     static void getMqttClientId(char* outBuf, size_t maxLen);
     static void getModuleId(char* outBuf, size_t maxLen);
 };

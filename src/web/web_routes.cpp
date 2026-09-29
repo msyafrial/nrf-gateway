@@ -11,6 +11,7 @@
 #include "beacon_pipeline.hpp"
 #include <esp_wifi.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <cJSON.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -28,9 +29,16 @@ static bool s_auth_reboot_required = false;
 // -------------------------------------------------------------
 // URL Decoding & Form Parameter Extraction Helpers
 // -------------------------------------------------------------
-static void urldecode(char *dst, const char *src) {
+// -------------------------------------------------------------
+// URL Decoding & Form Parameter Extraction Helpers
+// -------------------------------------------------------------
+static void urldecode_s(char *dst, size_t dst_len, const char *src) {
+    if (!dst || dst_len == 0) return;
+    if (!src) { *dst = '\0'; return; }
+
     char a, b;
-    while (*src) {
+    size_t written = 0;
+    while (*src && (written + 1 < dst_len)) {
         if ((*src == '%') &&
             ((a = src[1]) && (b = src[2])) &&
             (isxdigit(a) && isxdigit(b))) {
@@ -40,22 +48,74 @@ static void urldecode(char *dst, const char *src) {
             if (b >= 'a') b -= 'a' - 'A';
             if (b >= 'A') b -= ('A' - 10);
             else b -= '0';
-            *dst++ = 16 * a + b;
+            dst[written++] = static_cast<char>(16 * a + b);
             src += 3;
         } else if (*src == '+') {
-            *dst++ = ' ';
+            dst[written++] = ' ';
             src++;
         } else {
-            *dst++ = *src++;
+            dst[written++] = *src++;
         }
     }
-    *dst = '\0';
+    dst[written] = '\0';
+}
+
+static bool get_multipart_param(const char *body, const char *key, char *out_val, size_t max_len) {
+    if (!body || !key || !out_val || max_len == 0) return false;
+    out_val[0] = '\0';
+
+    char search_pattern[80];
+    snprintf(search_pattern, sizeof(search_pattern), "name=\"%s\"", key);
+    const char *p = strstr(body, search_pattern);
+    if (!p) {
+        snprintf(search_pattern, sizeof(search_pattern), "name='%s'", key);
+        p = strstr(body, search_pattern);
+        if (!p) return false;
+    }
+
+    // Skip forward to header end: \r\n\r\n or \n\n
+    const char *header_end = strstr(p, "\r\n\r\n");
+    size_t header_skip = 4;
+    if (!header_end) {
+        header_end = strstr(p, "\n\n");
+        header_skip = 2;
+        if (!header_end) return false;
+    }
+    const char *val_start = header_end + header_skip;
+
+    // Value continues until boundary marker (\r\n-- or \n--)
+    const char *val_end = strstr(val_start, "\r\n--");
+    if (!val_end) {
+        val_end = strstr(val_start, "\n--");
+    }
+    if (!val_end) {
+        val_end = val_start + strlen(val_start);
+    }
+
+    // Strip trailing \r or \n
+    while (val_end > val_start && (*(val_end - 1) == '\r' || *(val_end - 1) == '\n')) {
+        val_end--;
+    }
+
+    size_t len = static_cast<size_t>(val_end - val_start);
+    if (len >= max_len) len = max_len - 1;
+    memcpy(out_val, val_start, len);
+    out_val[len] = '\0';
+    return true;
 }
 
 static bool get_form_param(const char *body, const char *key, char *out_val, size_t max_len) {
     if (!body || !key || !out_val || max_len == 0) return false;
     out_val[0] = '\0';
 
+    // 1. Try multipart/form-data first if boundary / field name syntax detected
+    if (strstr(body, "name=\"") != nullptr || strstr(body, "name='") != nullptr) {
+        if (get_multipart_param(body, key, out_val, max_len)) {
+            return true;
+        }
+    }
+
+    // 2. Try standard application/x-www-form-urlencoded
     size_t klen = strlen(key);
     const char *p = body;
     while (p) {
@@ -67,7 +127,7 @@ static bool get_form_param(const char *body, const char *key, char *out_val, siz
             if (vlen >= sizeof(enc)) vlen = sizeof(enc) - 1;
             memcpy(enc, val_start, vlen);
             enc[vlen] = '\0';
-            urldecode(out_val, enc);
+            urldecode_s(out_val, max_len, enc);
             return true;
         }
         p = strchr(p, '&');
@@ -169,6 +229,10 @@ static esp_err_t login_handler(httpd_req_t *req) {
     return stream_static_file(req, "/storage/login.html");
 }
 
+static esp_err_t version_json_handler(httpd_req_t *req) {
+    return stream_static_file(req, "/storage/version.json");
+}
+
 static esp_err_t test_handler(httpd_req_t *req) {
     if (!Server::is_filesystem_ready()) {
         return Template::stream_emergency_page(req);
@@ -267,6 +331,8 @@ static esp_err_t firmware_handler(httpd_req_t *req) {
 static esp_err_t assets_wildcard_handler(httpd_req_t *req) {
     char filepath[600];
     snprintf(filepath, sizeof(filepath), "/storage%s", req->uri);
+    char *q = strchr(filepath, '?');
+    if (q) *q = '\0';
     return stream_static_file(req, filepath);
 }
 
@@ -295,23 +361,37 @@ static esp_err_t api_login_handler(httpd_req_t *req) {
     get_form_param(body, "username", u, sizeof(u));
     get_form_param(body, "password", p, sizeof(p));
 
+    ESP_LOGI(TAG, "Login request received (%d bytes), user='%s'", r, u);
+
     UserRole role = UserRole::NONE;
     char token[Session::TOKEN_LEN + 1] = {0};
 
-    if (Session::authenticate(u, p, role, token, sizeof(token))) {
+    Session::AuthResult auth_res = Session::authenticate(req, u, p, role, token, sizeof(token));
+    if (auth_res == Session::AuthResult::SUCCESS) {
         char cookie_hdr[128];
-        snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=3600", token);
+        snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=900", token);
         httpd_resp_set_hdr(req, "Set-Cookie", cookie_hdr);
         httpd_resp_set_type(req, "application/json");
 
-        char resp[96];
-        snprintf(resp, sizeof(resp), "{\"status\":\"success\",\"role\":\"%s\"}",
-                 role == UserRole::ADMIN ? "admin" : "teknisi");
+        char resp[128];
+        snprintf(resp, sizeof(resp), "{\"status\":\"success\",\"role\":\"%s\",\"token\":\"%s\"}",
+                 role == UserRole::ADMIN ? "admin" : "teknisi", token);
         httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+        ESP_LOGI(TAG, "Login BERHASIL untuk user '%s' (role: %s)", u, role == UserRole::ADMIN ? "admin" : "teknisi");
+    } else if (auth_res == Session::AuthResult::SESSION_LIMIT_REACHED) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, "{\"status\":\"error\",\"code\":\"session_limit\",\"message\":\"Batas maksimal 2 perangkat aktif tercapai. Silakan logout terlebih dahulu di salah satu perangkat yang sedang login.\"}", HTTPD_RESP_USE_STRLEN);
+        ESP_LOGW(TAG, "Login DITOLAK: Batas 2 perangkat aktif tercapai untuk user '%s'", u);
+    } else if (auth_res == Session::AuthResult::RATE_LIMITED) {
+        httpd_resp_set_status(req, "429 Too Many Requests");
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_send(req, "Terlalu banyak percobaan gagal. Silakan tunggu 60 detik.", HTTPD_RESP_USE_STRLEN);
     } else {
         httpd_resp_set_status(req, "401 Unauthorized");
         httpd_resp_set_type(req, "text/plain");
         httpd_resp_send(req, "Username atau password salah.", HTTPD_RESP_USE_STRLEN);
+        ESP_LOGW(TAG, "Login GAGAL untuk user '%s'", u);
     }
     return ESP_OK;
 }
@@ -592,11 +672,13 @@ static esp_err_t api_debug_nrf_handler(httpd_req_t *req) {
 // Route Handlers: Wi-Fi Scanner REST APIs
 // -------------------------------------------------------------
 static bool s_scan_in_progress = false;
+static uint32_t s_scan_start_millis = 0;
 
 static esp_err_t api_wifi_scan_stop_handler(httpd_req_t *req) {
     if (s_scan_in_progress) {
         esp_wifi_scan_stop();
         s_scan_in_progress = false;
+        Network::NetworkManager::resetWifiScanDone();
     }
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"status\":\"stopped\"}", HTTPD_RESP_USE_STRLEN);
@@ -610,39 +692,138 @@ static esp_err_t api_wifi_scan_handler(httpd_req_t *req) {
         return ESP_OK;
     }
 
-    wifi_scan_config_t scan_cfg = {};
-    scan_cfg.show_hidden = false;
-    scan_cfg.scan_type = WIFI_SCAN_TYPE_ACTIVE;
-    scan_cfg.scan_time.active.min = 120;
-    scan_cfg.scan_time.active.max = 150;
+    // 1. Pastikan driver Wi-Fi diinisialisasi secara on-demand
+    Network::NetworkManager::ensureWifiDriverInitialized();
 
-    esp_err_t err = esp_wifi_scan_start(&scan_cfg, false);
-    if (err == ESP_OK) {
-        s_scan_in_progress = true;
+    // 2. Pastikan mode Wi-Fi mendukung pemindaian saluran (STA atau APSTA)
+    wifi_mode_t curMode = WIFI_MODE_NULL;
+    esp_wifi_get_mode(&curMode);
+    if (curMode == WIFI_MODE_AP) {
+        esp_wifi_set_mode(WIFI_MODE_APSTA);
+    } else if (curMode == WIFI_MODE_NULL) {
+        esp_wifi_set_mode(WIFI_MODE_STA);
+        esp_wifi_start();
+    } else {
+        // Mode STA atau APSTA, pastikan radio Wi-Fi aktif
+        esp_wifi_start();
     }
 
-    uint16_t ap_count = 0;
-    esp_wifi_scan_get_ap_num(&ap_count);
+    // 3. Cek parameter refresh dari query string
+    char query[64] = {0};
+    bool forceRefresh = false;
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        char param[16] = {0};
+        if (httpd_query_key_value(query, "refresh", param, sizeof(param)) == ESP_OK) {
+            forceRefresh = (strcmp(param, "1") == 0);
+        }
+    }
 
-    if (ap_count == 0) {
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+
+    // Watchdog: jika scan stuck lebih dari 8 detik, batalkan dan mulai baru
+    if (s_scan_in_progress && (now - s_scan_start_millis > 8000)) {
+        ESP_LOGW(TAG, "Wi-Fi scan timeout (>8 detik), mereset state scanner.");
+        esp_wifi_scan_stop();
+        s_scan_in_progress = false;
+        Network::NetworkManager::resetWifiScanDone();
+    }
+
+    if (forceRefresh && s_scan_in_progress) {
+        esp_wifi_scan_stop();
+        s_scan_in_progress = false;
+        Network::NetworkManager::resetWifiScanDone();
+    }
+
+    // 4. Jika belum ada scan yang berjalan, mulai scan baru
+    if (!s_scan_in_progress) {
+        // Pastikan Wi-Fi Station tidak dalam status connecting jika mode Ethernet aktif
+        if (Network::NetworkManager::isEthernetActive() || 
+            Network::NetworkManager::getActiveConnectionMode() != ConnectionMode::WIFI) {
+            esp_wifi_disconnect();
+        }
+
+        Network::NetworkManager::resetWifiScanDone();
+
+        wifi_scan_config_t scan_cfg = {};
+        scan_cfg.show_hidden = false;
+        scan_cfg.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+        scan_cfg.scan_time.active.min = 120;
+        scan_cfg.scan_time.active.max = 160;
+
+        esp_err_t err = esp_wifi_scan_start(&scan_cfg, false);
+        if (err == ESP_ERR_WIFI_STATE) {
+            ESP_LOGW(TAG, "Wi-Fi busy (0x3008), memaksa disconnect dan retry scan...");
+            esp_wifi_disconnect();
+            vTaskDelay(pdMS_TO_TICKS(50));
+            err = esp_wifi_scan_start(&scan_cfg, false);
+        }
+
+        if (err == ESP_OK) {
+            s_scan_in_progress = true;
+            s_scan_start_millis = now;
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_send(req, "{\"status\":\"scanning\"}", HTTPD_RESP_USE_STRLEN);
+            return ESP_OK;
+        } else {
+            ESP_LOGE(TAG, "Gagal memulai scan Wi-Fi: 0x%x (%s)", err, esp_err_to_name(err));
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"Gagal memulai pemindaian Wi-Fi\"}", HTTPD_RESP_USE_STRLEN);
+            return ESP_OK;
+        }
+    }
+
+    // 5. Cek apakah seluruh channel telah selesai dipindai melalui event WIFI_EVENT_SCAN_DONE
+    if (!Network::NetworkManager::isWifiScanDone()) {
+        // Pemindaian masih berlangsung di background ESP-IDF melintasi channel 1 s.d. 13
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, "{\"status\":\"scanning\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
-    if (ap_count > 30) ap_count = 30;
-    wifi_ap_record_t records[30];
+    // Pemindaian seluruh channel 1-13 telah selesai 100%!
+    s_scan_in_progress = false;
+    Network::NetworkManager::resetWifiScanDone();
+
+    uint16_t ap_count = 0;
+    esp_wifi_scan_get_ap_num(&ap_count);
+
+    if (ap_count > 40) ap_count = 40;
+    wifi_ap_record_t records[40];
     esp_wifi_scan_get_ap_records(&ap_count, records);
+
+    // Urutkan berdasarkan kekuatan sinyal RSSI (terkuat di paling atas)
+    for (int i = 0; i < (int)ap_count - 1; i++) {
+        for (int j = i + 1; j < (int)ap_count; j++) {
+            if (records[j].rssi > records[i].rssi) {
+                wifi_ap_record_t tmp = records[i];
+                records[i] = records[j];
+                records[j] = tmp;
+            }
+        }
+    }
 
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "status", "complete");
     cJSON *nets = cJSON_CreateArray();
 
+    // Deduplikasi SSID (pertahankan sinyal terkuat untuk SSID yang sama)
     for (uint16_t i = 0; i < ap_count; i++) {
         if (records[i].ssid[0] == '\0') continue;
+
+        bool duplicate = false;
+        for (uint16_t k = 0; k < i; k++) {
+            if (strcmp(reinterpret_cast<const char *>(records[i].ssid), 
+                       reinterpret_cast<const char *>(records[k].ssid)) == 0) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate) continue;
+
         cJSON *item = cJSON_CreateObject();
         cJSON_AddStringToObject(item, "ssid", reinterpret_cast<const char *>(records[i].ssid));
         cJSON_AddNumberToObject(item, "rssi", records[i].rssi);
+        cJSON_AddNumberToObject(item, "channel", records[i].primary);
         cJSON_AddBoolToObject(item, "secure", records[i].authmode != WIFI_AUTH_OPEN);
         cJSON_AddItemToArray(nets, item);
     }
@@ -654,7 +835,6 @@ static esp_err_t api_wifi_scan_handler(httpd_req_t *req) {
     cJSON_free(out);
     cJSON_Delete(root);
 
-    s_scan_in_progress = false;
     return ESP_OK;
 }
 
@@ -787,6 +967,7 @@ esp_err_t register_all(httpd_handle_t server) {
     register_uri(server, "/settings.html", HTTP_GET, settings_handler);
     register_uri(server, "/firmware", HTTP_GET, firmware_handler);
     register_uri(server, "/firmware.html", HTTP_GET, firmware_handler);
+    register_uri(server, "/version.json", HTTP_GET, version_json_handler);
 
     // Authentication REST
     register_uri(server, "/api/v1/auth/login", HTTP_POST, api_login_handler);

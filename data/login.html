@@ -246,6 +246,14 @@
     <script>
     // Jika sesi login masih aktif, alihkan langsung ke Overview
     (function checkActiveSession() {
+      fetch("/api/v1/system/version").then(r => r.json()).then(d => {
+        if (d && d.device_model) {
+          document.title = document.title.replace("%model%", d.device_model);
+          const t = document.querySelector(".login-title");
+          if (t) t.textContent = t.textContent.replace("%model%", d.device_model);
+        }
+      }).catch(()=>{});
+
       fetch("/api/v1/auth/check")
         .then(res => {
           if (res.status === 200) {
@@ -270,18 +278,41 @@
         didOpen: () => Swal.showLoading()
       });
 
-      const formData = new FormData();
-      formData.append("username", u);
-      formData.append("password", p);
+      const params = new URLSearchParams();
+      params.append("username", u);
+      params.append("password", p);
 
       fetch("/api/v1/auth/login", {
         method: "POST",
-        body: formData
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params
       })
       .then(res => {
         Swal.close();
         if (res.status === 200) {
-          window.location.href = "/";
+          res.json().then(data => {
+            if (data && data.token) {
+              sessionStorage.setItem("authToken", data.token);
+            }
+            window.location.href = "/";
+          }).catch(() => {
+            window.location.href = "/";
+          });
+        } else if (res.status === 409) {
+          return res.json().then(data => {
+            Swal.fire({
+              icon: "warning",
+              title: "Sesi Penuh (Maks. 2 Perangkat)",
+              html: `<div style="text-align:left;font-size:0.92rem;line-height:1.6;">
+                Saat ini sudah ada <b>2 perangkat</b> yang sedang aktif login ke sistem gateway.<br><br>
+                <span style="color:#94a3b8;">Demi keamanan dan integritas konfigurasi, silakan <b>logout terlebih dahulu</b> di salah satu perangkat lain sebelum login di perangkat ini.</span>
+              </div>`,
+              confirmButtonText: "Mengerti",
+              confirmButtonColor: "#0284c7"
+            });
+          }).catch(() => {
+            Swal.fire("Sesi Penuh", "Batas maksimal 2 perangkat aktif tercapai. Silakan logout terlebih dahulu di perangkat lain.", "warning");
+          });
         } else {
           return res.text().then(text => {
             Swal.fire("Login Gagal", text || "Username atau password salah.", "error");

@@ -1,4 +1,5 @@
 #include "config_store.hpp"
+#include "device_id.hpp"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "nvs.h"
@@ -97,8 +98,7 @@ namespace Iotaru::Core {
 static void nvsGetStr(nvs_handle_t handle, const char* key, char* outBuf, size_t maxLen, const char* defVal) {
     size_t reqLen = maxLen;
     if (nvs_get_str(handle, key, outBuf, &reqLen) != ESP_OK || reqLen == 0) {
-        strncpy(outBuf, defVal, maxLen - 1);
-        outBuf[maxLen - 1] = '\0';
+        strlcpy(outBuf, defVal, maxLen);
     }
 }
 
@@ -145,10 +145,8 @@ esp_err_t ConfigStore::initNvs() {
 }
 
 void ConfigStore::initMetadata() {
-    uint8_t mac[6] = {0};
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    snprintf(g_deviceId, sizeof(g_deviceId), "%02x%02x%02x%02x", mac[2], mac[3], mac[4], mac[5]);
-    ESP_LOGI(TAG, "Device Hardware ID: %s", g_deviceId);
+    Iotaru::Utils::DeviceIdManager::generate(g_deviceId, sizeof(g_deviceId));
+    ESP_LOGI(TAG, "Device Hardware ID (Anti-Clone): %s", g_deviceId);
 }
 
 void ConfigStore::initNvsConfiguration() {
@@ -171,25 +169,32 @@ void ConfigStore::initNvsConfiguration() {
 
     nvs_handle_t hMaster, hDest;
 
-    // 1. Salin Master 'auth' -> 'cfg_auth'
-    if (nvs_open("auth", NVS_READONLY, &hMaster) == ESP_OK) {
-        if (nvs_open("cfg_auth", NVS_READWRITE, &hDest) == ESP_OK) {
-            nvs_erase_all(hDest);
+    // 1. Salin Master 'auth' -> 'cfg_auth' (atau inisialisasi default jika master tidak ada)
+    bool hasMasterAuth = (nvs_open("auth", NVS_READONLY, &hMaster) == ESP_OK);
+    if (nvs_open("cfg_auth", NVS_READWRITE, &hDest) == ESP_OK) {
+        nvs_erase_all(hDest);
+        if (hasMasterAuth) {
             nvsCopyStr(hMaster, hDest, "adm_user", "admin");
             nvsCopyStr(hMaster, hDest, "adm_pass", "admin");
             nvsCopyStr(hMaster, hDest, "tek_user", "user");
             nvsCopyStr(hMaster, hDest, "tek_pass", "user");
-            nvs_commit(hDest);
-            nvs_close(hDest);
+            nvs_close(hMaster);
+        } else {
+            nvs_set_str(hDest, "adm_user", "admin");
+            nvs_set_str(hDest, "adm_pass", "admin");
+            nvs_set_str(hDest, "tek_user", "user");
+            nvs_set_str(hDest, "tek_pass", "user");
         }
-        nvs_close(hMaster);
-        ESP_LOGI(TAG, "[NVS 1/4] Master 'auth' -> 'cfg_auth' OK.");
+        nvs_commit(hDest);
+        nvs_close(hDest);
+        ESP_LOGI(TAG, "[NVS 1/4] 'cfg_auth' OK (Master: %s).", hasMasterAuth ? "ADA" : "TIDAK ADA -> Default");
     }
 
     // 2. Salin Master 'network' -> 'cfg_net'
-    if (nvs_open("network", NVS_READONLY, &hMaster) == ESP_OK) {
-        if (nvs_open("cfg_net", NVS_READWRITE, &hDest) == ESP_OK) {
-            nvs_erase_all(hDest);
+    bool hasMasterNet = (nvs_open("network", NVS_READONLY, &hMaster) == ESP_OK);
+    if (nvs_open("cfg_net", NVS_READWRITE, &hDest) == ESP_OK) {
+        nvs_erase_all(hDest);
+        if (hasMasterNet) {
             nvsCopyU32(hMaster, hDest, "mode", 1); // Default: 1 (Ethernet)
             nvsCopyStr(hMaster, hDest, "w_ssid", "");
             nvsCopyStr(hMaster, hDest, "w_pass", "");
@@ -206,32 +211,56 @@ void ConfigStore::initNvsConfiguration() {
             nvsCopyStr(hMaster, hDest, "eth_dns", "8.8.8.8");
             nvsCopyStr(hMaster, hDest, "eth_dns2", "");
             nvsCopyStr(hMaster, hDest, "ap_pass", "12345678");
-            nvs_commit(hDest);
-            nvs_close(hDest);
+            nvs_close(hMaster);
+        } else {
+            nvs_set_u32(hDest, "mode", 1);
+            nvs_set_str(hDest, "w_ssid", "");
+            nvs_set_str(hDest, "w_pass", "");
+            nvs_set_u32(hDest, "w_dhcp", 1);
+            nvs_set_str(hDest, "w_ip", "192.168.1.100");
+            nvs_set_str(hDest, "w_gw", "192.168.1.1");
+            nvs_set_str(hDest, "w_sn", "255.255.255.0");
+            nvs_set_str(hDest, "w_dns", "8.8.8.8");
+            nvs_set_str(hDest, "w_dns2", "");
+            nvs_set_u32(hDest, "eth_dhcp", 1);
+            nvs_set_str(hDest, "eth_ip", "192.168.1.150");
+            nvs_set_str(hDest, "eth_gw", "192.168.1.1");
+            nvs_set_str(hDest, "eth_sn", "255.255.255.0");
+            nvs_set_str(hDest, "eth_dns", "8.8.8.8");
+            nvs_set_str(hDest, "eth_dns2", "");
+            nvs_set_str(hDest, "ap_pass", "12345678");
         }
-        nvs_close(hMaster);
-        ESP_LOGI(TAG, "[NVS 2/4] Master 'network' -> 'cfg_net' OK.");
+        nvs_commit(hDest);
+        nvs_close(hDest);
+        ESP_LOGI(TAG, "[NVS 2/4] 'cfg_net' OK (Master: %s).", hasMasterNet ? "ADA" : "TIDAK ADA -> Default");
     }
 
     // 3. Salin Master 'mqtt' -> 'cfg_mqtt'
-    if (nvs_open("mqtt", NVS_READONLY, &hMaster) == ESP_OK) {
-        if (nvs_open("cfg_mqtt", NVS_READWRITE, &hDest) == ESP_OK) {
-            nvs_erase_all(hDest);
+    bool hasMasterMqtt = (nvs_open("mqtt", NVS_READONLY, &hMaster) == ESP_OK);
+    if (nvs_open("cfg_mqtt", NVS_READWRITE, &hDest) == ESP_OK) {
+        nvs_erase_all(hDest);
+        if (hasMasterMqtt) {
             nvsCopyStr(hMaster, hDest, "host", "socket.cubeacon.com");
             nvsCopyU32(hMaster, hDest, "port", 1884);
             nvsCopyStr(hMaster, hDest, "user", "eyroMQTT");
             nvsCopyStr(hMaster, hDest, "pass", "eyroMQTT1234");
-            nvs_commit(hDest);
-            nvs_close(hDest);
+            nvs_close(hMaster);
+        } else {
+            nvs_set_str(hDest, "host", "socket.cubeacon.com");
+            nvs_set_u32(hDest, "port", 1884);
+            nvs_set_str(hDest, "user", "eyroMQTT");
+            nvs_set_str(hDest, "pass", "eyroMQTT1234");
         }
-        nvs_close(hMaster);
-        ESP_LOGI(TAG, "[NVS 3/4] Master 'mqtt' -> 'cfg_mqtt' OK.");
+        nvs_commit(hDest);
+        nvs_close(hDest);
+        ESP_LOGI(TAG, "[NVS 3/4] 'cfg_mqtt' OK (Master: %s).", hasMasterMqtt ? "ADA" : "TIDAK ADA -> Default");
     }
 
     // 4. Salin Master 'gateway' -> 'cfg_gate'
-    if (nvs_open("gateway", NVS_READONLY, &hMaster) == ESP_OK) {
-        if (nvs_open("cfg_gate", NVS_READWRITE, &hDest) == ESP_OK) {
-            nvs_erase_all(hDest);
+    bool hasMasterGate = (nvs_open("gateway", NVS_READONLY, &hMaster) == ESP_OK);
+    if (nvs_open("cfg_gate", NVS_READWRITE, &hDest) == ESP_OK) {
+        nvs_erase_all(hDest);
+        if (hasMasterGate) {
             nvsCopyStr(hMaster, hDest, "dev_model", CONFIG_DEVICE_MODEL);
             nvsCopyStr(hMaster, hDest, "dev_ver", CONFIG_DEVICE_BOARD_VER);
             nvsCopyU32(hMaster, hDest, "uuid_en", 0);
@@ -244,11 +273,24 @@ void ConfigStore::initNvsConfiguration() {
             nvsCopyU32(hMaster, hDest, "data_ttl", 5000);
             nvsCopyStr(hMaster, hDest, "restart_sch", "03:00");
             nvsCopyU32(hMaster, hDest, "discon_rst", 30);
-            nvs_commit(hDest);
-            nvs_close(hDest);
+            nvs_close(hMaster);
+        } else {
+            nvs_set_str(hDest, "dev_model", CONFIG_DEVICE_MODEL);
+            nvs_set_str(hDest, "dev_ver", CONFIG_DEVICE_BOARD_VER);
+            nvs_set_u32(hDest, "uuid_en", 0);
+            nvs_set_str(hDest, "uuid", "FDA50693A4E24FB1AFCFC6EB07647825");
+            nvs_set_u32(hDest, "major_en", 0);
+            nvs_set_str(hDest, "major", "");
+            nvs_set_i32(hDest, "rssi_min", -100);
+            nvs_set_u32(hDest, "batch_max", 100);
+            nvs_set_u32(hDest, "batch_flush", 300);
+            nvs_set_u32(hDest, "data_ttl", 5000);
+            nvs_set_str(hDest, "restart_sch", "03:00");
+            nvs_set_u32(hDest, "discon_rst", 30);
         }
-        nvs_close(hMaster);
-        ESP_LOGI(TAG, "[NVS 4/4] Master 'gateway' -> 'cfg_gate' OK.");
+        nvs_commit(hDest);
+        nvs_close(hDest);
+        ESP_LOGI(TAG, "[NVS 4/4] 'cfg_gate' OK (Master: %s).", hasMasterGate ? "ADA" : "TIDAK ADA -> Default");
     }
 
     // 5. Tandai cfg_valid = 1
@@ -270,7 +312,13 @@ void ConfigStore::loadConfig() {
         nvsGetStr(h, "tek_user", g_config.user_user, sizeof(g_config.user_user), "user");
         nvsGetStr(h, "tek_pass", g_config.user_pass, sizeof(g_config.user_pass), "user");
         nvs_close(h);
+    } else {
+        strlcpy(g_config.admin_user, "admin", sizeof(g_config.admin_user));
+        strlcpy(g_config.admin_pass, "admin", sizeof(g_config.admin_pass));
+        strlcpy(g_config.user_user, "user", sizeof(g_config.user_user));
+        strlcpy(g_config.user_pass, "user", sizeof(g_config.user_pass));
     }
+    ESP_LOGI(TAG, "Auth Config Aktif: Admin='%s', Teknisi='%s'", g_config.admin_user, g_config.user_user);
 
     // cfg_net
     if (nvs_open("cfg_net", NVS_READONLY, &h) == ESP_OK) {
@@ -393,14 +441,26 @@ void ConfigStore::resetConfigToFactory() {
     ESP_LOGW(TAG, "Reset NVS selesai. Sistem siap reboot.");
 }
 
+void ConfigStore::getDeviceId(char* outBuf, size_t maxLen) {
+    if (!outBuf || maxLen == 0) return;
+    strlcpy(outBuf, g_deviceId, maxLen);
+    for (size_t i = 0; outBuf[i] != '\0'; i++) {
+        if (outBuf[i] >= 'A' && outBuf[i] <= 'Z') {
+            outBuf[i] = static_cast<char>(outBuf[i] + ('a' - 'A'));
+        }
+    }
+}
+
 void ConfigStore::getMqttClientId(char* outBuf, size_t maxLen) {
-    const char* model = (strlen(g_config.device_model) > 0) ? g_config.device_model : "EMPTY";
-    snprintf(outBuf, maxLen, "%s_%s", model, g_deviceId);
+    // Client ID MQTT murni menggunakan device_id lowercase
+    getDeviceId(outBuf, maxLen);
 }
 
 void ConfigStore::getModuleId(char* outBuf, size_t maxLen) {
+    char dev_id[16];
+    getDeviceId(dev_id, sizeof(dev_id));
     const char* model = (strlen(g_config.device_model) > 0) ? g_config.device_model : "EMPTY";
-    snprintf(outBuf, maxLen, "%s-%s", model, g_deviceId);
+    snprintf(outBuf, maxLen, "%s-%s", model, dev_id);
 }
 
 } // namespace Iotaru::Core

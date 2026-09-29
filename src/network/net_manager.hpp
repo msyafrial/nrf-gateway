@@ -17,6 +17,7 @@ public:
     static void tickWatchdog();
 
     static bool isConnected();
+    static bool isLinkUp();
     static bool isEthernetActive();
     static bool isEthernetHardwareDetected();
     static void printEthernetDiagnostic();
@@ -27,6 +28,7 @@ public:
     static void rollbackPendingNetworkConfig();
 
     // SoftAP Fallback & On-Demand Configuration Mode
+    static void ensureWifiDriverInitialized();
     static void startConfigAP();
     static void stopConfigAP();
     static void scheduleStopConfigAP(uint32_t delayMs = 1000);
@@ -38,7 +40,12 @@ public:
     static bool isNtpSynced();
     static IEthernetDriver* getEthernetDriver();
 
+    static bool isWifiScanDone();
+    static void resetWifiScanDone();
+
     static const char* getWifiDisconnectReasonName(uint8_t reason);
+    static void initMdns();
+    static void getMdnsHostname(char* outBuf, size_t maxLen);
 
 private:
     static void initWifiStation();

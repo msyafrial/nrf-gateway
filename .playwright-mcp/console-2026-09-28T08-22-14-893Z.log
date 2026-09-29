@@ -1,0 +1,2 @@
+[     224ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://192.168.8.161/login.html:0
+[     291ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://192.168.8.161/api/v1/auth/check:0

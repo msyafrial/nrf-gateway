@@ -1,0 +1,16 @@
+- generic [ref=f10e3]:
+  - img "IOTARU" [ref=f10e5]
+  - generic [ref=f10e6]: Autentikasi Gateway SG-10
+  - generic [ref=f10e7]: Masuk sebagai Administrator atau Teknisi Lapangan
+  - generic [ref=f10e8]:
+    - generic [ref=f10e9]:
+      - generic [ref=f10e10]: Username
+      - textbox "Username" [active] [ref=f10e11]:
+        - /placeholder: Masukkan username
+    - generic [ref=f10e12]:
+      - generic [ref=f10e13]: Password
+      - generic [ref=f10e14]:
+        - textbox "Password" [ref=f10e15]:
+          - /placeholder: Masukkan password
+        - button "Tahan untuk melihat password" [ref=f10e16] [cursor=pointer]
+    - button "Masuk ke Sistem" [ref=f10e22] [cursor=pointer]

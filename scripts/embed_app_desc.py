@@ -101,8 +101,28 @@ def generate_littlefs_metadata(env):
     print(f"  Build Date      : {build_date}")
     print("=======================================================\n")
 
-# Otomatis generate metadata LittleFS saat script dijalankan
+def sync_gzip_assets(env):
+    project_dir = env.subst("$PROJECT_DIR")
+    data_dir = os.path.join(project_dir, "data")
+    if not os.path.exists(data_dir):
+        return
+    for root, dirs, files in os.walk(data_dir):
+        for file in files:
+            if file.endswith(('.html', '.js', '.css', '.json')) and not file.endswith('.gz'):
+                full_path = os.path.join(root, file)
+                gz_path = full_path + '.gz'
+                if os.path.exists(gz_path):
+                    try:
+                        with open(full_path, 'rb') as f_in:
+                            content = f_in.read()
+                        with open(gz_path, 'wb') as f_out:
+                            f_out.write(gzip.compress(content))
+                    except Exception as e:
+                        pass
+
+# Otomatis generate metadata LittleFS & sync gzip assets saat script dijalankan
 generate_littlefs_metadata(env)
+sync_gzip_assets(env)
 
 def inject_metadata_elf(source, target, env):
     elf_path = str(target[0])

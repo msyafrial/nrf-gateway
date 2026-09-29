@@ -1,4 +1,5 @@
 #include "net_manager.hpp"
+#include "mqtt_service.hpp"
 #include "bsp_led.hpp"
 #include "config_store.hpp"
 #include "esp_wifi.h"
@@ -8,6 +9,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_mac.h"
+#include "mdns.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <cstring>
@@ -22,11 +24,14 @@ static IEthernetDriver* s_ethDriver = nullptr;
 static esp_netif_t*     s_staNetif = nullptr;
 static esp_netif_t*     s_apNetif = nullptr;
 
+static bool s_wifiDriverInitialized = false;
 static bool s_wifiConnected = false;
 static bool s_wifiHasIp = false;
 static bool s_ntpSynced = false;
 static bool s_manualConfigMode = false;
 static bool s_apActive = false;
+static volatile bool s_wifiScanDone = false;
+static volatile bool s_wifiScanSuccess = false;
 
 static uint32_t s_disconStartTime = 0;
 static uint32_t s_lastApActivityTime = 0;
@@ -84,13 +89,27 @@ static void sntpSyncCallback(struct timeval *tv) {
     ESP_LOGI(TAG, "SNTP sinkronisasi berhasil: %s", strftime_buf);
 }
 
+static bool shouldWifiStaConnect() {
+    if (s_manualConfigMode) return false;
+    bool wifiModeActive = (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI));
+    if (!wifiModeActive) return false;
+    if (s_ethDriver != nullptr && s_ethDriver->hasIp()) return false;
+    if (g_config.w_ssid[0] == '\0') return false;
+    return true;
+}
+
 void NetworkManager::onWifiEvent(void* arg, esp_event_base_t base, int32_t id, void* data) {
     if (base == WIFI_EVENT) {
         switch (id) {
             case WIFI_EVENT_STA_START:
-                ESP_LOGI(TAG, "Interface Wi-Fi Station aktif, mencoba terhubung...");
-                esp_wifi_connect();
-                Bsp::LedManager::setComState(ComLedState::CONNECTING);
+                ESP_LOGI(TAG, "Interface Wi-Fi Station aktif");
+                if (shouldWifiStaConnect()) {
+                    ESP_LOGI(TAG, "Mencoba terhubung ke Wi-Fi '%s'...", g_config.w_ssid);
+                    esp_wifi_connect();
+                    Bsp::LedManager::setComState(ComLedState::CONNECTING);
+                } else {
+                    ESP_LOGI(TAG, "Wi-Fi Station dalam mode idle/pasif (Ethernet aktif / auto-connect dinonaktifkan)");
+                }
                 break;
 
             case WIFI_EVENT_STA_CONNECTED: {
@@ -104,15 +123,17 @@ void NetworkManager::onWifiEvent(void* arg, esp_event_base_t base, int32_t id, v
                 wifi_event_sta_disconnected_t* e = (wifi_event_sta_disconnected_t*)data;
                 s_wifiConnected = false;
                 s_wifiHasIp = false;
-                Bsp::LedManager::setComState(ComLedState::DISCONNECTED);
-                ESP_LOGW(TAG, "Wi-Fi Terputus! Alasan: %s (%d)", getWifiDisconnectReasonName(e->reason), e->reason);
 
-                if (s_disconStartTime == 0) {
-                    s_disconStartTime = (uint32_t)(esp_timer_get_time() / 1000);
-                }
+                if (shouldWifiStaConnect()) {
+                    Bsp::LedManager::setComState(ComLedState::DISCONNECTED);
+                    ESP_LOGW(TAG, "Wi-Fi Terputus! Alasan: %s (%d)", getWifiDisconnectReasonName(e->reason), e->reason);
 
-                if (!s_manualConfigMode) {
+                    if (s_disconStartTime == 0) {
+                        s_disconStartTime = (uint32_t)(esp_timer_get_time() / 1000);
+                    }
                     esp_wifi_connect();
+                } else {
+                    ESP_LOGD(TAG, "Wi-Fi Station terputus dalam mode pasif/idle. Alasan: %d", e->reason);
                 }
                 break;
             }
@@ -133,30 +154,105 @@ void NetworkManager::onWifiEvent(void* arg, esp_event_base_t base, int32_t id, v
                 break;
             }
 
+            case WIFI_EVENT_SCAN_DONE: {
+                wifi_event_sta_scan_done_t* e = (wifi_event_sta_scan_done_t*)data;
+                s_wifiScanDone = true;
+                s_wifiScanSuccess = (e->status == 0);
+                ESP_LOGI(TAG, "Wi-Fi Scan selesai di seluruh channel (1-13). Status=%d, Total Ditemukan=%d AP",
+                         e->status, e->number);
+                break;
+            }
+
             default:
                 break;
         }
     }
 }
 
+void NetworkManager::getMdnsHostname(char* outBuf, size_t maxLen) {
+    if (!outBuf || maxLen == 0) return;
+
+    // Bersihkan model: hanya menyisakan huruf dan angka (lowercase), contoh: "SG-10" -> "sg10"
+    char clean_model[32];
+    size_t mIdx = 0;
+    const char* raw_model = g_config.device_model[0] ? g_config.device_model : "SG-10";
+    for (size_t i = 0; raw_model[i] != '\0' && mIdx < sizeof(clean_model) - 1; ++i) {
+        char c = raw_model[i];
+        if (c >= 'A' && c <= 'Z') {
+            clean_model[mIdx++] = static_cast<char>(c + ('a' - 'A'));
+        } else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+            clean_model[mIdx++] = c;
+        }
+    }
+    clean_model[mIdx] = '\0';
+    if (mIdx == 0) {
+        strlcpy(clean_model, "sg10", sizeof(clean_model));
+    }
+
+    char device_id[32];
+    Core::ConfigStore::getDeviceId(device_id, sizeof(device_id));
+
+    // Hostname mDNS: <clean_model>-<device_id> (contoh: sg10-b3462cf9)
+    snprintf(outBuf, maxLen, "%s-%s", clean_model, device_id);
+}
+
+void NetworkManager::initMdns() {
+    static bool s_mdnsInitialized = false;
+    if (s_mdnsInitialized) return;
+
+    esp_err_t err = mdns_init();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Gagal menginisialisasi mDNS: 0x%x", err);
+        return;
+    }
+
+    char hostname[64];
+    getMdnsHostname(hostname, sizeof(hostname));
+
+    char device_id[32];
+    Core::ConfigStore::getDeviceId(device_id, sizeof(device_id));
+
+    mdns_hostname_set(hostname);
+
+    char instance_name[64];
+    const char* raw_model = g_config.device_model[0] ? g_config.device_model : "SG-10";
+    snprintf(instance_name, sizeof(instance_name), "IOTARU %s Gateway", raw_model);
+    mdns_instance_name_set(instance_name);
+
+    // Registrasi Service HTTP port 80 untuk Zeroconf / Bonjour auto-discovery
+    mdns_service_add("IOTARU Web Console", "_http", "_tcp", 80, NULL, 0);
+    mdns_service_txt_item_set("_http", "_tcp", "model", raw_model);
+    mdns_service_txt_item_set("_http", "_tcp", "firmware", FIRMWARE_VERSION);
+    mdns_service_txt_item_set("_http", "_tcp", "device_id", device_id);
+
+    s_mdnsInitialized = true;
+    ESP_LOGI(TAG, "mDNS Service Aktif: http://%s.local (Port 80)", hostname);
+}
+
 void NetworkManager::onIpEvent(void* arg, esp_event_base_t base, int32_t id, void* data) {
-    if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+    if (base == IP_EVENT && (id == IP_EVENT_STA_GOT_IP || id == IP_EVENT_ETH_GOT_IP)) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*)data;
-        s_wifiHasIp = true;
+        if (id == IP_EVENT_STA_GOT_IP) {
+            s_wifiHasIp = true;
+        }
         s_disconStartTime = 0; // Reset watchdog timer
-        Bsp::LedManager::setComState(ComLedState::NORMAL);
+        Bsp::LedManager::autoSync(true, true, MqttService::isConnected(), s_apActive);
 
-        char ipStr[16], gwStr[16], maskStr[16];
-        esp_ip4addr_ntoa(&event->ip_info.ip, ipStr, sizeof(ipStr));
-        esp_ip4addr_ntoa(&event->ip_info.gw, gwStr, sizeof(gwStr));
-        esp_ip4addr_ntoa(&event->ip_info.netmask, maskStr, sizeof(maskStr));
+        char ip_str[16], gw_str[16], mask_str[16];
+        esp_ip4addr_ntoa(&event->ip_info.ip, ip_str, sizeof(ip_str));
+        esp_ip4addr_ntoa(&event->ip_info.gw, gw_str, sizeof(gw_str));
+        esp_ip4addr_ntoa(&event->ip_info.netmask, mask_str, sizeof(mask_str));
 
+        const char* if_name = (id == IP_EVENT_STA_GOT_IP) ? "WI-FI" : "ETHERNET";
         ESP_LOGI(TAG, "=======================================================");
-        ESP_LOGI(TAG, ">>> SUKSES TERHUBUNG & MENDAPATKAN IP WI-FI! <<<");
-        ESP_LOGI(TAG, "  -> Alamat IP   : %s", ipStr);
-        ESP_LOGI(TAG, "  -> Gateway     : %s", gwStr);
-        ESP_LOGI(TAG, "  -> Subnet Mask : %s", maskStr);
+        ESP_LOGI(TAG, ">>> SUKSES TERHUBUNG & MENDAPATKAN IP %s! <<<", if_name);
+        ESP_LOGI(TAG, "  -> Alamat IP   : %s", ip_str);
+        ESP_LOGI(TAG, "  -> Gateway     : %s", gw_str);
+        ESP_LOGI(TAG, "  -> Subnet Mask : %s", mask_str);
         ESP_LOGI(TAG, "=======================================================");
+
+        // Aktifkan mDNS saat koneksi IP diperoleh
+        initMdns();
     }
 }
 
@@ -175,6 +271,7 @@ void NetworkManager::init(IEthernetDriver* driver) {
 
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &onWifiEvent, nullptr));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &onIpEvent, nullptr));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &onIpEvent, nullptr));
 
     bool ethPreferred = (g_config.connection_mode == static_cast<int>(ConnectionMode::ETHERNET));
 
@@ -197,8 +294,8 @@ void NetworkManager::init(IEthernetDriver* driver) {
             }
         }
 
-        char clientId[32];
-        Core::ConfigStore::getMqttClientId(clientId, sizeof(clientId));
+        char client_id[32];
+        Core::ConfigStore::getDeviceId(client_id, sizeof(client_id));
 
         ethStarted = s_ethDriver->begin(
             ip.addr,
@@ -206,7 +303,7 @@ void NetworkManager::init(IEthernetDriver* driver) {
             mask.addr,
             dns.addr,
             g_config.eth_dhcp != 0,
-            clientId,
+            client_id,
             dns2.addr
         );
     }
@@ -219,19 +316,34 @@ void NetworkManager::init(IEthernetDriver* driver) {
     initSntp();
 }
 
-void NetworkManager::initWifiStation() {
-    if (s_staNetif == nullptr) {
-        s_staNetif = esp_netif_create_default_wifi_sta();
-    }
+void NetworkManager::ensureWifiDriverInitialized() {
+    if (!s_wifiDriverInitialized) {
+        if (s_staNetif == nullptr) {
+            s_staNetif = esp_netif_create_default_wifi_sta();
+        }
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+        ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
 
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+        wifi_country_t country = {};
+        strncpy(country.cc, "ID", sizeof(country.cc));
+        country.schan = 1;
+        country.nchan = 13;
+        country.max_tx_power = 20;
+        country.policy = WIFI_COUNTRY_POLICY_MANUAL;
+        esp_wifi_set_country(&country);
+
+        s_wifiDriverInitialized = true;
+    }
+}
+
+void NetworkManager::initWifiStation() {
+    ensureWifiDriverInitialized();
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
 
     wifi_config_t wifi_config = {};
-    strncpy((char*)wifi_config.sta.ssid, g_config.w_ssid, sizeof(wifi_config.sta.ssid));
-    strncpy((char*)wifi_config.sta.password, g_config.w_password, sizeof(wifi_config.sta.password));
+    strlcpy((char*)wifi_config.sta.ssid, g_config.w_ssid, sizeof(wifi_config.sta.ssid));
+    strlcpy((char*)wifi_config.sta.password, g_config.w_password, sizeof(wifi_config.sta.password));
     wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
@@ -278,11 +390,13 @@ void NetworkManager::startConfigAP() {
     s_apActive = true;
     recordApActivity();
 
+    Bsp::LedManager::setConfigMode(true);
     Bsp::LedManager::setComState(ComLedState::SOFTAP);
 
     if (s_apNetif == nullptr) {
         s_apNetif = esp_netif_create_default_wifi_ap();
     }
+    ensureWifiDriverInitialized();
 
     char moduleId[32];
     Core::ConfigStore::getModuleId(moduleId, sizeof(moduleId));
@@ -296,8 +410,16 @@ void NetworkManager::startConfigAP() {
     ap_config.ap.max_connection = 4;
     ap_config.ap.authmode = (strlen(apPass) >= 8) ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    wifi_mode_t currentMode = WIFI_MODE_NULL;
+    esp_wifi_get_mode(&currentMode);
+    if (currentMode == WIFI_MODE_STA || currentMode == WIFI_MODE_APSTA) {
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    } else {
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    }
+
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
     ESP_LOGI(TAG, "SoftAP aktif: SSID='%s' | IP=192.168.4.1", ap_config.ap.ssid);
 }
 
@@ -307,8 +429,16 @@ void NetworkManager::stopConfigAP() {
         s_manualConfigMode = false;
         s_apActive = false;
         s_pendingApStopMillis = 0;
-        esp_wifi_set_mode(WIFI_MODE_STA);
-        Bsp::LedManager::setComState(ComLedState::NORMAL);
+
+        Bsp::LedManager::setConfigMode(false);
+
+        bool ethPreferred = (g_config.connection_mode == static_cast<int>(ConnectionMode::ETHERNET));
+        if (ethPreferred && s_ethDriver != nullptr && s_ethDriver->hasIp()) {
+            esp_wifi_stop();
+        } else {
+            esp_wifi_set_mode(WIFI_MODE_STA);
+        }
+        Bsp::LedManager::autoSync(isLinkUp(), isConnected(), MqttService::isConnected(), false);
     }
 }
 
@@ -334,6 +464,11 @@ uint32_t NetworkManager::getApRemainingSeconds() {
 bool NetworkManager::isConnected() {
     if (s_ethDriver && s_ethDriver->hasIp()) return true;
     return s_wifiHasIp;
+}
+
+bool NetworkManager::isLinkUp() {
+    if (s_ethDriver && s_ethDriver->isConnected()) return true;
+    return s_wifiConnected;
 }
 
 bool NetworkManager::isEthernetActive() {
@@ -378,6 +513,15 @@ void NetworkManager::rollbackPendingNetworkConfig() {
 
 bool NetworkManager::isNtpSynced() {
     return s_ntpSynced;
+}
+
+bool NetworkManager::isWifiScanDone() {
+    return s_wifiScanDone;
+}
+
+void NetworkManager::resetWifiScanDone() {
+    s_wifiScanDone = false;
+    s_wifiScanSuccess = false;
 }
 
 IEthernetDriver* NetworkManager::getEthernetDriver() {

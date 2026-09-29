@@ -501,7 +501,12 @@ function handleFormSubmit(formId, endpoint, successMsg) {
       disabledInputs.forEach(el => el.disabled = false);
       const formData = new FormData(form);
       disabledInputs.forEach(el => el.disabled = true);
-      fetch(endpoint, { method: "POST", body: formData })
+      const urlParams = new URLSearchParams(formData);
+      fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: urlParams
+      })
         .then(response => {
           Swal.close();
           if (response.status === 200) {

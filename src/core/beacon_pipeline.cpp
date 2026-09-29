@@ -19,12 +19,16 @@ static size_t s_liveBeaconCount = 0;
 
 static std::atomic<uint32_t> s_totalBeaconsRead{0};
 static std::atomic<uint32_t> s_totalMqttPublished{0};
+static std::atomic<uint32_t> s_totalMqttBatches{0};
 static std::atomic<uint32_t> s_totalMqttFailed{0};
+static std::atomic<uint32_t> s_totalQueueDropped{0};
 
 static uint32_t s_readSpeed = 0;
 static uint32_t s_mqttSpeed = 0;
+static uint32_t s_mqttBatchSpeed = 0;
 static uint32_t s_lastReadSnap = 0;
-static uint32_t s_lastMqttSnap = 0;
+static uint32_t s_lastMqttPublishedSnap = 0;
+static uint32_t s_lastMqttBatchSnap = 0;
 
 // Internal streaming state machine buffer
 static uint8_t s_rxFrameBuf[sizeof(BeaconBinaryFrame)];
@@ -48,6 +52,7 @@ void BeaconPipeline::push(const BeaconPacket& packet) {
         // Antrean penuh: buang item tertua (drop-oldest policy)
         BeaconPacket oldest;
         if (xQueueReceive(s_beaconQueue, &oldest, 0) == pdTRUE) {
+            s_totalQueueDropped++;
             xQueueSend(s_beaconQueue, &packet, 0);
         }
     }
@@ -81,7 +86,9 @@ void BeaconPipeline::pruneExpired() {
     while (xQueuePeek(s_beaconQueue, &front, 0) == pdTRUE) {
         if ((nowMs - front.timestamp) > (uint32_t)g_config.data_ttl) {
             BeaconPacket discarded;
-            xQueueReceive(s_beaconQueue, &discarded, 0);
+            if (xQueueReceive(s_beaconQueue, &discarded, 0) == pdTRUE) {
+                s_totalQueueDropped++;
+            }
         } else {
             break;
         }
@@ -183,22 +190,45 @@ size_t BeaconPipeline::copyLiveBeacons(LiveBeaconItem* outItems, size_t maxItems
     return count;
 }
 
+void BeaconPipeline::flushLiveBeacons() {
+    if (s_liveBufMutex != nullptr && xSemaphoreTake(s_liveBufMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+        s_liveBeaconCount = 0;
+        xSemaphoreGive(s_liveBufMutex);
+    }
+}
+
 void BeaconPipeline::updateMetrics() {
     uint32_t curRead = s_totalBeaconsRead;
-    uint32_t curMqtt = s_totalMqttPublished;
+    uint32_t curPublished = s_totalMqttPublished;
+    uint32_t curBatches = s_totalMqttBatches;
 
     s_readSpeed = curRead - s_lastReadSnap;
-    s_mqttSpeed = curMqtt - s_lastMqttSnap;
+    s_mqttSpeed = curPublished - s_lastMqttPublishedSnap; // Murni paket per detik (pkt/s)!
+    s_mqttBatchSpeed = curBatches - s_lastMqttBatchSnap;
 
     s_lastReadSnap = curRead;
-    s_lastMqttSnap = curMqtt;
+    s_lastMqttPublishedSnap = curPublished;
+    s_lastMqttBatchSnap = curBatches;
+}
+
+void BeaconPipeline::recordMqttPublish(uint32_t packetCount, uint32_t batchCount) {
+    s_totalMqttPublished += packetCount;
+    s_totalMqttBatches += batchCount;
+}
+
+void BeaconPipeline::recordMqttFailed(uint32_t packetCount) {
+    s_totalMqttFailed += packetCount;
 }
 
 uint32_t BeaconPipeline::getReadSpeed() { return s_readSpeed; }
 uint32_t BeaconPipeline::getMqttSpeed() { return s_mqttSpeed; }
+uint32_t BeaconPipeline::getMqttBatchSpeed() { return s_mqttBatchSpeed; }
 uint32_t BeaconPipeline::getTotalBeaconsRead() { return s_totalBeaconsRead; }
 uint32_t BeaconPipeline::getTotalMqttPublished() { return s_totalMqttPublished; }
+uint32_t BeaconPipeline::getTotalMqttBatches() { return s_totalMqttBatches; }
 uint32_t BeaconPipeline::getTotalMqttFailed() { return s_totalMqttFailed; }
+uint32_t BeaconPipeline::getTotalQueueDropped() { return s_totalQueueDropped; }
+uint32_t BeaconPipeline::getTotalDropped() { return s_totalQueueDropped + s_totalMqttFailed; }
 
 size_t BeaconPipeline::getQueueLoad() {
     return (s_beaconQueue != nullptr) ? (size_t)uxQueueMessagesWaiting(s_beaconQueue) : 0;

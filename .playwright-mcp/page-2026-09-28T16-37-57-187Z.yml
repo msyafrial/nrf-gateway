@@ -1,0 +1,102 @@
+- generic [active] [ref=f25e1]:
+  - generic [ref=f25e2]:
+    - main [ref=f25e3]:
+      - generic [ref=f25e4]:
+        - generic [ref=f25e5]:
+          - link [ref=f25e6] [cursor=pointer]:
+            - /url: /
+            - img "IOTARU" [ref=f25e7]
+          - generic [ref=f25e8]: Overview Gateway
+        - link "Keluar" [ref=f25e9] [cursor=pointer]:
+          - /url: /logout
+      - generic [ref=f25e14]:
+        - generic [ref=f25e15]:
+          - generic [ref=f25e21]:
+            - generic [ref=f25e22]: IOTARU SMART GUARD (SG-10)
+            - generic [ref=f25e23]: Industrial Smart BLE Beacon Gateway Controller
+          - generic [ref=f25e24]: Gateway Online
+        - generic [ref=f25e27]:
+          - generic [ref=f25e32]:
+            - generic [ref=f25e33]: Spesifikasi & Status Gateway
+            - generic [ref=f25e34]: Parameter identifikasi unit dan status konektivitas jaringan
+          - generic [ref=f25e35]:
+            - generic [ref=f25e36]:
+              - generic [ref=f25e37]: Model
+              - generic [ref=f25e38]: SG-10
+            - generic [ref=f25e39]:
+              - generic [ref=f25e40]: Manufacture
+              - generic [ref=f25e41]: IOTARU Tech
+            - generic [ref=f25e45]:
+              - generic [ref=f25e46]: Device ID (mDNS)
+              - code [ref=f25e48]: e8b89a33
+            - generic [ref=f25e49]:
+              - generic [ref=f25e50]: Device Version
+              - generic [ref=f25e51]: v1.0.0
+            - generic [ref=f25e52]:
+              - generic [ref=f25e53]: Firmware Version
+              - generic [ref=f25e54]: v1.0.1
+            - generic [ref=f25e56]:
+              - generic [ref=f25e57]: UI Version
+              - generic [ref=f25e58]: v1.0.0
+            - generic [ref=f25e60]:
+              - generic [ref=f25e61]: IP Address
+              - generic [ref=f25e62]: 192.168.8.161
+            - generic [ref=f25e63]:
+              - generic [ref=f25e64]: Running Mode
+              - generic [ref=f25e65]: Ethernet (100M Full)
+            - generic [ref=f25e67]:
+              - generic [ref=f25e68]: Signal Strength
+              - generic [ref=f25e69]: 100 Mbps (Full Duplex)
+            - generic [ref=f25e70]:
+              - generic [ref=f25e71]: MQTT Telemetri
+              - generic [ref=f25e72]: Connected
+        - generic [ref=f25e74]:
+          - generic [ref=f25e79]:
+            - generic [ref=f25e80]: Uji Diagnostik Realtime
+            - generic [ref=f25e81]: Pemantauan paket beacon nRF52840 berkecepatan tinggi
+          - paragraph [ref=f25e82]:
+            - text: Sistem gateway membaca ratusan paket iBeacon dan ibeacon_ext setiap detik melalui antarmuka UART 1 Mbps. Untuk melihat laju transmisi, kapasitas antrean FreeRTOS, dan inspeksi paket beacon realtime, silakan buka menu
+            - strong [ref=f25e83]: Live Test Monitor
+            - text: .
+          - link "Buka Live Test Monitor" [ref=f25e84] [cursor=pointer]:
+            - /url: /test
+      - generic [ref=f25e87]: © 2026 IOTARU ESP32 Gateway (SG-10). High-Reliability BLE Telemetry.
+    - navigation [ref=f25e88]:
+      - link "Overview" [ref=f25e89] [cursor=pointer]:
+        - /url: /
+      - button "Config" [ref=f25e94] [cursor=pointer]
+      - link "Test" [ref=f25e99] [cursor=pointer]:
+        - /url: /test
+      - link "Firmware" [ref=f25e104] [cursor=pointer]:
+        - /url: /firmware
+      - button "Reboot" [ref=f25e109] [cursor=pointer]
+  - generic [ref=f25e113]:
+    - generic [ref=f25e115]:
+      - generic [ref=f25e116]: Pengaturan Sistem
+      - generic [ref=f25e117]: Pilih menu konfigurasi gateway IOTARU
+    - generic [ref=f25e118]:
+      - link "Device Settings Filter UUID, RSSI threshold & batching MQTT" [ref=f25e119] [cursor=pointer]:
+        - /url: /settings
+        - generic [ref=f25e124]:
+          - generic [ref=f25e125]: Device Settings
+          - generic [ref=f25e126]: Filter UUID, RSSI threshold & batching MQTT
+      - link "Auth & Network Settings Kredensial login, Wi-Fi & LAN Ethernet" [ref=f25e127] [cursor=pointer]:
+        - /url: /auth
+        - generic [ref=f25e132]:
+          - generic [ref=f25e133]: Auth & Network Settings
+          - generic [ref=f25e134]: Kredensial login, Wi-Fi & LAN Ethernet
+      - button "Batal" [ref=f25e135] [cursor=pointer]
+  - generic [ref=f25e136]:
+    - generic [ref=f25e138]:
+      - generic [ref=f25e139]: Kontrol Daya Perangkat
+      - generic [ref=f25e140]: Pilih tindakan untuk mikrokontroler ESP32
+    - generic [ref=f25e141]:
+      - button "Reboot Perangkat Mulai ulang sistem modul ESP32" [ref=f25e142] [cursor=pointer]:
+        - generic [ref=f25e146]:
+          - generic [ref=f25e147]: Reboot Perangkat
+          - generic [ref=f25e148]: Mulai ulang sistem modul ESP32
+      - button "Reset Konfigurasi (Factory) Kembalikan semua setelan NVS ke default" [ref=f25e149] [cursor=pointer]:
+        - generic [ref=f25e156]:
+          - generic [ref=f25e157]: Reset Konfigurasi (Factory)
+          - generic [ref=f25e158]: Kembalikan semua setelan NVS ke default
+      - button "Batal" [ref=f25e159] [cursor=pointer]

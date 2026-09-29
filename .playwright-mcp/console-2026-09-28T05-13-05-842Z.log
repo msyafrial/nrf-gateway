@@ -1,0 +1,257 @@
+[   13516ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   13516ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   13518ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   15615ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   15616ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   15617ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   17724ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   17725ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   17726ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   19845ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[   19846ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   19846ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   21979ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   21979ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   21980ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   24109ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   24110ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   24111ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   26278ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_RESET @ http://192.168.8.161/assets/js/test.js:448
+[   26279ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   26279ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   28392ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   28393ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   28393ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   30503ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   30503ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   30504ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   32629ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[   32629ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   32630ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   34785ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   34786ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   34786ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   37011ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   37012ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   37012ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   39370ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[   39370ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   39372ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   41894ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   41894ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   41895ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   45159ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   45160ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   45160ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   47918ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[   47920ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   47921ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   53724ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   53725ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   53726ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   57923ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[   57924ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   57925ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   61286ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   61286ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   61288ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   65505ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   65506ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   65506ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   70555ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   70556ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   70557ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   76300ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   76301ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   76303ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   82334ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   82334ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   82336ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   88410ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   88411ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   88413ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   94649ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[   94650ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   94650ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[   98466ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[   98467ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[   98467ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  102816ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  102816ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  102817ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  106392ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  106393ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  106394ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  111427ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  111428ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  111430ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  115108ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  115108ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  115109ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  121809ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  121810ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  121811ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  125074ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  125074ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  125075ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  129306ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  129306ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  129307ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  133175ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  133175ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  133176ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  135259ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  135260ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  135260ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  137359ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  137360ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  137361ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  139482ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  139485ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  139486ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  141624ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  141625ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  141626ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  143738ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  143739ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  143741ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  145855ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  145855ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  145856ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  147986ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  147986ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  147987ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  150117ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  150118ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  150119ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  152251ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  152252ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  152254ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  154480ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  154480ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  154481ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  156605ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  156605ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  156606ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  158787ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  158787ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  158788ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  161101ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  161101ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  161102ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  163633ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  163634ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  163634ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  166250ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  166250ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  166251ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  170547ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  170549ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  170549ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  175503ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  175504ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  175505ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  179161ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  179162ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  179163ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  184148ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  184148ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  184149ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  191060ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  191061ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  191062ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  196581ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  196582ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  196583ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  200202ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  200210ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  200211ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  203724ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  203724ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  203725ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  207489ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  207489ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  207490ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  211065ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  211066ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  211070ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  215093ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  215093ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  215094ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  221476ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  221477ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  221478ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  227223ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  227224ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  227226ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  234315ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  234315ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  234317ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  239234ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  239234ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  239235ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  245521ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  245522ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  245523ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  249751ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  249752ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  249753ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  253250ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  253250ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  253251ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  255364ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  255364ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  255367ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  257493ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  257496ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  257497ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  259612ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  259613ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  259614ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  261747ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  261747ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  261749ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  263853ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  263853ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  263855ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  265993ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  265995ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  265996ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  268115ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  268115ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  268116ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  270245ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  270245ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  270246ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  272396ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  272398ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  272399ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  274555ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  274556ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  274558ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  276706ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  276713ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  276715ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  278978ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  278978ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  278979ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  281315ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  281316ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  281318ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  283592ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  283593ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  283595ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  286267ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  286269ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  286271ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  290352ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Connection closed before receiving a handshake response @ http://192.168.8.161/assets/js/test.js:448
+[  290352ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  290355ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  294830ms] [ERROR] WebSocket connection to 'ws://192.168.8.161/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_ABORTED @ http://192.168.8.161/assets/js/test.js:448
+[  294831ms] [WARNING] [WS] Error: Event @ http://192.168.8.161/assets/js/test.js:527
+[  294834ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  301341ms] [LOG] [WS] Connected @ http://192.168.8.161/assets/js/test.js:451
+[  616540ms] [LOG] [WS] Disconnected @ http://192.168.8.161/assets/js/test.js:508
+[  616660ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://192.168.8.161/api/v1/auth/check:0
+[  617137ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://192.168.8.161/login.html:0
+[  617261ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://192.168.8.161/api/v1/auth/check:0
