@@ -290,14 +290,7 @@
       .then(res => {
         Swal.close();
         if (res.status === 200) {
-          res.json().then(data => {
-            if (data && data.token) {
-              sessionStorage.setItem("authToken", data.token);
-            }
-            window.location.href = "/";
-          }).catch(() => {
-            window.location.href = "/";
-          });
+          window.location.href = "/";
         } else if (res.status === 409) {
           return res.json().then(data => {
             Swal.fire({

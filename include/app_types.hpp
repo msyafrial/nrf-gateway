@@ -64,7 +64,7 @@ struct DroppedBeaconItem {
 
 constexpr size_t LIVE_FIFO_MAX = 50;
 constexpr size_t DROPPED_FIFO_MAX = 50;
-constexpr size_t BEACON_QUEUE_MAX = 300;
+constexpr size_t BEACON_QUEUE_MAX = 600;
 constexpr size_t MQTT_BATCH_BUFFER_SIZE = 4096;
 
 // =================================================================
@@ -122,6 +122,15 @@ namespace Pins {
     constexpr int W5500_RST  = 15;
     constexpr int W5500_INT  = 14;
     constexpr int W5500_SPI_CLOCK_MHZ = 25; // 25-33 MHz DMA
+
+    // I2C Master & AT24C256 EEPROM
+    constexpr int I2C_SDA = 21;
+    constexpr int I2C_SCL = 22;
+    constexpr uint32_t I2C_FREQ_HZ = 100000;
+    constexpr uint8_t AT24C256_I2C_ADDR = 0x50;
+    constexpr size_t AT24C256_PAGE_SIZE = 64;
+    constexpr size_t AT24C256_SLOT_SIZE = 128;
+    constexpr size_t AT24C256_TOTAL_SLOTS = 200;
 }
 
 } // namespace Iotaru

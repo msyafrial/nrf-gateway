@@ -1,4 +1,5 @@
 #include "beacon_pipeline.hpp"
+#include "drop_log_service.hpp"
 #include "app_config.hpp"
 #include "crc_utils.hpp"
 #include "esp_log.h"
@@ -51,6 +52,7 @@ void BeaconPipeline::init() {
     if (s_beaconQueue == nullptr) {
         s_beaconQueue = xQueueCreate(BEACON_QUEUE_MAX, sizeof(BeaconPacket));
     }
+    DropLogService::init();
     ESP_LOGI(TAG, "Inisialisasi antrean data beacon selesai (Kapasitas: %u item, Live FIFO: %u item)",
              (unsigned int)BEACON_QUEUE_MAX, (unsigned int)LIVE_FIFO_MAX);
 }
@@ -233,6 +235,10 @@ void BeaconPipeline::recordMqttFailed(uint32_t packetCount) {
     s_totalMqttFailed += packetCount;
     s_dropMqttFailed += packetCount;
 
+    char pktBuf[24];
+    snprintf(pktBuf, sizeof(pktBuf), "%lu pkt", (unsigned long)packetCount);
+    DropLogService::record("MQTT", pktBuf, 0, DropReason::MQTT_FAIL);
+
     if (s_liveBufMutex != nullptr && xSemaphoreTake(s_liveBufMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
         if (s_droppedBeaconCount < DROPPED_FIFO_MAX) {
             DroppedBeaconItem& item = s_droppedBeaconBuf[s_droppedBeaconCount++];
@@ -255,6 +261,8 @@ void BeaconPipeline::recordDroppedBeacon(const char* code, const char* tag, int8
         case DropReason::QUEUE_OVERFLOW:    s_dropQueueOverflow++; break;
         case DropReason::MQTT_FAIL:         s_dropMqttFailed++; break;
     }
+
+    DropLogService::record(code, tag, rssi, reason);
 
     if (s_liveBufMutex != nullptr && xSemaphoreTake(s_liveBufMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
         if (s_droppedBeaconCount < DROPPED_FIFO_MAX) {

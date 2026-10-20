@@ -7,6 +7,8 @@
 #include "config_store.hpp"
 #include "net_manager.hpp"
 #include "mqtt_service.hpp"
+#include "net_log_service.hpp"
+#include "drop_log_service.hpp"
 #include "IEthernetDriver.hpp"
 #include "beacon_pipeline.hpp"
 #include <esp_wifi.h>
@@ -147,6 +149,15 @@ static const char* get_content_type(const char *filename) {
 }
 
 // -------------------------------------------------------------
+// Defense-in-Depth HTTP Security Headers (VULN-SEC-03)
+// -------------------------------------------------------------
+static inline void set_security_headers(httpd_req_t *req) {
+    httpd_resp_set_hdr(req, "X-Content-Type-Options", "nosniff");
+    httpd_resp_set_hdr(req, "X-Frame-Options", "DENY");
+    httpd_resp_set_hdr(req, "Referrer-Policy", "no-referrer");
+}
+
+// -------------------------------------------------------------
 // Static File Streamer (With automatic GZIP detection)
 // -------------------------------------------------------------
 static esp_err_t stream_static_file(httpd_req_t *req, const char *base_path) {
@@ -179,19 +190,35 @@ static esp_err_t stream_static_file(httpd_req_t *req, const char *base_path) {
         return ESP_FAIL;
     }
 
+    set_security_headers(req);
     httpd_resp_set_type(req, get_content_type(base_path));
     if (is_gzip) {
         httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
     }
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+
+    // Cache-Control: Aset statis (CSS, JS, font, gambar) disimpan di cache browser (1 hari)
+    // Berkas dinamis (HTML/JSON) tetap no-cache agar perubahan instan terbaca
+    if (strstr(base_path, "/assets/") != nullptr || strstr(base_path, ".css") != nullptr ||
+        strstr(base_path, ".js") != nullptr || strstr(base_path, ".ico") != nullptr ||
+        strstr(base_path, ".png") != nullptr || strstr(base_path, ".svg") != nullptr) {
+        httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=86400, immutable");
+    } else {
+        httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    }
 
     char chunk[2048];
+    size_t chunk_count = 0;
     while (true) {
         size_t r = fread(chunk, 1, sizeof(chunk), f);
         if (r == 0) break;
         if (httpd_resp_send_chunk(req, chunk, r) != ESP_OK) {
             fclose(f);
             return ESP_FAIL;
+        }
+        chunk_count++;
+        // Beri kesempatan bagi task lain (Cooperative Yield 1 tick tiap 8 KB)
+        if ((chunk_count % 4) == 0) {
+            vTaskDelay(pdMS_TO_TICKS(1));
         }
     }
     fclose(f);
@@ -245,6 +272,20 @@ static esp_err_t test_handler(httpd_req_t *req) {
         return ESP_OK;
     }
     return Template::stream_template_file(req, "/storage/test.html");
+}
+
+static esp_err_t log_handler(httpd_req_t *req) {
+    if (!Server::is_filesystem_ready()) {
+        return Template::stream_emergency_page(req);
+    }
+    UserRole role = Session::validate(req);
+    if (role == UserRole::NONE) {
+        httpd_resp_set_status(req, "302 Found");
+        httpd_resp_set_hdr(req, "Location", "/login.html");
+        httpd_resp_send(req, nullptr, 0);
+        return ESP_OK;
+    }
+    return Template::stream_template_file(req, "/storage/log.html");
 }
 
 static esp_err_t auth_handler(httpd_req_t *req) {
@@ -340,7 +381,8 @@ static esp_err_t assets_wildcard_handler(httpd_req_t *req) {
 // Route Handlers: Authentication REST APIs
 // -------------------------------------------------------------
 static esp_err_t api_login_handler(httpd_req_t *req) {
-    if (Session::is_rate_limited()) {
+    set_security_headers(req);
+    if (Session::is_rate_limited(req)) {
         httpd_resp_set_status(req, "429 Too Many Requests");
         httpd_resp_set_type(req, "text/plain");
         httpd_resp_send(req, "Terlalu banyak percobaan gagal. Silakan tunggu 60 detik.", HTTPD_RESP_USE_STRLEN);
@@ -369,13 +411,13 @@ static esp_err_t api_login_handler(httpd_req_t *req) {
     Session::AuthResult auth_res = Session::authenticate(req, u, p, role, token, sizeof(token));
     if (auth_res == Session::AuthResult::SUCCESS) {
         char cookie_hdr[128];
-        snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600", token);
+        snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=3600", token);
         httpd_resp_set_hdr(req, "Set-Cookie", cookie_hdr);
         httpd_resp_set_type(req, "application/json");
 
         char resp[128];
-        snprintf(resp, sizeof(resp), "{\"status\":\"success\",\"role\":\"%s\",\"token\":\"%s\"}",
-                 role == UserRole::ADMIN ? "admin" : "teknisi", token);
+        snprintf(resp, sizeof(resp), "{\"status\":\"success\",\"role\":\"%s\"}",
+                 role == UserRole::ADMIN ? "admin" : "teknisi");
         httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
         ESP_LOGI(TAG, "Login BERHASIL untuk user '%s' (role: %s)", u, role == UserRole::ADMIN ? "admin" : "teknisi");
     } else if (auth_res == Session::AuthResult::SESSION_LIMIT_REACHED) {
@@ -402,7 +444,7 @@ static esp_err_t api_logout_handler(httpd_req_t *req) {
     if (token[0] != '\0') {
         Session::invalidate(token);
     }
-    httpd_resp_set_hdr(req, "Set-Cookie", "token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+    httpd_resp_set_hdr(req, "Set-Cookie", "token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -418,7 +460,7 @@ static esp_err_t api_auth_check_handler(httpd_req_t *req) {
     } else {
         if (token[0] != '\0') {
             char cookie_hdr[128];
-            snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600", token);
+            snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=3600", token);
             httpd_resp_set_hdr(req, "Set-Cookie", cookie_hdr);
         }
         httpd_resp_send(req, "{\"authenticated\":true}", HTTPD_RESP_USE_STRLEN);
@@ -448,38 +490,38 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
 
     if (role == UserRole::ADMIN) {
         char val[64];
-        if (get_form_param(body, "admin_user", val, sizeof(val))) strncpy(g_config.admin_user, val, sizeof(g_config.admin_user) - 1);
-        if (get_form_param(body, "admin_pass", val, sizeof(val))) strncpy(g_config.admin_pass, val, sizeof(g_config.admin_pass) - 1);
-        if (get_form_param(body, "mqtt_host", val, sizeof(val))) strncpy(g_config.mqtt_host, val, sizeof(g_config.mqtt_host) - 1);
+        if (get_form_param(body, "admin_user", val, sizeof(val))) strlcpy(g_config.admin_user, val, sizeof(g_config.admin_user));
+        if (get_form_param(body, "admin_pass", val, sizeof(val))) strlcpy(g_config.admin_pass, val, sizeof(g_config.admin_pass));
+        if (get_form_param(body, "mqtt_host", val, sizeof(val))) strlcpy(g_config.mqtt_host, val, sizeof(g_config.mqtt_host));
         if (get_form_param(body, "mqtt_port", val, sizeof(val))) g_config.mqtt_port = atoi(val);
-        if (get_form_param(body, "mqtt_user", val, sizeof(val))) strncpy(g_config.mqtt_user, val, sizeof(g_config.mqtt_user) - 1);
-        if (get_form_param(body, "mqtt_password", val, sizeof(val))) strncpy(g_config.mqtt_password, val, sizeof(g_config.mqtt_password) - 1);
+        if (get_form_param(body, "mqtt_user", val, sizeof(val))) strlcpy(g_config.mqtt_user, val, sizeof(g_config.mqtt_user));
+        if (get_form_param(body, "mqtt_password", val, sizeof(val))) strlcpy(g_config.mqtt_password, val, sizeof(g_config.mqtt_password));
         if (get_form_param(body, "ap_password", val, sizeof(val)) && strlen(val) >= 8) {
-            strncpy(g_config.ap_password, val, sizeof(g_config.ap_password) - 1);
+            strlcpy(g_config.ap_password, val, sizeof(g_config.ap_password));
         }
     }
 
     char val[64];
-    if (get_form_param(body, "user_user", val, sizeof(val))) strncpy(g_config.user_user, val, sizeof(g_config.user_user) - 1);
-    if (get_form_param(body, "user_pass", val, sizeof(val))) strncpy(g_config.user_pass, val, sizeof(g_config.user_pass) - 1);
+    if (get_form_param(body, "user_user", val, sizeof(val))) strlcpy(g_config.user_user, val, sizeof(g_config.user_user));
+    if (get_form_param(body, "user_pass", val, sizeof(val))) strlcpy(g_config.user_pass, val, sizeof(g_config.user_pass));
     if (get_form_param(body, "connection_mode", val, sizeof(val))) {
         g_config.connection_mode = atoi(val);
     }
-    if (get_form_param(body, "w_ssid", val, sizeof(val))) strncpy(g_config.w_ssid, val, sizeof(g_config.w_ssid) - 1);
-    if (get_form_param(body, "w_password", val, sizeof(val))) strncpy(g_config.w_password, val, sizeof(g_config.w_password) - 1);
+    if (get_form_param(body, "w_ssid", val, sizeof(val))) strlcpy(g_config.w_ssid, val, sizeof(g_config.w_ssid));
+    if (get_form_param(body, "w_password", val, sizeof(val))) strlcpy(g_config.w_password, val, sizeof(g_config.w_password));
     if (get_form_param(body, "w_dhcp", val, sizeof(val))) g_config.w_dhcp = atoi(val);
-    if (get_form_param(body, "w_ip", val, sizeof(val))) strncpy(g_config.w_ip, val, sizeof(g_config.w_ip) - 1);
-    if (get_form_param(body, "w_gateway", val, sizeof(val))) strncpy(g_config.w_gateway, val, sizeof(g_config.w_gateway) - 1);
-    if (get_form_param(body, "w_subnet", val, sizeof(val))) strncpy(g_config.w_subnet, val, sizeof(g_config.w_subnet) - 1);
-    if (get_form_param(body, "w_dns", val, sizeof(val))) strncpy(g_config.w_dns, val, sizeof(g_config.w_dns) - 1);
-    if (get_form_param(body, "w_dns2", val, sizeof(val))) strncpy(g_config.w_dns2, val, sizeof(g_config.w_dns2) - 1);
+    if (get_form_param(body, "w_ip", val, sizeof(val))) strlcpy(g_config.w_ip, val, sizeof(g_config.w_ip));
+    if (get_form_param(body, "w_gateway", val, sizeof(val))) strlcpy(g_config.w_gateway, val, sizeof(g_config.w_gateway));
+    if (get_form_param(body, "w_subnet", val, sizeof(val))) strlcpy(g_config.w_subnet, val, sizeof(g_config.w_subnet));
+    if (get_form_param(body, "w_dns", val, sizeof(val))) strlcpy(g_config.w_dns, val, sizeof(g_config.w_dns));
+    if (get_form_param(body, "w_dns2", val, sizeof(val))) strlcpy(g_config.w_dns2, val, sizeof(g_config.w_dns2));
 
     if (get_form_param(body, "eth_dhcp", val, sizeof(val))) g_config.eth_dhcp = atoi(val);
-    if (get_form_param(body, "eth_ip", val, sizeof(val))) strncpy(g_config.eth_ip, val, sizeof(g_config.eth_ip) - 1);
-    if (get_form_param(body, "eth_gateway", val, sizeof(val))) strncpy(g_config.eth_gateway, val, sizeof(g_config.eth_gateway) - 1);
-    if (get_form_param(body, "eth_subnet", val, sizeof(val))) strncpy(g_config.eth_subnet, val, sizeof(g_config.eth_subnet) - 1);
-    if (get_form_param(body, "eth_dns", val, sizeof(val))) strncpy(g_config.eth_dns, val, sizeof(g_config.eth_dns) - 1);
-    if (get_form_param(body, "eth_dns2", val, sizeof(val))) strncpy(g_config.eth_dns2, val, sizeof(g_config.eth_dns2) - 1);
+    if (get_form_param(body, "eth_ip", val, sizeof(val))) strlcpy(g_config.eth_ip, val, sizeof(g_config.eth_ip));
+    if (get_form_param(body, "eth_gateway", val, sizeof(val))) strlcpy(g_config.eth_gateway, val, sizeof(g_config.eth_gateway));
+    if (get_form_param(body, "eth_subnet", val, sizeof(val))) strlcpy(g_config.eth_subnet, val, sizeof(g_config.eth_subnet));
+    if (get_form_param(body, "eth_dns", val, sizeof(val))) strlcpy(g_config.eth_dns, val, sizeof(g_config.eth_dns));
+    if (get_form_param(body, "eth_dns2", val, sizeof(val))) strlcpy(g_config.eth_dns2, val, sizeof(g_config.eth_dns2));
 
     Core::ConfigStore::saveConfigAuth();
     s_auth_reboot_required = true;
@@ -503,9 +545,13 @@ static esp_err_t api_network_discard_handler(httpd_req_t *req) {
     cJSON_AddStringToObject(root, "status", "ok");
     cJSON_AddStringToObject(root, "message", "Pengaturan jaringan tertunda berhasil dibatalkan.");
     char *out = cJSON_PrintUnformatted(root);
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
-    cJSON_free(out);
+    if (out) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+        cJSON_free(out);
+    } else {
+        httpd_resp_send_500(req);
+    }
     cJSON_Delete(root);
     return ESP_OK;
 }
@@ -528,7 +574,7 @@ static esp_err_t api_config_settings_handler(httpd_req_t *req) {
 
     char val[64];
     if (get_form_param(body, "filter_uuid_en", val, sizeof(val))) g_config.filter_uuid_en = atoi(val);
-    if (get_form_param(body, "filter_uuid", val, sizeof(val))) strncpy(g_config.filter_uuid, val, sizeof(g_config.filter_uuid) - 1);
+    if (get_form_param(body, "filter_uuid", val, sizeof(val))) strlcpy(g_config.filter_uuid, val, sizeof(g_config.filter_uuid));
     if (get_form_param(body, "filter_major_en", val, sizeof(val))) g_config.filter_major_en = atoi(val);
     if (get_form_param(body, "filter_major", val, sizeof(val))) {
         long v = strtol(val, nullptr, 10);
@@ -544,7 +590,7 @@ static esp_err_t api_config_settings_handler(httpd_req_t *req) {
     if (get_form_param(body, "batch_max", val, sizeof(val))) g_config.batch_max = atoi(val);
     if (get_form_param(body, "batch_flush", val, sizeof(val))) g_config.batch_flush = atoi(val);
     if (get_form_param(body, "data_ttl", val, sizeof(val))) g_config.data_ttl = atoi(val);
-    if (get_form_param(body, "restart_schedule", val, sizeof(val))) strncpy(g_config.restart_schedule, val, sizeof(g_config.restart_schedule) - 1);
+    if (get_form_param(body, "restart_schedule", val, sizeof(val))) strlcpy(g_config.restart_schedule, val, sizeof(g_config.restart_schedule));
     if (get_form_param(body, "discon_rst", val, sizeof(val))) g_config.discon_rst = atoi(val);
 
     Core::ConfigStore::saveConfigSettings();
@@ -598,9 +644,13 @@ static esp_err_t api_system_version_handler(httpd_req_t *req) {
     }
 
     char *out = cJSON_PrintUnformatted(root);
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
-    cJSON_free(out);
+    if (out) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+        cJSON_free(out);
+    } else {
+        httpd_resp_send_500(req);
+    }
     cJSON_Delete(root);
     return ESP_OK;
 }
@@ -626,7 +676,7 @@ static esp_err_t api_touch_ap_handler(httpd_req_t *req) {
     UserRole role = Session::validate(req, token, sizeof(token));
     if (role != UserRole::NONE && token[0] != '\0') {
         char cookie_hdr[128];
-        snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600", token);
+        snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=3600", token);
         httpd_resp_set_hdr(req, "Set-Cookie", cookie_hdr);
     }
 
@@ -636,10 +686,232 @@ static esp_err_t api_touch_ap_handler(httpd_req_t *req) {
     cJSON_AddNumberToObject(root, "ap_remain_sec", Network::NetworkManager::getApRemainingSeconds());
 
     char *out = cJSON_PrintUnformatted(root);
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
-    cJSON_free(out);
+    if (out) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+        cJSON_free(out);
+    } else {
+        httpd_resp_send_500(req);
+    }
     cJSON_Delete(root);
+    return ESP_OK;
+}
+
+// -------------------------------------------------------------
+// Route Handlers: Network Event Logs REST APIs
+// -------------------------------------------------------------
+static esp_err_t api_net_logs_handler(httpd_req_t *req) {
+    UserRole role = Session::validate(req);
+    if (role == UserRole::NONE) {
+        httpd_resp_set_status(req, "401 Unauthorized");
+        httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"Unauthorized\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
+    cJSON *root = cJSON_CreateObject();
+
+    // 1. Status Realtime Interfaces
+    char activeIp[16] = {0};
+    Network::NetworkManager::getActiveIp(activeIp, sizeof(activeIp));
+
+    bool netConn = Network::NetworkManager::isConnected();
+    bool ethActive = Network::NetworkManager::isEthernetActive();
+    bool ethLink = Network::NetworkManager::isLinkUp();
+    bool wifiConn = netConn && !ethActive;
+    bool ethConn = netConn && ethActive;
+    bool mqttConn = Network::MqttService::isConnected();
+
+    cJSON_AddStringToObject(root, "wifi_status", wifiConn ? "connected" : "disconnected");
+    cJSON_AddStringToObject(root, "wifi_ssid", g_config.w_ssid[0] ? g_config.w_ssid : "-");
+    cJSON_AddStringToObject(root, "wifi_ip", wifiConn ? activeIp : "-");
+
+    cJSON_AddStringToObject(root, "eth_status", ethConn ? "connected" : (ethLink ? "link_up" : "link_down"));
+    cJSON_AddStringToObject(root, "eth_ip", ethConn ? activeIp : "-");
+
+    cJSON_AddStringToObject(root, "mqtt_status", mqttConn ? "online" : "offline");
+    cJSON_AddStringToObject(root, "mqtt_host", g_config.mqtt_host[0] ? g_config.mqtt_host : "-");
+    cJSON_AddNumberToObject(root, "mqtt_port", g_config.mqtt_port);
+
+    // Metadata Media Penyimpanan Log & Proteksi Flash
+    cJSON_AddStringToObject(root, "storage_mode", Network::NetLogService::getStorageModeString());
+    cJSON_AddBoolToObject(root, "eeprom_detected", Network::NetLogService::isEepromDetected());
+    cJSON_AddBoolToObject(root, "flash_protected", true);
+
+    // 2. Data Log (Maksimal 50)
+    static Network::NetLogEntry s_tempLogs[Network::MAX_NET_LOGS];
+    size_t count = Network::NetLogService::getLogs(s_tempLogs, Network::MAX_NET_LOGS);
+    cJSON_AddNumberToObject(root, "total", count);
+
+    cJSON *logsArr = cJSON_CreateArray();
+    for (size_t i = 0; i < count; i++) {
+        cJSON *item = cJSON_CreateObject();
+        cJSON_AddNumberToObject(item, "id", s_tempLogs[i].id);
+        cJSON_AddNumberToObject(item, "uptime_sec", s_tempLogs[i].uptime_sec);
+        cJSON_AddStringToObject(item, "time", s_tempLogs[i].time_str);
+        cJSON_AddStringToObject(item, "cat", Network::NetLogService::categoryToString(s_tempLogs[i].category));
+        cJSON_AddStringToObject(item, "event", Network::NetLogService::eventToString(s_tempLogs[i].event));
+        cJSON_AddStringToObject(item, "status_class", Network::NetLogService::eventToStatusClass(s_tempLogs[i].event));
+        cJSON_AddStringToObject(item, "detail", s_tempLogs[i].detail);
+        cJSON_AddItemToArray(logsArr, item);
+    }
+    cJSON_AddItemToObject(root, "logs", logsArr);
+
+    char *out = cJSON_PrintUnformatted(root);
+    if (out) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+        cJSON_free(out);
+    } else {
+        httpd_resp_send_500(req);
+    }
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+static esp_err_t api_net_logs_clear_handler(httpd_req_t *req) {
+    UserRole role = Session::validate(req);
+    if (role == UserRole::NONE) {
+        httpd_resp_set_status(req, "401 Unauthorized");
+        httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"Unauthorized\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
+    Network::NetLogService::clearLogs();
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"status\":\"ok\",\"message\":\"Riwayat net log berhasil dihapus.\"}", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+static esp_err_t api_net_logs_export_handler(httpd_req_t *req) {
+    UserRole role = Session::validate(req);
+    if (role == UserRole::NONE) {
+        httpd_resp_set_status(req, "401 Unauthorized");
+        httpd_resp_send(req, "Unauthorized", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
+    httpd_resp_set_type(req, "text/csv");
+    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"net_log_sg10.csv\"");
+
+    // Header CSV
+    const char *csv_head = "No,Waktu,Interface,Event,Detail\r\n";
+    httpd_resp_send_chunk(req, csv_head, strlen(csv_head));
+
+    static Network::NetLogEntry s_tempLogs[Network::MAX_NET_LOGS];
+    size_t count = Network::NetLogService::getLogs(s_tempLogs, Network::MAX_NET_LOGS);
+
+    char lineBuf[256];
+    for (size_t i = 0; i < count; i++) {
+        snprintf(lineBuf, sizeof(lineBuf), "%u,%s,%s,%s,\"%s\"\r\n",
+                 (unsigned int)s_tempLogs[i].id,
+                 s_tempLogs[i].time_str,
+                 Network::NetLogService::categoryToString(s_tempLogs[i].category),
+                 Network::NetLogService::eventToString(s_tempLogs[i].event),
+                 s_tempLogs[i].detail);
+        httpd_resp_send_chunk(req, lineBuf, strlen(lineBuf));
+    }
+
+    httpd_resp_send_chunk(req, nullptr, 0); // Selesai
+    return ESP_OK;
+}
+
+static esp_err_t api_drop_logs_handler(httpd_req_t *req) {
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    // 1. Ringkasan Statistik Drop
+    Core::DropSummaryStats stats = Core::DropLogService::getSummaryStats();
+    cJSON *sumObj = cJSON_CreateObject();
+    cJSON_AddNumberToObject(sumObj, "total_dropped", stats.total_dropped);
+    cJSON_AddNumberToObject(sumObj, "ttl_expired", stats.ttl_expired);
+    cJSON_AddNumberToObject(sumObj, "rssi_min", stats.rssi_min);
+    cJSON_AddNumberToObject(sumObj, "uuid_mismatch", stats.uuid_mismatch);
+    cJSON_AddNumberToObject(sumObj, "major_mismatch", stats.major_mismatch);
+    cJSON_AddNumberToObject(sumObj, "queue_overflow", stats.queue_overflow);
+    cJSON_AddNumberToObject(sumObj, "mqtt_failed", stats.mqtt_failed);
+    cJSON_AddItemToObject(root, "summary", sumObj);
+
+    // 2. Data Log Drop (Maksimal 50)
+    static Core::DropLogEntry s_tempDropLogs[Core::MAX_DROP_LOGS];
+    size_t count = Core::DropLogService::getLogs(s_tempDropLogs, Core::MAX_DROP_LOGS);
+    cJSON_AddNumberToObject(root, "total", count);
+
+    cJSON *logsArr = cJSON_CreateArray();
+    for (size_t i = 0; i < count; i++) {
+        cJSON *item = cJSON_CreateObject();
+        cJSON_AddNumberToObject(item, "id", s_tempDropLogs[i].id);
+        cJSON_AddNumberToObject(item, "uptime_sec", s_tempDropLogs[i].uptime_sec);
+        cJSON_AddStringToObject(item, "time", s_tempDropLogs[i].time_str);
+        cJSON_AddStringToObject(item, "code", s_tempDropLogs[i].code);
+        cJSON_AddStringToObject(item, "tag", s_tempDropLogs[i].tag);
+        cJSON_AddNumberToObject(item, "rssi", s_tempDropLogs[i].rssi);
+        cJSON_AddNumberToObject(item, "reason", static_cast<uint8_t>(s_tempDropLogs[i].reason));
+        cJSON_AddStringToObject(item, "reason_str", Core::DropLogService::reasonToString(s_tempDropLogs[i].reason));
+        cJSON_AddStringToObject(item, "status_class", Core::DropLogService::reasonToStatusClass(s_tempDropLogs[i].reason));
+        cJSON_AddItemToArray(logsArr, item);
+    }
+    cJSON_AddItemToObject(root, "logs", logsArr);
+
+    char *out = cJSON_PrintUnformatted(root);
+    if (out) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+        cJSON_free(out);
+    } else {
+        httpd_resp_send_500(req);
+    }
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+static esp_err_t api_drop_logs_clear_handler(httpd_req_t *req) {
+    UserRole role = Session::validate(req);
+    if (role == UserRole::NONE) {
+        httpd_resp_set_status(req, "401 Unauthorized");
+        httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"Unauthorized\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
+    Core::DropLogService::clearLogs();
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"status\":\"ok\",\"message\":\"Riwayat log drop data berhasil dihapus.\"}", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+static esp_err_t api_drop_logs_export_handler(httpd_req_t *req) {
+    UserRole role = Session::validate(req);
+    if (role == UserRole::NONE) {
+        httpd_resp_set_status(req, "401 Unauthorized");
+        httpd_resp_send(req, "Unauthorized", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
+    httpd_resp_set_type(req, "text/csv");
+    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"drop_log_sg10.csv\"");
+
+    // Header CSV (6 kolom presisi tanpa keterangan)
+    const char *csv_head = "No,Waktu,Tipe,Major-Minor/Tag,RSSI(dBm),Alasan\r\n";
+    httpd_resp_send_chunk(req, csv_head, strlen(csv_head));
+
+    static Core::DropLogEntry s_tempDropLogs[Core::MAX_DROP_LOGS];
+    size_t count = Core::DropLogService::getLogs(s_tempDropLogs, Core::MAX_DROP_LOGS);
+
+    char lineBuf[256];
+    for (size_t i = 0; i < count; i++) {
+        snprintf(lineBuf, sizeof(lineBuf), "%u,%s,%s,%s,%d,\"%s\"\r\n",
+                 (unsigned int)s_tempDropLogs[i].id,
+                 s_tempDropLogs[i].time_str,
+                 s_tempDropLogs[i].code,
+                 s_tempDropLogs[i].tag,
+                 (int)s_tempDropLogs[i].rssi,
+                 Core::DropLogService::reasonToString(s_tempDropLogs[i].reason));
+        httpd_resp_send_chunk(req, lineBuf, strlen(lineBuf));
+    }
+
+    httpd_resp_send_chunk(req, nullptr, 0); // Selesai
     return ESP_OK;
 }
 
@@ -862,9 +1134,13 @@ static esp_err_t api_wifi_scan_handler(httpd_req_t *req) {
 
     cJSON_AddItemToObject(root, "networks", nets);
     char *out = cJSON_PrintUnformatted(root);
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
-    cJSON_free(out);
+    if (out) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, out, HTTPD_RESP_USE_STRLEN);
+        cJSON_free(out);
+    } else {
+        httpd_resp_send_500(req);
+    }
     cJSON_Delete(root);
 
     return ESP_OK;
@@ -954,7 +1230,7 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
     }
 
     Server::broadcast_ws_text("{\"type\":\"ota_progress\",\"percent\":100,\"status\":\"done\"}");
-    httpd_resp_set_hdr(req, "Set-Cookie", "token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+    httpd_resp_set_hdr(req, "Set-Cookie", "token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, "Update Berhasil! Sistem me-reboot...", HTTPD_RESP_USE_STRLEN);
 
@@ -988,7 +1264,10 @@ static inline void register_uri(httpd_handle_t server, const char *uri, httpd_me
     u.handler = generic_uri_dispatcher;
     u.user_ctx = reinterpret_cast<void *>(handler);
     u.is_websocket = is_ws;
-    httpd_register_uri_handler(server, &u);
+    esp_err_t err = httpd_register_uri_handler(server, &u);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Gagal mendaftarkan URI '%s': 0x%x (handlers full?)", uri, err);
+    }
 }
 
 // -------------------------------------------------------------
@@ -1004,6 +1283,10 @@ esp_err_t register_all(httpd_handle_t server) {
     register_uri(server, "/login.html", HTTP_GET, login_handler);
     register_uri(server, "/test", HTTP_GET, test_handler);
     register_uri(server, "/test.html", HTTP_GET, test_handler);
+    register_uri(server, "/log", HTTP_GET, log_handler);
+    register_uri(server, "/log.html", HTTP_GET, log_handler);
+    register_uri(server, "/net_log", HTTP_GET, log_handler);
+    register_uri(server, "/net_log.html", HTTP_GET, log_handler);
     register_uri(server, "/auth", HTTP_GET, auth_handler);
     register_uri(server, "/auth_admin.html", HTTP_GET, auth_admin_handler);
     register_uri(server, "/auth_teknisi.html", HTTP_GET, auth_teknisi_handler);
@@ -1025,6 +1308,12 @@ esp_err_t register_all(httpd_handle_t server) {
 
     // System REST
     register_uri(server, "/api/v1/system/version", HTTP_GET, api_system_version_handler);
+    register_uri(server, "/api/v1/system/net-logs", HTTP_GET, api_net_logs_handler);
+    register_uri(server, "/api/v1/system/net-logs/clear", HTTP_POST, api_net_logs_clear_handler);
+    register_uri(server, "/api/v1/system/net-logs/export", HTTP_GET, api_net_logs_export_handler);
+    register_uri(server, "/api/v1/system/drop-logs", HTTP_GET, api_drop_logs_handler);
+    register_uri(server, "/api/v1/system/drop-logs/clear", HTTP_POST, api_drop_logs_clear_handler);
+    register_uri(server, "/api/v1/system/drop-logs/export", HTTP_GET, api_drop_logs_export_handler);
     register_uri(server, "/api/v1/system/config-ap/stop", HTTP_POST, api_stop_ap_handler);
     register_uri(server, "/api/v1/system/config-ap/touch", HTTP_POST, api_touch_ap_handler);
     register_uri(server, "/api/v1/system/config-ap/touch", HTTP_GET, api_touch_ap_handler);

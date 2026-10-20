@@ -33,8 +33,8 @@ AuthResult authenticate(httpd_req_t *req, const char *user, const char *pass, Us
 void invalidate(const char *token);
 void touch(const char *token);
 size_t get_active_count();
-bool is_rate_limited();
-void record_failed_attempt();
-void reset_failed_attempts();
+bool is_rate_limited(httpd_req_t *req = nullptr);
+void record_failed_attempt(httpd_req_t *req = nullptr);
+void reset_failed_attempts(httpd_req_t *req = nullptr);
 
 } // namespace Iotaru::Web::Session

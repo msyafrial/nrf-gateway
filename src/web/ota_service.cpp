@@ -1,6 +1,7 @@
 #include "ota_service.hpp"
 #include "app_config.hpp"
 #include "bsp_led.hpp"
+#include <esp_littlefs.h>
 #include <esp_timer.h>
 #include <esp_app_format.h>
 #include <cstring>
@@ -161,6 +162,9 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
             abort();
             return false;
         }
+
+        // Unmount LittleFS sebelum melakukan raw flash erase agar VFS driver tidak korup (VULN-MEM-04)
+        esp_vfs_littlefs_unregister("storage");
 
         // Erase range needed for filesystem
         size_t erase_len = (total_size > 0) ? total_size : s_target_partition->size;

@@ -48,12 +48,41 @@ const char* get_ui_version() {
     return s_ui_version;
 }
 
+static void html_escape(const char *src, char *dst, size_t max_len) {
+    if (!src || !dst || max_len == 0) return;
+    size_t out_idx = 0;
+    while (*src && (out_idx + 1 < max_len)) {
+        const char *rep = nullptr;
+        size_t rep_len = 0;
+        switch (*src) {
+            case '&': rep = "&amp;"; rep_len = 5; break;
+            case '<': rep = "&lt;"; rep_len = 4; break;
+            case '>': rep = "&gt;"; rep_len = 4; break;
+            case '"': rep = "&quot;"; rep_len = 6; break;
+            case '\'': rep = "&#39;"; rep_len = 5; break;
+            default: break;
+        }
+        if (rep) {
+            if (out_idx + rep_len < max_len) {
+                memcpy(dst + out_idx, rep, rep_len);
+                out_idx += rep_len;
+            } else {
+                break;
+            }
+        } else {
+            dst[out_idx++] = *src;
+        }
+        src++;
+    }
+    dst[out_idx] = '\0';
+}
+
 bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) {
     if (!out_buf || max_len == 0) return false;
     out_buf[0] = '\0';
 
     if (key == "model" || key == "device_model") {
-        snprintf(out_buf, max_len, "%s", g_config.device_model[0] != '\0' ? g_config.device_model : "EMPTY");
+        html_escape(g_config.device_model[0] != '\0' ? g_config.device_model : "EMPTY", out_buf, max_len);
     } else if (key == "ap_ssid") {
         Core::ConfigStore::getModuleId(out_buf, max_len);
     } else if (key == "device_id") {
@@ -61,7 +90,7 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
     } else if (key == "mdns_hostname") {
         Network::NetworkManager::getMdnsHostname(out_buf, max_len);
     } else if (key == "device_version") {
-        snprintf(out_buf, max_len, "%s", g_config.device_version);
+        html_escape(g_config.device_version, out_buf, max_len);
     } else if (key == "firmware_version") {
         snprintf(out_buf, max_len, "%s", FIRMWARE_VERSION);
     } else if (key == "ui_version") {
@@ -115,41 +144,41 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
     } else if (key == "user") {
         snprintf(out_buf, max_len, "Administrator");
     } else if (key == "admin_user") {
-        snprintf(out_buf, max_len, "%s", g_config.admin_user);
+        html_escape(g_config.admin_user, out_buf, max_len);
     } else if (key == "admin_pass") {
-        snprintf(out_buf, max_len, "%s", g_config.admin_pass);
+        html_escape(g_config.admin_pass, out_buf, max_len);
     } else if (key == "user_user") {
-        snprintf(out_buf, max_len, "%s", g_config.user_user);
+        html_escape(g_config.user_user, out_buf, max_len);
     } else if (key == "user_pass") {
-        snprintf(out_buf, max_len, "%s", g_config.user_pass);
+        html_escape(g_config.user_pass, out_buf, max_len);
     } else if (key == "w_ssid") {
-        snprintf(out_buf, max_len, "%s", g_config.w_ssid);
+        html_escape(g_config.w_ssid, out_buf, max_len);
     } else if (key == "w_password") {
-        snprintf(out_buf, max_len, "%s", g_config.w_password);
+        html_escape(g_config.w_password, out_buf, max_len);
     } else if (key == "w_ip") {
-        snprintf(out_buf, max_len, "%s", g_config.w_ip);
+        html_escape(g_config.w_ip, out_buf, max_len);
     } else if (key == "w_gateway") {
-        snprintf(out_buf, max_len, "%s", g_config.w_gateway);
+        html_escape(g_config.w_gateway, out_buf, max_len);
     } else if (key == "w_subnet") {
-        snprintf(out_buf, max_len, "%s", g_config.w_subnet);
+        html_escape(g_config.w_subnet, out_buf, max_len);
     } else if (key == "w_dns") {
-        snprintf(out_buf, max_len, "%s", g_config.w_dns);
+        html_escape(g_config.w_dns, out_buf, max_len);
     } else if (key == "w_dns2") {
-        snprintf(out_buf, max_len, "%s", g_config.w_dns2);
+        html_escape(g_config.w_dns2, out_buf, max_len);
     } else if (key == "eth_ip") {
-        snprintf(out_buf, max_len, "%s", g_config.eth_ip);
+        html_escape(g_config.eth_ip, out_buf, max_len);
     } else if (key == "eth_gateway") {
-        snprintf(out_buf, max_len, "%s", g_config.eth_gateway);
+        html_escape(g_config.eth_gateway, out_buf, max_len);
     } else if (key == "eth_subnet") {
-        snprintf(out_buf, max_len, "%s", g_config.eth_subnet);
+        html_escape(g_config.eth_subnet, out_buf, max_len);
     } else if (key == "eth_dns") {
-        snprintf(out_buf, max_len, "%s", g_config.eth_dns);
+        html_escape(g_config.eth_dns, out_buf, max_len);
     } else if (key == "eth_dns2") {
-        snprintf(out_buf, max_len, "%s", g_config.eth_dns2);
+        html_escape(g_config.eth_dns2, out_buf, max_len);
     } else if (key == "ap_password") {
-        snprintf(out_buf, max_len, "%s", g_config.ap_password);
+        html_escape(g_config.ap_password, out_buf, max_len);
     } else if (key == "mqtt_host") {
-        snprintf(out_buf, max_len, "%s", g_config.mqtt_host);
+        html_escape(g_config.mqtt_host, out_buf, max_len);
     } else if (key == "mqtt_port") {
         snprintf(out_buf, max_len, "%d", g_config.mqtt_port);
     } else if (key == "mqtt_client_id") {
@@ -157,9 +186,9 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
     } else if (key == "id_module") {
         Core::ConfigStore::getModuleId(out_buf, max_len);
     } else if (key == "mqtt_user") {
-        snprintf(out_buf, max_len, "%s", g_config.mqtt_user);
+        html_escape(g_config.mqtt_user, out_buf, max_len);
     } else if (key == "mqtt_password") {
-        snprintf(out_buf, max_len, "%s", g_config.mqtt_password);
+        html_escape(g_config.mqtt_password, out_buf, max_len);
     } else if (key == "filter_uuid_en") {
         snprintf(out_buf, max_len, "%s", g_config.filter_uuid_en ? "1" : "0");
     } else if (key == "filter_uuid_checked") {
@@ -169,7 +198,7 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
     } else if (key == "filter_uuid_disabled") {
         snprintf(out_buf, max_len, "%s", g_config.filter_uuid_en ? "" : "disabled");
     } else if (key == "filter_uuid") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_uuid);
+        html_escape(g_config.filter_uuid, out_buf, max_len);
     } else if (key == "uuid_badge_class") {
         size_t ulen = strlen(g_config.filter_uuid);
         snprintf(out_buf, max_len, "%s", ulen == 32 ? "uuid-badge valid" : (ulen == 0 ? "uuid-badge neutral" : "uuid-badge invalid"));
@@ -187,7 +216,7 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
     } else if (key == "filter_major_disabled") {
         snprintf(out_buf, max_len, "%s", g_config.filter_major_en ? "" : "disabled");
     } else if (key == "filter_major") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_major);
+        html_escape(g_config.filter_major, out_buf, max_len);
     } else if (key == "major_badge_class") {
         size_t mlen = strlen(g_config.filter_major);
         if (mlen == 0) {
@@ -242,7 +271,7 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
     } else if (key == "data_ttl") {
         snprintf(out_buf, max_len, "%d", g_config.data_ttl);
     } else if (key == "restart_schedule") {
-        snprintf(out_buf, max_len, "%s", g_config.restart_schedule);
+        html_escape(g_config.restart_schedule, out_buf, max_len);
     } else if (key == "restart_sch_checked") {
         snprintf(out_buf, max_len, "%s", strlen(g_config.restart_schedule) >= 5 ? "checked" : "");
     } else if (key == "restart_sch_container_dimmed") {
@@ -419,6 +448,7 @@ esp_err_t stream_template_file(httpd_req_t *req, const char *filepath) {
                     fclose(f);
                     return err;
                 }
+                vTaskDelay(pdMS_TO_TICKS(1)); // Cooperative yield agar MQTT & task lain di Core 1 tidak tertekan
             }
         }
     }

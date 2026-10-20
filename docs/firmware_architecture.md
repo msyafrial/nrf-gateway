@@ -46,6 +46,7 @@ esp32_ibeacon_espidf/
 ├── src/
 │   ├── main.cpp                <- Orchestrator utama, init subsystem, supervisi status
 │   ├── bsp/                    <- Board Support Package (Hardware Silikon)
+│   │   ├── bsp_at24c256.hpp/.cpp <- Driver I2C EEPROM AT24C256 & auto-detect (GPIO 21/22, 0x50)
 │   │   ├── bsp_button.hpp/.cpp <- Synchronous boot-button detection (GPIO 34)
 │   │   ├── bsp_led.hpp/.cpp    <- Bitbang WS2812B controller & status blink task (GPIO 13)
 │   │   └── bsp_uart.hpp/.cpp   <- UART2 1 Mbps hardware driver (GPIO 16/17, Core 0)
@@ -56,14 +57,15 @@ esp32_ibeacon_espidf/
 │   │   ├── drivers/
 │   │   │   ├── IEthernetDriver.hpp   <- Abstract HAL interface
 │   │   │   └── EthernetW5500.hpp/.cpp<- Driver native W5500 SPI DMA 25 MHz
+│   │   ├── net_log_service.hpp/.cpp  <- Network event logging with AT24C256 wear-leveling / RAM fallback
 │   │   ├── net_manager.hpp/.cpp      <- Wi-Fi STA, SoftAP on-demand, SNTP time sync
-│   │   └── mqtt_service.hpp/.cpp     <- Native esp-mqtt, batch publisher 4KB, LWT
+│   │   └── mqtt_service.hpp/.cpp     <- Native esp-mqtt, batch publisher 4KB, LWT, Heartbeat CRHC3048
 │   ├── web/                    <- Web UI & Management Subsystem
 │   │   ├── emergency_page.hpp/.cpp   <- Self-contained PROGMEM recovery page
 │   │   ├── ota_service.hpp/.cpp      <- Carrier-Grade Dual OTA & image signature validator
 │   │   ├── session_mgr.hpp/.cpp      <- RBAC session manager & brute-force defense
 │   │   ├── web_routes.hpp/.cpp       <- REST API endpoints & static assets routing
-│   │   ├── web_server.hpp/.cpp       <- Native HTTP server & WebSocket /ws task
+│   │   └── web_server.hpp/.cpp       <- Native HTTP server & WebSocket /ws task
 │   │   └── web_template.hpp/.cpp     <- Zero-FOUC chunked streaming template engine
 │   └── utils/
 │       └── crc_utils.hpp             <- Fast XOR frame checksum & validator
@@ -90,4 +92,40 @@ Komunikasi antar-Core dilakukan tanpa memblokir thread eksekusi utama:
 2. **Circular Buffer Telemetri Live**: Menggunakan pointer ring-buffer dengan penanda atomik `std::atomic<uint32_t>` C++11, memungkinkan task WebSocket membaca paket secara non-blocking bersamaan dengan task ingestion yang sedang menulis.
 3. **Penghitung Throughput Atomik**: Variabel metrik kinerja (`m_readCount`, `m_mqttCount`, `m_batchPktCount`, dll.) menggunakan `std::atomic` untuk menjamin keakuratan statistik tanpa membutuhkan mutex lock yang membebani CPU.
 
+---
 
+## 5. Gateway Heartbeat Subsystem (Topik `CRHC3048`)
+
+Selain memancarkan batch data deteksi iBeacon, gateway ESP32 mengeksekusi layanan detak jantung independen:
+- **Topik**: `CRHC3048`
+- **Interval**: 5000 ms (5 detik)
+- **Payload**: `device_id` (plain text 8 hex chars, e.g. `299cbddb`)
+- **QoS**: 0 (At-most-once)
+- **Egress Accounting**: Otomatis terakumulasi ke dalam penghitungan live wire bytes dan bandwidth monitor (`MqttService::recordWireBytes`).
+
+---
+
+## 6. AT24C256 I2C EEPROM Wear-Leveling & Proteksi Flash
+
+Untuk mencegah kerusakan atau keausan (*flash wear-out*) pada Flash internal ESP32 akibat penulisan log berulang:
+- **Auto-Detection**: Driver mendeteksi keberadaan IC AT24C256 pada bus I2C (GPIO 21 SDA, GPIO 22 SCL, Addr 0x50).
+- **RAM-Only Fallback**: Jika IC tidak terpasang, penyimpanan log dialihkan sepenuhnya ke RAM (FIFO 50 entri) dan penulisan berkas SPI Flash (LittleFS `/storage/net_events.log`) 100% dinonaktifkan.
+- **Wear-Leveling Ring-Buffer**: Jika IC terpasang, log ditulis ke 200 slot fisik (@ 128 byte) secara melingkar (*rolling*).
+- **Zero Physical Shifting**: Penulisan slot baru tidak menggeser data slot lama di EEPROM; pergeseran FIFO hanya dilakukan pada RAM buffer, memperpanjang masa pakai EEPROM hingga 200 juta siklus (>380 tahun).
+---
+
+## 7. Keamanan Sistem, Otentikasi Dinamis MQTT & Proteksi Anti-Replay
+
+Peningkatan keamanan komprehensif pada firmware gateway IOTARU SG-10 mencakup:
+1. **Multi-Core Atomic Drop Statistics (`DropLogService`)**: Menghilangkan data-race antar Xtensa Core 0 dan Core 1 dengan atomics internal.
+2. **Optimasi Stack BSS & Dual Checksum (`NetLogService`)**: Mengeliminasi 1.6 KB alokasi stack FreeRTOS saat scan slot EEPROM dan mendukung dual-checksum verification (118B & 114B legacy).
+3. **Session Management Mutex & Anti-DoS (`SessionManager`)**: Proteksi tabel sesi dengan FreeRTOS Mutex, penghapusan blocking delay, tracking rate limiting per-IP (lockout 60 detik pasca 5 kegagalan), dan eliminasi session hijacking berbasis IP NAT.
+4. **Defense-in-Depth Headers & WebSocket Session Guard**: Penyertaan header `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `SameSite=Strict`, dan verifikasi sesi wajib pada koneksi WebSocket.
+5. **Proteksi Filesystem OTA Flash Erase (`OtaService`)**: Unmount LittleFS (`esp_vfs_littlefs_unregister("storage")`) sebelum partisi flash storage dihapus.
+6. **Kredensial Universal NVS Terenkripsi AES-128 Hardware-Bound (`ConfigStore`)**: Mempertahankan satu file universal `nvs.bin` untuk mass-production tanpa burning eFuse; password dienkripsi dengan AES-128 berbasis key MAC hardware fisik unik (`esp_read_mac`) dan didekripsi ke RAM saat boot.
+7. **Otentikasi Dinamis MQTT & 10-Item Rolling FIFO Anti-Replay (`MqttService`)**:
+   - Pencocokan topik eksak pada `SG-10/cmd/<device_id>`.
+   - Rumus otentikasi SHA-256: $\text{auth} = \text{SHA256}(\text{admin\_username} + \text{":"} + \text{admin\_password\_asli} + \text{":"} + \text{cmd} + \text{":"} + \text{seq})$.
+   - Respon kode numerik terpadu: `0` (SUCCESS), `1` (BAD_FORMAT), `2` (AUTH_FAILED), `3` (DUPLICATE_SEQ), `4` (UNKNOWN_CMD).
+   - Rolling FIFO 10 entri sequence store: dipersistensikan ke halaman EEPROM AT24C256 di alamat `0x6400` untuk perintah kritis (`reboot`, `identify`), dan di RAM untuk `ping`. Sequence yang sama hanya diterima satu kali; sequence yang berubah diterima secara valid.
+   - Delayed task execution untuk perintah reboot agar respon MQTT QoS 1 terkirim tuntas sebelum sistem melakukan restart.

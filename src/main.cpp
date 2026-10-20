@@ -3,12 +3,14 @@
 #include "bsp_button.hpp"
 #include "bsp_led.hpp"
 #include "bsp_uart.hpp"
+#include "bsp_at24c256.hpp"
 #include "beacon_pipeline.hpp"
 #include "config_store.hpp"
 #include "net_manager.hpp"
 #include "mqtt_service.hpp"
 #include "EthernetW5500.hpp"
 #include "web_server.hpp"
+#include "net_log_service.hpp"
 #include "ota_service.hpp"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -95,19 +97,24 @@ extern "C" void app_main(void) {
     Core::ConfigStore::getModuleId(module_id, sizeof(module_id));
     ESP_LOGI(TAG, "Gateway Identity: Module='%s', DeviceID='%s'", module_id, device_id);
 
-    // 4. Inisialisasi Core Data Pipeline (Antrean & Buffer)
+    // 4. Inisialisasi Hardware I2C AT24C256, Filesystem LittleFS & NetLogService
+    Bsp::At24c256::init();
+    Web::Server::initStorage();
+    Network::NetLogService::init();
+
+    // 5. Inisialisasi Core Data Pipeline (Antrean & Buffer)
     Core::BeaconPipeline::init();
 
-    // 5. Inisialisasi UART2 nRF52840 (1 Mbps, Task di Core 0)
+    // 6. Inisialisasi UART2 nRF52840 (1 Mbps, Task di Core 0)
     ESP_ERROR_CHECK(Bsp::UartManager::init());
 
-    // 6. Inisialisasi Network Stack (Ethernet W5500 SPI DMA / Wi-Fi STA / SNTP)
+    // 7. Inisialisasi Network Stack (Ethernet W5500 SPI DMA / Wi-Fi STA / SNTP)
     Network::NetworkManager::init(&s_ethW5500);
 
-    // 7. Inisialisasi MQTT Publisher Service (Core 1 Task)
+    // 8. Inisialisasi MQTT Publisher Service (Core 1 Task)
     Network::MqttService::init();
 
-    // 8. Inisialisasi Native ESP-IDF Web Server & REST API (Core 1)
+    // 9. Inisialisasi Native ESP-IDF Web Server & REST API (Core 1)
     Web::Server::init();
 
     if (enterConfigModeOnBoot) {
@@ -119,6 +126,6 @@ extern "C" void app_main(void) {
     Web::Ota::mark_app_valid();
     ESP_LOGI(TAG, "Pondasi sistem, MQTT, & Web Server siap dan aktif.");
 
-    // 10. Jalankan Supervisor Task di Core 1
-    xTaskCreatePinnedToCore(supervisorTask, "supervisor_task", 4096, nullptr, 3, nullptr, 1);
+    // 10. Jalankan Supervisor Task di Core 1 (Prioritas 2 di latar belakang)
+    xTaskCreatePinnedToCore(supervisorTask, "supervisor_task", 4096, nullptr, 2, nullptr, 1);
 }

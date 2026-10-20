@@ -1,78 +1,52 @@
 dependencies:
   espressif/cjson:
-    component_hash: e788323270d90738662d66fffa910bfe1fba019bba087f01557e70c40485b469
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.0'
+    dependencies: []
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      path: managed_components/espressif__cjson
+      type: local
     version: 1.7.19~2
   espressif/mdns:
-    component_hash: b679eafd0acae2066e2645bd91d073e33ca5be515e2545cd3c4e55a3e3bce3cb
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.0'
+    dependencies: []
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      path: managed_components/espressif__mdns
+      type: local
     version: 1.13.1
   espressif/mqtt:
-    component_hash: fb18bc3b65aa8c94693a9811ffc322cca8a65d92d5ec84983d3e385080e3969c
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.3'
+    dependencies: []
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      path: managed_components/espressif__mqtt
+      type: local
     version: 1.1.0
   espressif/w5500:
-    component_hash: b5f5b466dd0b8f1f2de7ac5b7e4a364e993daf40c999044a54fb545e25be8aba
-    dependencies:
-    - name: espressif/wiznet_common
-      registry_url: https://components.espressif.com
-      require: private
-      version: ^1.0.0
-    - name: idf
-      require: private
-      version: '>=6.0'
+    dependencies: []
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      path: managed_components/espressif__w5500
+      type: local
     version: 2.0.0
   espressif/wiznet_common:
-    component_hash: 57414f4b8ce11295c03030da7ff3ef90184e07b3ba1e8985b5edb2461e9be780
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.3'
+    dependencies: []
     source:
-      registry_url: https://components.espressif.com
-      type: service
+      path: managed_components/espressif__wiznet_common
+      type: local
     version: 1.0.0
   idf:
     source:
       type: idf
     version: 6.1.0
   joltwallet/littlefs:
-    component_hash: 3af20a3d75c49db9dc2286fd50862c34055c9f578419ad1f2bf7ed3ed01391fe
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.0'
+    dependencies: []
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      path: managed_components/joltwallet__littlefs
+      type: local
     version: 1.22.3
 direct_dependencies:
 - espressif/cjson
 - espressif/mdns
 - espressif/mqtt
 - espressif/w5500
+- espressif/wiznet_common
+- idf
 - joltwallet/littlefs
-manifest_hash: 5f8f8c50dd830bcda471640132a3e8c10f1f79d1240468260865ba70c0444f43
+manifest_hash: b9058303f8311ae9826c6f264e1ce391c58b62e74113bb7d1ec0869a4b1ecc29
 target: esp32
 version: 3.0.0

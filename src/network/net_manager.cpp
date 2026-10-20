@@ -1,5 +1,6 @@
 #include "net_manager.hpp"
 #include "mqtt_service.hpp"
+#include "net_log_service.hpp"
 #include "bsp_led.hpp"
 #include "config_store.hpp"
 #include "esp_wifi.h"
@@ -32,6 +33,11 @@ static bool s_manualConfigMode = false;
 static bool s_apActive = false;
 static volatile bool s_wifiScanDone = false;
 static volatile bool s_wifiScanSuccess = false;
+
+static uint8_t  s_cachedChannel = 0;
+static uint8_t  s_cachedBssid[6] = {0};
+static bool     s_hasCachedAp = false;
+static uint8_t  s_fastRetryCount = 0;
 
 static uint32_t s_disconStartTime = 0;
 static uint32_t s_lastApActivityTime = 0;
@@ -115,7 +121,17 @@ void NetworkManager::onWifiEvent(void* arg, esp_event_base_t base, int32_t id, v
             case WIFI_EVENT_STA_CONNECTED: {
                 wifi_event_sta_connected_t* e = (wifi_event_sta_connected_t*)data;
                 s_wifiConnected = true;
-                ESP_LOGI(TAG, "Terhubung ke SSID: %s (Channel: %d)", e->ssid, e->channel);
+                s_cachedChannel = e->channel;
+                memcpy(s_cachedBssid, e->bssid, 6);
+                s_hasCachedAp = true;
+                s_fastRetryCount = 0;
+                esp_wifi_set_ps(WIFI_PS_NONE);
+                esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW20);
+                esp_wifi_set_max_tx_power(78);
+                ESP_LOGI(TAG, "Terhubung ke SSID: %s (Channel: %d, BW: HT20, Max TX: 78)", e->ssid, e->channel);
+                char det[80];
+                snprintf(det, sizeof(det), "SSID: %s (Channel: %d, BW: HT20)", e->ssid, e->channel);
+                NetLogService::log(NetCategory::WIFI, NetEvent::CONNECTED, det);
                 break;
             }
 
@@ -124,12 +140,39 @@ void NetworkManager::onWifiEvent(void* arg, esp_event_base_t base, int32_t id, v
                 s_wifiConnected = false;
                 s_wifiHasIp = false;
 
+                char det[80];
+                snprintf(det, sizeof(det), "Alasan: %s (%d)", getWifiDisconnectReasonName(e->reason), e->reason);
+                NetLogService::log(NetCategory::WIFI, NetEvent::DISCONNECTED, det);
+
                 if (shouldWifiStaConnect()) {
                     Bsp::LedManager::setComState(ComLedState::DISCONNECTED);
                     ESP_LOGW(TAG, "Wi-Fi Terputus! Alasan: %s (%d)", getWifiDisconnectReasonName(e->reason), e->reason);
 
                     if (s_disconStartTime == 0) {
                         s_disconStartTime = (uint32_t)(esp_timer_get_time() / 1000);
+                    }
+
+                    if (s_hasCachedAp && s_cachedChannel > 0 && s_fastRetryCount < 3) {
+                        s_fastRetryCount++;
+                        ESP_LOGI(TAG, "Fast Reconnect ke Channel %d (Percobaan %d/3)...", s_cachedChannel, s_fastRetryCount);
+                        wifi_config_t sta_cfg = {};
+                        if (esp_wifi_get_config(WIFI_IF_STA, &sta_cfg) == ESP_OK) {
+                            sta_cfg.sta.channel = s_cachedChannel;
+                            sta_cfg.sta.scan_method = WIFI_FAST_SCAN;
+                            sta_cfg.sta.bssid_set = 0; // Bebas trap roaming / band steering
+                            esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
+                        }
+                    } else if (s_fastRetryCount >= 3) {
+                        ESP_LOGW(TAG, "Fast Reconnect gagal 3x, fallback ke Full Scan Channel 1-13...");
+                        s_fastRetryCount = 0;
+                        s_hasCachedAp = false;
+                        wifi_config_t sta_cfg = {};
+                        if (esp_wifi_get_config(WIFI_IF_STA, &sta_cfg) == ESP_OK) {
+                            sta_cfg.sta.channel = 0;
+                            sta_cfg.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+                            sta_cfg.sta.bssid_set = 0;
+                            esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
+                        }
                     }
                     esp_wifi_connect();
                 } else {
@@ -143,6 +186,10 @@ void NetworkManager::onWifiEvent(void* arg, esp_event_base_t base, int32_t id, v
                 ESP_LOGI(TAG, "Klien terhubung ke SoftAP: MAC=%02X:%02X:%02X:%02X:%02X:%02X, AID=%d",
                          e->mac[0], e->mac[1], e->mac[2], e->mac[3], e->mac[4], e->mac[5], e->aid);
                 recordApActivity();
+                char det[80];
+                snprintf(det, sizeof(det), "Klien terhubung (MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
+                         e->mac[0], e->mac[1], e->mac[2], e->mac[3], e->mac[4], e->mac[5]);
+                NetLogService::log(NetCategory::SOFTAP, NetEvent::CLIENT_JOIN, det);
                 break;
             }
 
@@ -151,6 +198,10 @@ void NetworkManager::onWifiEvent(void* arg, esp_event_base_t base, int32_t id, v
                 ESP_LOGI(TAG, "Klien terputus dari SoftAP: MAC=%02X:%02X:%02X:%02X:%02X:%02X",
                          e->mac[0], e->mac[1], e->mac[2], e->mac[3], e->mac[4], e->mac[5]);
                 recordApActivity();
+                char det[80];
+                snprintf(det, sizeof(det), "Klien terputus (MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
+                         e->mac[0], e->mac[1], e->mac[2], e->mac[3], e->mac[4], e->mac[5]);
+                NetLogService::log(NetCategory::SOFTAP, NetEvent::CLIENT_LEAVE, det);
                 break;
             }
 
@@ -251,8 +302,15 @@ void NetworkManager::onIpEvent(void* arg, esp_event_base_t base, int32_t id, voi
         ESP_LOGI(TAG, "  -> Subnet Mask : %s", mask_str);
         ESP_LOGI(TAG, "=======================================================");
 
+        char det[80];
+        snprintf(det, sizeof(det), "IP: %s | GW: %s", ip_str, gw_str);
+        NetLogService::log((id == IP_EVENT_STA_GOT_IP) ? NetCategory::WIFI : NetCategory::ETHERNET, NetEvent::GOT_IP, det);
+
         // Aktifkan mDNS saat koneksi IP diperoleh
         initMdns();
+
+        // Bangunkan MQTT Client seketika tanpa menunggu timer tidur (ala PubSubClient)
+        MqttService::forceReconnect();
     }
 }
 
@@ -344,7 +402,13 @@ void NetworkManager::initWifiStation() {
     wifi_config_t wifi_config = {};
     strlcpy((char*)wifi_config.sta.ssid, g_config.w_ssid, sizeof(wifi_config.sta.ssid));
     strlcpy((char*)wifi_config.sta.password, g_config.w_password, sizeof(wifi_config.sta.password));
-    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+
+    // Standar Industri & Sinyal Terbaik (Zero-RAM Cost):
+    wifi_config.sta.pmf_cfg.capable = true;
+    wifi_config.sta.pmf_cfg.required = false;
+    wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    wifi_config.sta.threshold.rssi = -85;
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_OPEN;
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
 
@@ -368,6 +432,10 @@ void NetworkManager::initWifiStation() {
     }
 
     ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+    esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW20);
+    esp_wifi_set_max_tx_power(78);
+    ESP_LOGI(TAG, "Wi-Fi PS: None | Bandwidth: HT20 (20MHz) | Max TX Power: 78 (19.5 dBm)");
 }
 
 void NetworkManager::initSntp() {
@@ -420,7 +488,13 @@ void NetworkManager::startConfigAP() {
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+    esp_wifi_set_ps(WIFI_PS_NONE);
+    esp_wifi_set_max_tx_power(78);
     ESP_LOGI(TAG, "SoftAP aktif: SSID='%s' | IP=192.168.4.1", ap_config.ap.ssid);
+
+    char det[80];
+    snprintf(det, sizeof(det), "Hotspot aktif: SSID %s (IP 192.168.4.1)", ap_config.ap.ssid);
+    NetLogService::log(NetCategory::SOFTAP, NetEvent::STARTED, det);
 }
 
 void NetworkManager::stopConfigAP() {
@@ -429,6 +503,8 @@ void NetworkManager::stopConfigAP() {
         s_manualConfigMode = false;
         s_apActive = false;
         s_pendingApStopMillis = 0;
+
+        NetLogService::log(NetCategory::SOFTAP, NetEvent::STOPPED, "Hotspot konfigurasi dinonaktifkan");
 
         Bsp::LedManager::setConfigMode(false);
 

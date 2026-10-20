@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="assets/css/app.css">
   <script src="assets/js/swal-lite.js?v=%firmware_version%"></script>
 </head>
-<body>
+<body data-device-model="%device_model%" data-device-version="%device_version%">
   <div class="wrapper">
     <!-- Sidebar (Desktop) -->
     <aside class="sidebar">
@@ -32,6 +32,12 @@
             <a href="/test">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
               <span>Live Test Monitor</span>
+            </a>
+          </li>
+          <li>
+            <a href="/log">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
+              <span>System Logs</span>
             </a>
           </li>
           <li>
@@ -93,7 +99,7 @@
 <!-- ================= AP MODE CONFIG BANNER COMPONENT ================= -->
 
 
-<div id="apModeBanner" class="ap-banner-card">
+<div id="apModeBanner" class="ap-banner-card" style="display:none;">
   <div class="ap-banner-left">
     <div class="ap-pulse-ring"><span class="ap-pulse-dot"></span></div>
     <div class="ap-banner-text">
@@ -118,13 +124,6 @@
     </button>
   </div>
 </div>
-
-<script>
-if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.") === 0 || "%ap_banner_active%" === "1") {
-  var b = document.getElementById("apModeBanner");
-  if (b) b.style.display = "flex";
-}
-</script>
 <!-- ================= END AP MODE CONFIG BANNER COMPONENT ================= -->
         <!-- BENTO CARD 1: Firmware Update (.bin) -->
         <div class="bento-card">
@@ -273,8 +272,8 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
   <script src="assets/js/app.js?v=%firmware_version%"></script>
   <script src="assets/js/firmware.js?v=%firmware_version%"></script>
   <script>
-    const CURRENT_DEVICE_MODEL = "%device_model%";
-    const CURRENT_DEVICE_VERSION = "%device_version%";
+    const CURRENT_DEVICE_MODEL = document.body.dataset.deviceModel || "SG-10";
+    const CURRENT_DEVICE_VERSION = document.body.dataset.deviceVersion || "v1.0.0";
     document.getElementById("year").textContent = new Date().getFullYear();
   </script>
   <!-- Dedicated OTA Progress Modal Pop-up -->

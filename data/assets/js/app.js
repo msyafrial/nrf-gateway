@@ -1064,11 +1064,13 @@ function initApModeWatcher() {
         const ssidEl = document.getElementById("apBannerSsid");
         if (ssidEl && data.ap_ssid) ssidEl.textContent = data.ap_ssid;
         startApCountdown(data.ap_remain_sec !== undefined ? data.ap_remain_sec : 60);
+      } else {
+        // AP tidak aktif — sembunyikan banner (selalu, tidak bergantung reboot_required)
+        if (!isApHost && banner) banner.style.display = "none";
       }
+      // Reboot banner diupdate secara independen
       if (data && data.reboot_required !== undefined) {
         updatePendingRebootBanner(!!data.reboot_required);
-      } else if (!isApHost) {
-        if (banner) banner.style.display = "none";
       }
     })
     .catch(err => {

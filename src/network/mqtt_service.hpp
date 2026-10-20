@@ -13,11 +13,14 @@ public:
     static void init();
     static bool isConnected();
     static void updateTopicNames();
+    static void forceReconnect();
 
     static void getTopicData(char* outBuf, size_t maxLen);
     static void getTopicStatus(char* outBuf, size_t maxLen);
     static void getTopicCmd(char* outBuf, size_t maxLen);
     static void getTopicRes(char* outBuf, size_t maxLen);
+    static void getTopicHeartbeat(char* outBuf, size_t maxLen);
+    static void publishHeartbeat();
 
     static float getBandwidthKBps();
     static uint64_t getTotalWireBytes();

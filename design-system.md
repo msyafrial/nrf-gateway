@@ -767,5 +767,176 @@ Pemisahan arsitektur versioning gateway agar setiap layer dapat di-update secara
   - **Proteksi Navigasi Bersih**:
     - Event penutupan WebSocket `ws.onclose` hanya melakukan verifikasi status/redirect jika pengetesan sedang berjalan aktif, mencegah navigasi sukarela pengguna antar halaman terputus secara keliru.
 
+---
+
+## 34. Arsitektur Pusat Log Sistem & Drop Data (`/log` - Unified System & Data Logs Hub)
+- **Tujuan Arsitektur**:
+  - Menyediakan pusat audit terpadu bagi teknisi dan administrator terhadap riwayat konektivitas jaringan (Wi-Fi STA, Ethernet W5500, MQTT Broker, SoftAP, Boot) serta **50 riwayat paket beacon yang terbuang/gagal (Dropped Beacon Data)** pada gateway IOTARU SG-10.
+  - Memudahkan audit dan diagnosa pemutusan jaringan maupun alasan filtering data beacon (RSSI terlalu rendah, UUID/Major mismatch, antrean penuh, gagal publish MQTT) dalam satu halaman fokus.
+- **Dual-Engine Log Storage Architecture**:
+  1. **Log Jaringan (`NetLogService`) - Persisten di LittleFS**:
+     - Database dibatasi pada **maksimal 50 log terbaru** (FIFO Ring Buffer di RAM dan LittleFS `/storage/net_events.log`).
+     - Aman dari wear-out karena event jaringan jarang terjadi dan dilindungi debouncing 2 detik.
+     - Persisten: Data tetap utuh saat gateway restart atau mati listrik.
+  2. **Log Drop Data Beacon (`DropLogService`) - In-RAM Static Rolling FIFO (Zero Flash Wear-out)**:
+     - Dibatasi secara presisi pada **50 data paket drop terbaru** (`MAX_DROP_LOGS = 50`) yang disimpan **100% di memori RAM** (~1.6 KB alokasi statis).
+     - **Flash Longevity Guard**: Menghindari kerusakan chip SPI flash akibat tingginya frekuensi drop paket beacon (bisa puluhan hingga ratusan per detik di lingkungan padat radio). Flash LittleFS sama sekali tidak ditulis saat drop terjadi.
+     - Thread-safe: Dilindungi FreeRTOS Mutex dengan *non-blocking try-lock* (2 ms timeout), menjamin Core 0 UART ingestion dan throughput paket tetap berjalan dengan kecepatan mikrodetik tanpa latency atau packet loss.
+- **Kebijakan Navigasi**:
+  - URL Utama: `/log` (dengan alias `/log.html` dan backward-compatibility redirect `/net_log`).
+  - Label Sidebar Desktop: `System Logs` dengan icon terminal/audit log.
+  - Bebas Polusi Navigasi Mobile: Tetap menjaga kebersihan dock bottom nav mobile (`.bottom-nav`).
+- **Anatomi Visual & Desain UI (`log.html` & `log.js`)**:
+  - **Master Tab Switcher (Segmented Control Utama)**:
+    - *Tab 1: Log Jaringan & Sistem* dengan live dot Cyan dan counter 50 data.
+    - *Tab 2: Log Drop Data Beacon* dengan live dot Rose dan counter 50 data.
+  - **Adaptive 4 KPI Status Cards**:
+    - Mode Net Log: Wi-Fi Station, Ethernet W5500, MQTT Broker, Kapasitas LittleFS (`x / 50 Data`).
+    - Mode Drop Log: Total Drop Sesi (akumulasi), Filter RSSI Min, Filter Target (UUID/Major mismatch), Status Buffer RAM (`x / 50 Data`).
+  - **Control Toolbar Dinamis**:
+    - Segmented Filter Kategori otomatis beralih:
+      - Tab Net Log: `Semua`, `Wi-Fi`, `Ethernet`, `MQTT`, `SoftAP`, `System`.
+      - Tab Drop Log: `Semua`, `RSSI Min`, `UUID`, `Major`, `Overflow`, `TTL`, `MQTT Fail`.
+    - Input Pencarian Cepat real-time untuk kedua mode.
+    - Toggle Auto-Refresh 5 detik dengan animasi pulse green dot.
+    - Tombol **Export CSV Cerdas**: Otomatis mengunduh `net_log_sg10.csv` saat di Tab Jaringan atau `drop_log_sg10.csv` saat di Tab Drop Data.
+    - Tombol **Hapus Log Kontekstual**: Modal konfirmasi SweetAlert Lite yang disesuaikan ("Hapus Log Jaringan?" vs "Hapus Log Drop Data?").
+  - **Anatomi Tabel Drop Log 6 Kolom Presisi (Tanpa Kolom Keterangan)**:
+    1. `#`: ID urut numerik monospace `#50`.
+    2. `Waktu`: Format kalender aktual WIB `YYYY-MM-DD HH:MM:SS` atau uptime `+HH:MM:SS`.
+    3. `Tipe`: Badge tipe frame (`iBeacon` Sky, `ibeacon_ext` Purple, `MQTT` Rose).
+    4. `Tag / Major-Minor`: Monospace pill `10001-00042` atau `10 pkt`.
+    5. `RSSI`: Indikator sinyal dBm berwarna (Hijau > -65, Kuning > -80, Merah ≤ -80).
+    6. `Alasan Drop`: Semantic badge berwarna (`TTL Expired` Slate, `RSSI Min` Amber, `UUID/Major Mismatch` Orange, `Queue Overflow/MQTT Fail` Rose).
+    *(Kolom Keterangan dieliminasi agar tampilan data tampil ringkas, bersih, dan berfokus pada audit cepat).*
+- **REST API Endpoints**:
+  - `GET /log` & `GET /log.html`: Streaming halaman `/storage/log.html`.
+  - `GET /net_log`: Kompatibilitas link lama menuju `/storage/log.html`.
+  - `GET /api/v1/system/net-logs`, `POST .../clear`, `GET .../export`: Endpoint audit log jaringan.
+  - `GET /api/v1/system/drop-logs`: JSON ringkasan counter dan 50 data log drop.
+  - `POST /api/v1/system/drop-logs/clear`: Menghapus riwayat 50 log drop data di memori RAM.
+  - `GET /api/v1/system/drop-logs/export`: Mengunduh berkas CSV `drop_log_sg10.csv` (6 kolom presisi).
+
+## 32. Simulator 2: RDR Hex Protocol & Gateway Heartbeat (`res/rdr`)
+- **Tujuan Arsitektur**:
+  - Mengemulasikan 4 reader gateway (`a4c13801`, `ee100101`, `c0100101`, `e1a00103`) untuk protokol biner 34-byte (68 karakter hex) pada port web `3334`.
+  - Memancarkan transmisi tag pada topik `rdr/<id_gateway>` tiap 200 ms dan heartbeat periodik tiap 5000 ms (5 detik) ke topik `res/rdr`.
+- **Spesifikasi Heartbeat**:
+  - **Topik**: `res/rdr`
+  - **Interval**: 5000 ms (5 detik).
+  - **Payload**: String plain text `<id_module>` dari gateway aktif (mis. `"a4c13801"`), tanpa pembungkus JSON atau biner.
+- **HUD & Visual Telemetry**:
+  - **HUD Overlay Glassmorphism**:
+    - `TOTAL MESSAGES`: Counter akumulasi pesan MQTT (Tag + Heartbeat).
+    - `HEARTBEAT (5s)` (`#hud-heartbeats`): Counter emisi heartbeat gateway dengan token warna `#c084fc` (Purple Violet Neon).
+    - `TOTAL PACKETS`: Counter paket biner deteksi tag.
+    - `EGRESS BYTES`: Total throughput keluar dalam format KB.
+  - **Real-time Log Box (`#log-box`)**:
+    - Menampilkan paket transmisi hex 68 karakter: `📤 [rdr/<gw>] <tag>: <rssi> dBm...`
+    - Menampilkan heartbeat gateway tiap 5 detik: `💓 [res/rdr] Heartbeat: "<id_module>" (<gw_name>)`
+  - **Freeze Protection & Background Optimization**:
+    - `Page Visibility API`: Mencegah antrian render canvas dan manipulasi DOM berlebihan saat browser berada di background/tab lain.
+    - Log buffer dibatasi maksimal 25 item terbaru (`children.length > 25`).
+    - Drag-and-drop mouse move di-throttle dengan interval 40 ms (`requestAnimationFrame`).
+
+## 33. Firmware ESP32 Gateway Heartbeat Subsystem (Topik `CRHC3048`)
+- **Tujuan**:
+  - Mengirimkan sinyal detak jantung (*heartbeat*) periodik langsung dari gateway ESP32 ke broker MQTT pada topik independen `CRHC3048`.
+- **Spesifikasi Kanal**:
+  - **Topik**: `CRHC3048` (string konstan)
+  - **Interval**: 5000 ms (5 detik)
+  - **Payload**: `device_id` (plain text 8-karakter hex lowercase, misal: `"299cbddb"`), bersumber dari `Core::ConfigStore::getDeviceId()`.
+  - **QoS**: `0` (At-most-once)
+  - **Trigger Awal**: Emisi perdana dieksekusi seketika saat event `MQTT_EVENT_CONNECTED` diterima dari broker.
+- **Integrasi Throughput & Bandwidth Monitoring**:
+  - Setiap paket heartbeat dihitung secara akurat menggunakan `recordWireBytes(calculateWireBytes(strlen(s_topicHeartbeat), payloadLen, 0))`.
+  - Transmisi heartbeat otomatis tercermin pada indikator live bandwidth dashboard Web UI (`#stat_net_bandwidth`) dan log supervisor diagnostik FreeRTOS (`[MONITOR] MQTT: ... BW: x.xx KB/s`).
+- **Thread Safety**:
+  - Berjalan langsung di dalam loop `mqttPublisherTask` (Core 1, Prioritas 6) untuk mencegah multithreading race condition dengan antrean batch data BLE.
+
+## 34. AT24C256 I2C EEPROM Wear-Leveling & Zero Flash-Wear Protection
+- **Latar Belakang & Filosofi Desain**:
+  - Penulisan log berulang ke Flash SPI internal (LittleFS) dapat memicu keausan memori (*flash wear-out* / bad sectors).
+  - Sistem beralih ke penyimpanan eksternal berbasis EEPROM I2C **AT24C256** (32 KB / 256 Kbit) dengan ketahanan tulis 1.000.000 kali per siklus.
+- **Hardware Auto-Detection**:
+  - I2C Bus: `I2C_NUM_0` dengan pin SDA = GPIO 21, SCL = GPIO 22, Clock = 100 kHz.
+  - Alamat I2C IC: `0x50`.
+  - Saat booting, driver `Bsp::At24c256::init()` melakukan *non-destructive probe* ke alamat `0x50`.
+  - **Fallback RAM-Only**: Jika IC AT24C256 tidak terdeteksi, gateway beroperasi dalam mode RAM-Only (FIFO 50 entri). Seluruh penulisan ke LittleFS `/storage/net_events.log` sepenuhnya dihentikan untuk menjamin nol keausan Flash (*zero flash wear*).
+  - Berkas lama di LittleFS dibiarkan tetap ada dan tidak dimodifikasi.
+- **Arsitektur Rolling Circular Wear-Leveling (Zero Memory Shifting)**:
+  - **Ukuran Slot**: 128 bytes (tepat 2 halaman AT24C256 @ 64 bytes).
+  - **Total Kapasitas**: 200 slot fisik (menggunakan 25.600 bytes dari total 32.768 bytes).
+  - **Struktur Slot Data (128B Packed)**:
+    - `magic` (4B): `0xA55A1074` (Marker validitas slot).
+    - `seq_id` (4B): ID monontonik terus bertambah tanpa reset.
+    - `uptime_sec` (4B): Uptime saat kejadian log.
+    - `time_str` (24B): Kalender nyata WIB atau uptime.
+    - `category` (1B): Kategori jaringan (`NetCategory`).
+    - `event` (1B): Jenis event (`NetEvent`).
+    - `detail` (80B): Keterangan kontekstual (IP, SSID, Broker).
+    - `checksum` (2B): XOR checksum integritas data.
+    - `reserved` (8B): Padding keselarasan byte.
+  - **Distribusi Keausan (Wear-Leveling)**:
+    - Setiap penulisan log hanya menargetkan slot berikutnya secara melingkar: `nextSlot = (headSlot + 1) % 200`.
+    - **Nol Pergeseran Fisik (Zero Shifting)**: Tidak ada pemindahan data slot lama di EEPROM (`memmove` hanya dilakukan di buffer RAM).
+    - **Ketahanan Operasional**: $200 \times 1.000.000 = 200.000.000$ siklus penulisan (lebih dari 380 tahun operasi kontinu pada 1 log/menit).
+  - **Headerless Slot Discovery Saat Booting**:
+    - Booting membaca 8-byte header (`magic` + `seq_id`) dari 200 slot secara cepat.
+    - Slot dengan `seq_id` tertinggi ditetapkan sebagai `headSlot`.
+    - Menghindari penulisan berulang pada 1 blok header statis di alamat `0x0000`.
+- **Integrasi REST API**:
+  - Endpoint `GET /api/v1/system/net-logs` menyajikan informasi diagnostik:
+    - `"storage_mode"`: `"AT24C256 EEPROM (200 Slots Rolling, 50 FIFO)"` atau `"RAM-Only (Zero Flash Wear)"`.
+    - `"eeprom_detected"`: `true` / `false`.
+    - `"flash_protected"`: `true`.
+
+## 35. Security Hardening, Multi-Core Concurrency & Anti-Replay Subsystem
+- **Latar Belakang & Ruang Lingkup**:
+  - Peningkatan menyeluruh mencakup proteksi konkurensi dual-core Xtensa, integritas memori stack FreeRTOS, keamanan otentikasi REST & WebSocket, proteksi berkas partisi OTA, serta otentikasi dinamis anti-replay MQTT.
+- **1. Multi-Core Atomic Statistics (`DropLogService`)**:
+  - Anggota counter statistik `DropLogService` (`s_statTotalDropped`, `s_statTtlExpired`, dll.) diubah menjadi `std::atomic<uint32_t>` internal dengan order `std::memory_order_relaxed`.
+  - Struktur publik `DropSummaryStats` tetap bertipe Plain Old Data (POD) struct untuk mempertahankan kompatibilitas penuh dengan REST API tanpa modifikasi antarmuka eksternal.
+- **2. Stack Optimization & Dual-Checksum EEPROM Logging (`NetLogService`)**:
+  - Alokasi pemindaian slot EEPROM `validSlots[200]` dipindahkan dari stack ke segmen static BSS (`s_scanSlots`), memangkas 1.6 KB beban stack FreeRTOS saat boot.
+  - Perhitungan checksum slot disesuaikan ke tepat 118 bytes (`offsetof(Bsp::EepromSlotData, checksum)`).
+  - Mekanisme pembacaan boot menerapkan *dual-checksum verification* (118B format baru atau 114B format lama), menjamin backward-compatibility penuh terhadap log yang sudah tersimpan di EEPROM fisik.
+  - Pembersihan log (`clearLogs()`) melakukan reset instan pada counter RAM dan menerapkan *cooperative yielding* 1 tick (`vTaskDelay(1)`) antar slot EEPROM guna mencegah starvation task lain.
+- **3. Thread-Safe Session Management & Anti-DoS (`SessionManager`)**:
+  - Mutex FreeRTOS `s_sessionMutex` melindungi manipulasi tabel sesi dan tracking percobaan login dari akses konkuren multi-socket.
+  - Delay pemblokiran `vTaskDelay(1800)` dihapus sepenuhnya dari thread server HTTP.
+  - Rate limiting diubah menjadi pelacakan berbasis IP client (hingga 6 slot IP aktif) dengan masa penahanan 60 detik setelah 5 kegagalan berturut-turut.
+  - Mekanisme re-login hanya mengenali token kriptografi valid (`matches_token`), sepenuhnya menghapus pengenalan via IP NAT (`matches_ip`) untuk mencegah pembajakan sesi di jaringan NAT bersama.
+- **4. Defense-in-Depth HTTP Security & WebSocket Session Guard**:
+  - Seluruh respon web dan file streaming menyertakan header keamanan:
+    - `X-Content-Type-Options: nosniff`
+    - `X-Frame-Options: DENY`
+    - `Referrer-Policy: no-referrer`
+  - Cookie otentikasi ditingkatkan menggunakan atribut `SameSite=Strict`.
+  - Alokasi hak akses admin otomatis pada WebSocket (`allocate_ws_slot(fd, UserRole::ADMIN)`) dihapus total; frame WebSocket hanya diproses setelah memvalidasi session cookie atau query parameter `?token=`.
+- **5. Filesystem OTA Flash Erase Protection (`OtaService`)**:
+  - Panggilan `esp_vfs_littlefs_unregister("storage")` disematkan sebelum eksekusi `esp_partition_erase_range`, mencegah rusaknya VFS cache dan crash sistem saat partisi LittleFS ditimpa.
+- **6. Kredensial NVS Universal Terenkripsi AES-128 Hardware-Bound (`ConfigStore`)**:
+  - Mempertahankan satu citra pabrik universal `nvs.bin` untuk seluruh unit ESP32 tanpa memerlukan pembakaran eFuse fisik.
+  - Pada boot pertama atau saat penyimpanan, password dienkripsi secara software menggunakan algoritma AES-128-ECB dengan key 16-byte yang diturunkan secara deterministik dari MAC fisik unik ESP32 (`esp_read_mac`) ditambah salt konstan.
+  - Password tersimpan di NVS dengan prefiks `enc:`. Data legacy tanpa prefiks tetap terbaca dan secara otomatis dimigrasikan ke bentuk terenkripsi.
+  - Password didekripsi ke RAM operasional saat boot agar verifikasi hash dinamis MQTT dapat berjalan tanpa beban dekripsi berulang.
+  - Fallback kredensial hardcoded pada broker MQTT dihapus sepenuhnya.
+- **7. Otentikasi Dinamis MQTT & 10-Item Rolling FIFO Anti-Replay (`MqttService`)**:
+  - **Pencocokan Topik Eksak**: Topik perintah diverifikasi dengan panjang string eksak (`event->topic_len == strlen(s_topicCmd)`), mencegah tabrakan subtopik.
+  - **Format Payload JSON**: `{"cmd":"<perintah>", "seq":<angka>, "auth":"<sha256_hex>"}`.
+  - **Rumus Otentikasi SHA-256**:
+    $$\text{auth} = \text{SHA256}(\text{admin\_username} + \text{":"} + \text{admin\_password\_asli} + \text{":"} + \text{cmd} + \text{":"} + \text{seq})$$
+  - **Respon Kode Numerik Terpadu**:
+    - `0`: SUCCESS (`{"res":"ok", "code":0, "cmd":"...", "seq":...}`)
+    - `1`: BAD_FORMAT (`{"res":"err", "code":1, "seq":...}`)
+    - `2`: AUTH_FAILED (`{"res":"err", "code":2, "cmd":"...", "seq":...}`)
+    - `3`: DUPLICATE_SEQ (`{"res":"err", "code":3, "cmd":"...", "seq":...}`)
+    - `4`: UNKNOWN_CMD (`{"res":"err", "code":4, "cmd":"...", "seq":...}`)
+  - **Anti-Replay Rolling FIFO (10 Data Terakhir)**:
+    - Sequence number yang sama hanya dapat dieksekusi satu kali. Sequence yang berubah (lebih tinggi maupun lebih rendah) dapat diterima secara valid.
+    - Untuk perintah berfrekuensi tinggi (`ping`), rolling FIFO 10 entri dikelola di RAM guna menghemat umur pakai EEPROM.
+    - Untuk perintah kritis (`reboot`, `identify`), rolling FIFO 10 entri dipersistensikan ke halaman EEPROM AT24C256 di alamat `0x6400` (64 bytes dengan magic `0x53455131` dan checksum XOR), dengan fallback otomatis ke RAM jika IC EEPROM tidak terpasang.
+  - **Delayed Reboot Task**: Eksekusi perintah `reboot` dialihkan ke task FreeRTOS terpisah dengan delay 1000 ms agar paket respon MQTT QoS 1 terkirim dan ter-flush sempurna ke broker sebelum sistem restart.
 
 

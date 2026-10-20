@@ -206,18 +206,12 @@ document.addEventListener("DOMContentLoaded", function() {
   }
 
   function getWsUrl() {
-    let base = "";
+    if (location.protocol === "file:") return "ws://192.168.4.1/ws";
     if (location.hostname === "" || location.hostname === "localhost" || location.hostname === "127.0.0.1") {
-      base = "ws://192.168.4.1/ws";
-    } else {
-      const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-      base = `${protocol}//${location.host}/ws`;
+      return "ws://192.168.4.1/ws";
     }
-    const token = sessionStorage.getItem("authToken");
-    if (token) {
-      base += (base.includes("?") ? "&" : "?") + `token=${encodeURIComponent(token)}`;
-    }
-    return base;
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${location.host}/ws`;
   }
 
   function formatTime(d) {

@@ -1,4 +1,5 @@
 #include "EthernetW5500.hpp"
+#include "net_log_service.hpp"
 #include "bsp_led.hpp"
 #include "esp_eth_mac_w5500.h"
 #include "esp_eth_phy_w5500.h"
@@ -50,19 +51,25 @@ void EthernetW5500::onEthEvent(void* arg, esp_event_base_t base, int32_t id, voi
     esp_eth_handle_t eth_handle = *(esp_eth_handle_t*)data;
 
     switch (id) {
-        case ETHERNET_EVENT_CONNECTED:
+        case ETHERNET_EVENT_CONNECTED: {
             s_connected = true;
             Bsp::LedManager::setComState(ComLedState::CONNECTING);
             esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);
             ESP_LOGI(TAG, "Kabel LAN W5500 Terhubung (Link Up) | MAC: %02X:%02X:%02X:%02X:%02X:%02X",
                      mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+            char det[80];
+            snprintf(det, sizeof(det), "Kabel LAN terhubung (Link Up) | MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+                     mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+            NetLogService::log(NetCategory::ETHERNET, NetEvent::CONNECTED, det);
             break;
+        }
 
         case ETHERNET_EVENT_DISCONNECTED:
             s_connected = false;
             s_hasIp = false;
             Bsp::LedManager::setComState(ComLedState::DISCONNECTED);
             ESP_LOGW(TAG, "Kabel LAN W5500 Terputus (Link Down)!");
+            NetLogService::log(NetCategory::ETHERNET, NetEvent::DISCONNECTED, "Kabel LAN terputus (Link Down)");
             break;
 
         case ETHERNET_EVENT_START:
@@ -95,6 +102,10 @@ void EthernetW5500::onIpEvent(void* arg, esp_event_base_t base, int32_t id, void
         ESP_LOGI(TAG, "  -> Gateway     : %s", gwStr);
         ESP_LOGI(TAG, "  -> Subnet Mask : %s", maskStr);
         ESP_LOGI(TAG, "=======================================================");
+
+        char det[80];
+        snprintf(det, sizeof(det), "IP: %s | GW: %s", ipStr, gwStr);
+        NetLogService::log(NetCategory::ETHERNET, NetEvent::GOT_IP, det);
     }
 }
 

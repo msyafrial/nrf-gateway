@@ -5,6 +5,7 @@
 
 namespace Iotaru::Web::Server {
 
+bool initStorage();
 bool init();
 void stop();
 bool is_filesystem_ready();

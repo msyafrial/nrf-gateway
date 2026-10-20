@@ -158,6 +158,48 @@ static esp_err_t ws_pre_handshake_cb(httpd_req_t *req) {
     if (Network::NetworkManager::isApActive()) {
         Network::NetworkManager::recordApActivity();
     }
+    // Validasi Header Origin (Mitigasi Cross-Site WebSocket Hijacking / CSWSH)
+    size_t origin_len = httpd_req_get_hdr_value_len(req, "Origin");
+    if (origin_len > 0) {
+        char origin_buf[128];
+        if (origin_len < sizeof(origin_buf) && httpd_req_get_hdr_value_str(req, "Origin", origin_buf, sizeof(origin_buf)) == ESP_OK) {
+            if (strcmp(origin_buf, "null") != 0) {
+                const char *origin_host = origin_buf;
+                if (strncmp(origin_host, "http://", 7) == 0) {
+                    origin_host += 7;
+                } else if (strncmp(origin_host, "https://", 8) == 0) {
+                    origin_host += 8;
+                }
+                char clean_origin[64] = {0};
+                strlcpy(clean_origin, origin_host, sizeof(clean_origin));
+                char *colon = strchr(clean_origin, ':');
+                if (colon) *colon = '\0';
+                char *slash = strchr(clean_origin, '/');
+                if (slash) *slash = '\0';
+
+                char host_buf[64] = {0};
+                size_t host_len = httpd_req_get_hdr_value_len(req, "Host");
+                if (host_len > 0 && host_len < sizeof(host_buf)) {
+                    httpd_req_get_hdr_value_str(req, "Host", host_buf, sizeof(host_buf));
+                    char *h_colon = strchr(host_buf, ':');
+                    if (h_colon) *h_colon = '\0';
+                }
+
+                bool allowed = false;
+                if (host_buf[0] != '\0' && strcasecmp(clean_origin, host_buf) == 0) {
+                    allowed = true;
+                } else if (strcmp(clean_origin, "localhost") == 0 || strcmp(clean_origin, "127.0.0.1") == 0) {
+                    allowed = true;
+                }
+
+                if (!allowed) {
+                    ESP_LOGW(TAG, "WS Handshake DITOLAK (CSWSH): Origin '%s' tidak cocok dengan Host '%s'", origin_buf, host_buf);
+                    return ESP_FAIL;
+                }
+            }
+        }
+    }
+
     char token[Session::TOKEN_LEN + 1] = {0};
     UserRole role = Session::validate(req, token, sizeof(token));
     if (role == UserRole::NONE) {
@@ -232,8 +274,32 @@ static esp_err_t ws_handler(httpd_req_t *req) {
         }
         buf[ws_pkt.len] = '\0';
 
-        // Pastikan slot teralokasi (fallback jika pre-handshake cb tidak aktif di menuconfig)
-        allocate_ws_slot(fd, UserRole::ADMIN);
+        // Verifikasi sesi WebSocket: Cek apakah socket fd ini sudah terotentikasi (VULN-SEC-01)
+        bool slot_authenticated = false;
+        xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
+        for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
+            if (s_ws_slots[i].fd == fd && s_ws_slots[i].role != UserRole::NONE) {
+                slot_authenticated = true;
+                break;
+            }
+        }
+        xSemaphoreGive(s_ws_mutex);
+
+        if (!slot_authenticated) {
+            char token[Session::TOKEN_LEN + 1] = {0};
+            UserRole role = Session::validate(req, token, sizeof(token));
+            if (role == UserRole::NONE) {
+                ESP_LOGW(TAG, "WS Frame ditolak: Client tidak memiliki sesi valid (fd %d)", fd);
+                if (buf != stack_buf) free(buf);
+                release_ws_slot(fd);
+                return ESP_FAIL;
+            }
+            if (!allocate_ws_slot(fd, role, token)) {
+                ESP_LOGW(TAG, "WS Slot penuh untuk fd %d", fd);
+                if (buf != stack_buf) free(buf);
+                return ESP_FAIL;
+            }
+        }
 
         xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
         for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
@@ -366,7 +432,11 @@ static void telemetry_task_func(void *arg) {
 // -------------------------------------------------------------
 // Server Lifecycle
 // -------------------------------------------------------------
-bool init() {
+bool initStorage() {
+    if (s_fs_mounted) {
+        return true;
+    }
+
     ESP_LOGI(TAG, "Inisialisasi Filesystem LittleFS (/storage)...");
 
     esp_vfs_littlefs_conf_t conf = {};
@@ -381,10 +451,16 @@ bool init() {
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Gagal me-mount LittleFS: 0x%x (Mode Darurat Aktif)", ret);
         s_fs_mounted = false;
-    } else {
-        ESP_LOGI(TAG, "LittleFS berhasil dimount di /storage");
-        s_fs_mounted = true;
+        return false;
     }
+
+    ESP_LOGI(TAG, "LittleFS berhasil dimount di /storage");
+    s_fs_mounted = true;
+    return true;
+}
+
+bool init() {
+    initStorage();
 
     Session::init();
     Template::init();
@@ -399,9 +475,9 @@ bool init() {
     config.server_port = 80;
     config.ctrl_port = 32768;
     config.max_open_sockets = 16; // Support 3 laptops (parallel keep-alive pool) + WS clients
-    config.max_uri_handlers = 32;
+    config.max_uri_handlers = 64; // Increased from 32 to support 37+ routes & wildcard assets
     config.stack_size = 8192;
-    config.task_priority = 5;
+    config.task_priority = 3; // Prioritas 3 (di bawah MQTT 6 & Telemetry 4) agar pembacaan web tidak mem-preempt telemetri
     config.core_id = 1; // Core 1 for Web Server & MQTT (leaving Core 0 for UART pipeline)
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.lru_purge_enable = true;

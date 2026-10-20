@@ -34,8 +34,8 @@ uuid,data,string,FDA50693A4E24FB1AFCFC6EB07647825
 major_en,data,u32,0
 major,data,string,
 rssi_min,data,i32,-100
-batch_max,data,u32,100
-batch_flush,data,u32,300
-data_ttl,data,u32,5000
+batch_max,data,u32,200
+batch_flush,data,u32,150
+data_ttl,data,u32,1000
 restart_sch,data,string,03:00
 discon_rst,data,u32,30
