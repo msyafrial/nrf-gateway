@@ -279,20 +279,47 @@ def sync_git_and_tag(project_dir, dev_model, fw_ver):
         print("  -> Sinkronisasi GitHub dilewati oleh pengguna.")
         return
 
-    # 2. Deteksi branch aktif
+    # 2. Input Catatan Rilis / Daftar Perbaikan (Multi-Poin Interaktif)
+    notes_points = []
+    if sys.stdin.isatty():
+        print(f"\n  [CATATAN RILIS] Masukkan daftar perubahan/perbaikan untuk tag '{fw_ver}':")
+        print("  (Ketik poin lalu Enter. Tekan Enter langsung pada baris kosong jika selesai)")
+        point_idx = 1
+        while True:
+            try:
+                line = input(f"  - Poin {point_idx}: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if not line:
+                break
+            if line.startswith("- "):
+                line = line[2:].strip()
+            notes_points.append(line)
+            point_idx += 1
+
+    if notes_points:
+        formatted_notes = "\n".join(f"- {p}" for p in notes_points)
+        tag_msg = f"Release {dev_model} Firmware {fw_ver}\n\nCatatan Perubahan:\n{formatted_notes}"
+        commit_desc = "; ".join(notes_points)
+    else:
+        tag_msg = f"Release {dev_model} Firmware {fw_ver}"
+        commit_desc = f"build & export {dev_model} firmware {fw_ver}"
+
+    # 3. Deteksi branch aktif
     try:
         res_b = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=project_dir, capture_output=True, text=True, timeout=10)
         branch = res_b.stdout.strip() if res_b.returncode == 0 else "main"
     except Exception:
         branch = "main"
 
-    # 3. Cek perubahan file lokal dan commit
+    # 4. Cek perubahan file lokal dan commit
     try:
         res_s = subprocess.run(["git", "status", "--porcelain"], cwd=project_dir, capture_output=True, text=True, timeout=10)
         if res_s.returncode == 0 and res_s.stdout.strip():
             print(f"  -> Menyimpan perubahan berkas ke Git (git add . & commit)...")
             subprocess.run(["git", "add", "."], cwd=project_dir, check=True, timeout=15)
-            commit_msg = f"release: build & export {dev_model} firmware {fw_ver}"
+            commit_msg = f"release: {dev_model} {fw_ver} - {commit_desc}"
             subprocess.run(["git", "commit", "-m", commit_msg], cwd=project_dir, check=True, timeout=15)
             log_success(f"Perubahan kode berhasil di-commit (branch: {branch}).")
         else:
@@ -300,7 +327,7 @@ def sync_git_and_tag(project_dir, dev_model, fw_ver):
     except Exception as e:
         print(f"  [WARNING] Gagal commit otomatis: {e}")
 
-    # 4. Pengecekan Tag (apakah sudah ada di lokal atau remote)
+    # 5. Pengecekan Tag (apakah sudah ada di lokal atau remote)
     res_tl = subprocess.run(["git", "rev-parse", "-q", "--verify", f"refs/tags/{fw_ver}"], cwd=project_dir, capture_output=True, text=True, timeout=10)
     tag_local_exists = (res_tl.returncode == 0)
 
@@ -316,12 +343,12 @@ def sync_git_and_tag(project_dir, dev_model, fw_ver):
 
     if tag_exists:
         print(f"  -> Tag '{fw_ver}' sudah ada. Memperbarui tag lokal ke commit terbaru (git tag -f)...")
-        subprocess.run(["git", "tag", "-f", "-a", fw_ver, "-m", f"Release {dev_model} Firmware {fw_ver} (updated)"], cwd=project_dir, check=True, timeout=10)
-        log_success(f"Tag lokal '{fw_ver}' berhasil diperbarui.")
+        subprocess.run(["git", "tag", "-f", "-a", fw_ver, "-m", tag_msg], cwd=project_dir, check=True, timeout=10)
+        log_success(f"Tag lokal '{fw_ver}' berhasil diperbarui ({len(notes_points)} poin catatan rilis).")
     else:
         print(f"  -> Tag '{fw_ver}' belum ada. Membuat tag rilis baru (git tag -a)...")
-        subprocess.run(["git", "tag", "-a", fw_ver, "-m", f"Release {dev_model} Firmware {fw_ver}"], cwd=project_dir, check=True, timeout=10)
-        log_success(f"Tag lokal '{fw_ver}' berhasil dibuat.")
+        subprocess.run(["git", "tag", "-a", fw_ver, "-m", tag_msg], cwd=project_dir, check=True, timeout=10)
+        log_success(f"Tag lokal '{fw_ver}' berhasil dibuat ({len(notes_points)} poin catatan rilis).")
 
     # 5. Pre-flight check koneksi internet (Timeout 3 Detik Anti-Stuck)
     print("  -> Memeriksa konektivitas ke github.com (timeout 3 detik)...")
