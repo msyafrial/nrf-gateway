@@ -279,55 +279,7 @@ def sync_git_and_tag(project_dir, dev_model, fw_ver):
         print("  -> Sinkronisasi GitHub dilewati oleh pengguna.")
         return
 
-    # 2. Input Catatan Rilis / Daftar Perbaikan (Multi-Poin Interaktif)
-    notes_points = []
-    if sys.stdin.isatty():
-        print(f"\n  [CATATAN RILIS] Masukkan daftar perubahan/perbaikan untuk tag '{fw_ver}':")
-        print("  (Ketik poin lalu Enter. Tekan Enter langsung pada baris kosong jika selesai)")
-        point_idx = 1
-        while True:
-            try:
-                line = input(f"  - Poin {point_idx}: ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print()
-                break
-            if not line:
-                break
-            if line.startswith("- "):
-                line = line[2:].strip()
-            notes_points.append(line)
-            point_idx += 1
-
-    if notes_points:
-        formatted_notes = "\n".join(f"- {p}" for p in notes_points)
-        tag_msg = f"Release {dev_model} Firmware {fw_ver}\n\nCatatan Perubahan:\n{formatted_notes}"
-        commit_desc = "; ".join(notes_points)
-    else:
-        tag_msg = f"Release {dev_model} Firmware {fw_ver}"
-        commit_desc = f"build & export {dev_model} firmware {fw_ver}"
-
-    # 3. Deteksi branch aktif
-    try:
-        res_b = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=project_dir, capture_output=True, text=True, timeout=10)
-        branch = res_b.stdout.strip() if res_b.returncode == 0 else "main"
-    except Exception:
-        branch = "main"
-
-    # 4. Cek perubahan file lokal dan commit
-    try:
-        res_s = subprocess.run(["git", "status", "--porcelain"], cwd=project_dir, capture_output=True, text=True, timeout=10)
-        if res_s.returncode == 0 and res_s.stdout.strip():
-            print(f"  -> Menyimpan perubahan berkas ke Git (git add . & commit)...")
-            subprocess.run(["git", "add", "."], cwd=project_dir, check=True, timeout=15)
-            commit_msg = f"release: {dev_model} {fw_ver} - {commit_desc}"
-            subprocess.run(["git", "commit", "-m", commit_msg], cwd=project_dir, check=True, timeout=15)
-            log_success(f"Perubahan kode berhasil di-commit (branch: {branch}).")
-        else:
-            print("  -> Tidak ada perubahan kode baru yang perlu di-commit.")
-    except Exception as e:
-        print(f"  [WARNING] Gagal commit otomatis: {e}")
-
-    # 5. Pengecekan Tag (apakah sudah ada di lokal atau remote)
+    # 2. Pengecekan Tag & Pembacaan Catatan Rilis Lama (Akumulasi Riwayat)
     res_tl = subprocess.run(["git", "rev-parse", "-q", "--verify", f"refs/tags/{fw_ver}"], cwd=project_dir, capture_output=True, text=True, timeout=10)
     tag_local_exists = (res_tl.returncode == 0)
 
@@ -341,14 +293,95 @@ def sync_git_and_tag(project_dir, dev_model, fw_ver):
 
     tag_exists = tag_local_exists or tag_remote_exists
 
+    old_points = []
+    if tag_local_exists:
+        try:
+            res_content = subprocess.run(["git", "tag", "-l", "--format=%(contents)", fw_ver], cwd=project_dir, capture_output=True, text=True, timeout=10)
+            if res_content.returncode == 0 and res_content.stdout.strip():
+                for line in res_content.stdout.splitlines():
+                    line_s = line.strip()
+                    if line_s.startswith("- "):
+                        pt = line_s[2:].strip()
+                        if pt and pt not in old_points:
+                            old_points.append(pt)
+        except Exception:
+            pass
+
+    # 3. Input Catatan Rilis Baru (Multi-Poin Interaktif)
+    new_points = []
+    if sys.stdin.isatty():
+        if old_points:
+            print(f"\n  [INFO] Tag '{fw_ver}' sudah memiliki {len(old_points)} catatan sebelumnya:")
+            for idx, pt in enumerate(old_points, 1):
+                print(f"    {idx}. {pt}")
+            print(f"\n  [CATATAN RILIS] Tambahkan perubahan/perbaikan baru untuk tag '{fw_ver}':")
+            print("  (Ketik poin baru lalu Enter. Tekan Enter langsung jika tidak ada tambahan)")
+        else:
+            print(f"\n  [CATATAN RILIS] Masukkan daftar perubahan/perbaikan untuk tag '{fw_ver}':")
+            print("  (Ketik poin lalu Enter. Tekan Enter langsung pada baris kosong jika selesai)")
+
+        point_idx = len(old_points) + 1
+        while True:
+            try:
+                prompt_label = f"  - Poin {point_idx}: " if not old_points else f"  + Poin Tambahan {len(new_points) + 1}: "
+                line = input(prompt_label).strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if not line:
+                break
+            if line.startswith("- "):
+                line = line[2:].strip()
+            if line and line not in old_points and line not in new_points:
+                new_points.append(line)
+            point_idx += 1
+
+    # Gabungkan catatan lama dan baru (Akumulasi)
+    all_points = old_points + new_points
+
+    if all_points:
+        formatted_notes = "\n".join(f"- {p}" for p in all_points)
+        tag_msg = f"Release {dev_model} Firmware {fw_ver}\n\nCatatan Perubahan:\n{formatted_notes}"
+    else:
+        tag_msg = f"Release {dev_model} Firmware {fw_ver}"
+
+    if new_points:
+        commit_desc = "; ".join(new_points)
+    elif old_points:
+        commit_desc = "; ".join(old_points)
+    else:
+        commit_desc = f"build & export {dev_model} firmware {fw_ver}"
+
+    # 4. Deteksi branch aktif
+    try:
+        res_b = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=project_dir, capture_output=True, text=True, timeout=10)
+        branch = res_b.stdout.strip() if res_b.returncode == 0 else "main"
+    except Exception:
+        branch = "main"
+
+    # 5. Cek perubahan file lokal dan commit
+    try:
+        res_s = subprocess.run(["git", "status", "--porcelain"], cwd=project_dir, capture_output=True, text=True, timeout=10)
+        if res_s.returncode == 0 and res_s.stdout.strip():
+            print(f"  -> Menyimpan perubahan berkas ke Git (git add . & commit)...")
+            subprocess.run(["git", "add", "."], cwd=project_dir, check=True, timeout=15)
+            commit_msg = f"release: {dev_model} {fw_ver} - {commit_desc}"
+            subprocess.run(["git", "commit", "-m", commit_msg], cwd=project_dir, check=True, timeout=15)
+            log_success(f"Perubahan kode berhasil di-commit (branch: {branch}).")
+        else:
+            print("  -> Tidak ada perubahan kode baru yang perlu di-commit.")
+    except Exception as e:
+        print(f"  [WARNING] Gagal commit otomatis: {e}")
+
+    # 6. Pembuatan / Pembaruan Tag Lokal
     if tag_exists:
         print(f"  -> Tag '{fw_ver}' sudah ada. Memperbarui tag lokal ke commit terbaru (git tag -f)...")
         subprocess.run(["git", "tag", "-f", "-a", fw_ver, "-m", tag_msg], cwd=project_dir, check=True, timeout=10)
-        log_success(f"Tag lokal '{fw_ver}' berhasil diperbarui ({len(notes_points)} poin catatan rilis).")
+        log_success(f"Tag lokal '{fw_ver}' berhasil diperbarui (total {len(all_points)} poin akumulasi rilis).")
     else:
         print(f"  -> Tag '{fw_ver}' belum ada. Membuat tag rilis baru (git tag -a)...")
         subprocess.run(["git", "tag", "-a", fw_ver, "-m", tag_msg], cwd=project_dir, check=True, timeout=10)
-        log_success(f"Tag lokal '{fw_ver}' berhasil dibuat ({len(notes_points)} poin catatan rilis).")
+        log_success(f"Tag lokal '{fw_ver}' berhasil dibuat ({len(all_points)} poin catatan rilis).")
 
     # 5. Pre-flight check koneksi internet (Timeout 3 Detik Anti-Stuck)
     print("  -> Memeriksa konektivitas ke github.com (timeout 3 detik)...")
