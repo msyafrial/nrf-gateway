@@ -26,6 +26,7 @@ host,data,string,socket.cubeacon.com
 port,data,u32,1884
 user,data,string,eyroMQTT
 pass,data,string,eyroMQTT1234
+use_ssl,data,u32,0
 gateway,namespace,,
 dev_model,data,string,SG-10
 dev_ver,data,string,v1.0.0

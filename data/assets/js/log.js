@@ -36,18 +36,26 @@ document.addEventListener("DOMContentLoaded", function () {
   const dotWifi = document.getElementById("dotWifi");
   const kpiWifiSsid = document.getElementById("kpiWifiSsid");
   const kpiWifiIp = document.getElementById("kpiWifiIp");
+  const kpiWifiDc = document.getElementById("kpiWifiDc");
 
   const kpiEthBadge = document.getElementById("kpiEthBadge");
   const textEthStatus = document.getElementById("textEthStatus");
   const dotEth = document.getElementById("dotEth");
   const kpiEthLink = document.getElementById("kpiEthLink");
   const kpiEthIp = document.getElementById("kpiEthIp");
+  const kpiEthDc = document.getElementById("kpiEthDc");
 
   const kpiMqttBadge = document.getElementById("kpiMqttBadge");
   const textMqttStatus = document.getElementById("textMqttStatus");
   const dotMqtt = document.getElementById("dotMqtt");
   const kpiMqttState = document.getElementById("kpiMqttState");
   const kpiMqttHost = document.getElementById("kpiMqttHost");
+  const kpiMqttPort = document.getElementById("kpiMqttPort");
+  const kpiMqttDc = document.getElementById("kpiMqttDc");
+
+  const kpiBootCount = document.getElementById("kpiBootCount");
+  const kpiResetReason = document.getElementById("kpiResetReason");
+  const kpiBootStorageBadge = document.getElementById("kpiBootStorageBadge");
 
   const kpiLogCount = document.getElementById("kpiLogCount");
   const countAllNet = document.getElementById("countAllNet");
@@ -61,9 +69,19 @@ document.addEventListener("DOMContentLoaded", function () {
   const kpiDropFilter = document.getElementById("kpiDropFilter");
   const kpiDropUuid = document.getElementById("kpiDropUuid");
   const kpiDropMajor = document.getElementById("kpiDropMajor");
-  const kpiDropBufCount = document.getElementById("kpiDropBufCount");
+  const kpiDropMqtt = document.getElementById("kpiDropMqtt");
   const countAllDrop = document.getElementById("countAllDrop");
   const lastUpdatedTimeDrop = document.getElementById("lastUpdatedTimeDrop");
+
+  // Pagination Elements & State
+  const PAGE_SIZE = 10;
+  let currentPageNet = 1;
+  let currentPageDrop = 1;
+
+  const pageInfoNet = document.getElementById("pageInfoNet");
+  const pageControlsNet = document.getElementById("pageControlsNet");
+  const pageInfoDrop = document.getElementById("pageInfoDrop");
+  const pageControlsDrop = document.getElementById("pageControlsDrop");
 
   // Tables & Controls
   const netLogTableBody = document.getElementById("netLogTableBody");
@@ -134,22 +152,58 @@ document.addEventListener("DOMContentLoaded", function () {
         if (dotWifi) dotWifi.className = "pulse-dot-sm " + (isWifiConnected ? "green" : "red");
         if (kpiWifiSsid) kpiWifiSsid.textContent = isWifiConnected ? (data.wifi_ssid || "Wi-Fi Aktif") : "Offline";
         if (kpiWifiIp) kpiWifiIp.textContent = isWifiConnected ? (data.wifi_ip || "-") : "-";
+        if (kpiWifiDc) kpiWifiDc.textContent = data.wifi_disconnects !== undefined ? data.wifi_disconnects : 0;
 
         // Ethernet KPI
-        const isEthLinkUp = (data.eth_status === "link_up");
-        if (textEthStatus) textEthStatus.textContent = isEthLinkUp ? "LINK UP" : "LINK DOWN";
-        if (kpiEthBadge) kpiEthBadge.className = "kpi-badge " + (isEthLinkUp ? "badge-green" : "badge-red");
-        if (dotEth) dotEth.className = "pulse-dot-sm " + (isEthLinkUp ? "green" : "red");
-        if (kpiEthLink) kpiEthLink.textContent = isEthLinkUp ? "100 Mbps Full-Duplex" : "Kabel Terputus";
-        if (kpiEthIp) kpiEthIp.textContent = isEthLinkUp ? (data.eth_ip || "-") : "-";
+        const isEthConnected = (data.eth_status === "connected");
+        const isEthLinkUp = (data.eth_status === "link_up" || isEthConnected);
+        const isEthHwDetected = (data.eth_status !== "uninstalled");
+
+        if (textEthStatus) {
+          if (isEthConnected) {
+            textEthStatus.textContent = "TERHUBUNG";
+          } else if (isEthLinkUp) {
+            textEthStatus.textContent = "LINK UP";
+          } else if (!isEthHwDetected) {
+            textEthStatus.textContent = "TIDAK TERPASANG";
+          } else {
+            textEthStatus.textContent = "LINK DOWN";
+          }
+        }
+        if (kpiEthBadge) {
+          kpiEthBadge.className = "kpi-badge " + (isEthLinkUp ? "badge-green" : "badge-red");
+        }
+        if (dotEth) {
+          dotEth.className = "pulse-dot-sm " + (isEthLinkUp ? "green" : "red");
+        }
+        if (kpiEthLink) {
+          if (isEthLinkUp) {
+            kpiEthLink.textContent = "100 Mbps Full-Duplex";
+          } else if (!isEthHwDetected) {
+            kpiEthLink.textContent = "Modul SPI Disconnect";
+          } else {
+            kpiEthLink.textContent = "Kabel Terputus";
+          }
+        }
+        if (kpiEthIp) kpiEthIp.textContent = isEthConnected ? (data.eth_ip || "-") : "-";
+        if (kpiEthDc) kpiEthDc.textContent = data.eth_disconnects !== undefined ? data.eth_disconnects : 0;
 
         // MQTT KPI
         const isMqttOnline = (data.mqtt_status === "online");
         if (textMqttStatus) textMqttStatus.textContent = isMqttOnline ? "ONLINE" : "OFFLINE";
         if (kpiMqttBadge) kpiMqttBadge.className = "kpi-badge " + (isMqttOnline ? "badge-green" : "badge-red");
         if (dotMqtt) dotMqtt.className = "pulse-dot-sm " + (isMqttOnline ? "green" : "red");
-        if (kpiMqttState) kpiMqttState.textContent = isMqttOnline ? "Terhubung Broker" : "Terputus";
-        if (kpiMqttHost) kpiMqttHost.textContent = data.mqtt_host ? (data.mqtt_host + ":" + (data.mqtt_port || 1883)) : "-";
+        if (kpiMqttHost) kpiMqttHost.textContent = data.mqtt_host ? data.mqtt_host : "-";
+        const isSsl = (data.mqtt_ssl === true);
+        const kpiMqttTitle = document.getElementById("kpiMqttTitle");
+        if (kpiMqttTitle) kpiMqttTitle.textContent = isSsl ? "MQTTS Broker" : "MQTT Broker";
+        if (kpiMqttPort) kpiMqttPort.textContent = (isSsl ? "🔒 " : "") + (data.mqtt_port || (isSsl ? 8883 : 1883));
+        if (kpiMqttDc) kpiMqttDc.textContent = data.mqtt_disconnects !== undefined ? data.mqtt_disconnects : 0;
+
+        // Total Reboot ESP32
+        if (kpiBootCount) kpiBootCount.textContent = (data.boot_count !== undefined) ? data.boot_count : 1;
+        if (kpiResetReason) kpiResetReason.textContent = data.reset_reason || "Power-On Cold Boot";
+        if (kpiBootStorageBadge) kpiBootStorageBadge.textContent = data.eeprom_detected ? "AT24C256" : "RAM";
 
         // Counts
         const total = (data.total !== undefined) ? data.total : (data.logs ? data.logs.length : 0);
@@ -190,8 +244,9 @@ document.addEventListener("DOMContentLoaded", function () {
         if (kpiDropUuid) kpiDropUuid.textContent = sum.uuid_mismatch || 0;
         if (kpiDropMajor) kpiDropMajor.textContent = sum.major_mismatch || 0;
 
+        if (kpiDropMqtt) kpiDropMqtt.textContent = (sum.mqtt_failed !== undefined) ? (sum.mqtt_failed || 0).toLocaleString() : "0";
+
         const count = data.total || (data.logs ? data.logs.length : 0);
-        if (kpiDropBufCount) kpiDropBufCount.textContent = count;
         if (countAllDrop) countAllDrop.textContent = count;
         if (badgeCountDrop) badgeCountDrop.textContent = count;
 
@@ -213,6 +268,64 @@ document.addEventListener("DOMContentLoaded", function () {
     return Promise.all([fetchNetLogs(), fetchDropLogs()]);
   }
 
+  // Pagination Component
+  function renderPagination(containerEl, infoEl, currentPage, totalItems, onPageChange) {
+    if (!containerEl || !infoEl) return;
+    if (totalItems <= 0) {
+      infoEl.innerHTML = `Menampilkan <strong>0 - 0</strong> dari <strong>0</strong> data`;
+      containerEl.innerHTML = "";
+      return;
+    }
+
+    const totalPages = Math.ceil(totalItems / PAGE_SIZE) || 1;
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const startIdx = (currentPage - 1) * PAGE_SIZE + 1;
+    const endIdx = Math.min(currentPage * PAGE_SIZE, totalItems);
+
+    infoEl.innerHTML = `Menampilkan <strong>${startIdx} - ${endIdx}</strong> dari <strong>${totalItems}</strong> data`;
+
+    let html = "";
+    // Prev button
+    html += `<button type="button" class="btn-page" ${currentPage <= 1 ? "disabled" : ""} data-page="${currentPage - 1}">‹ Prev</button>`;
+
+    // Page numbers: tampilkan hingga 5 tombol halaman
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, startPage + 4);
+    if (endPage - startPage < 4) {
+      startPage = Math.max(1, endPage - 4);
+    }
+
+    if (startPage > 1) {
+      html += `<button type="button" class="btn-page" data-page="1">1</button>`;
+      if (startPage > 2) html += `<span style="color:#64748b; padding: 0 4px;">…</span>`;
+    }
+
+    for (let p = startPage; p <= endPage; p++) {
+      html += `<button type="button" class="btn-page ${p === currentPage ? "active" : ""}" data-page="${p}">${p}</button>`;
+    }
+
+    if (endPage < totalPages) {
+      if (endPage < totalPages - 1) html += `<span style="color:#64748b; padding: 0 4px;">…</span>`;
+      html += `<button type="button" class="btn-page" data-page="${totalPages}">${totalPages}</button>`;
+    }
+
+    // Next button
+    html += `<button type="button" class="btn-page" ${currentPage >= totalPages ? "disabled" : ""} data-page="${currentPage + 1}">Next ›</button>`;
+
+    containerEl.innerHTML = html;
+
+    containerEl.querySelectorAll(".btn-page").forEach(btn => {
+      btn.addEventListener("click", function () {
+        const p = parseInt(this.getAttribute("data-page"), 10);
+        if (!isNaN(p) && p !== currentPage && p >= 1 && p <= totalPages) {
+          onPageChange(p);
+        }
+      });
+    });
+  }
+
   // 3. Render Network Table
   function renderNetTable() {
     if (!netLogTableBody) return;
@@ -232,10 +345,20 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     }
 
-    if (displayedLogCount) displayedLogCount.textContent = filtered.length;
+    const totalFiltered = filtered.length;
+    if (displayedLogCount) displayedLogCount.textContent = totalFiltered;
     if (totalLogCount) totalLogCount.textContent = allNetLogs.length;
 
-    if (filtered.length === 0) {
+    const totalPages = Math.ceil(totalFiltered / PAGE_SIZE) || 1;
+    if (currentPageNet > totalPages) currentPageNet = totalPages;
+    if (currentPageNet < 1) currentPageNet = 1;
+
+    renderPagination(pageControlsNet, pageInfoNet, currentPageNet, totalFiltered, (p) => {
+      currentPageNet = p;
+      renderNetTable();
+    });
+
+    if (totalFiltered === 0) {
       netLogTableBody.innerHTML = `
         <tr>
           <td colspan="5" class="empty-state">
@@ -250,8 +373,10 @@ document.addEventListener("DOMContentLoaded", function () {
       return;
     }
 
+    const pagedItems = filtered.slice((currentPageNet - 1) * PAGE_SIZE, currentPageNet * PAGE_SIZE);
+
     let html = "";
-    filtered.forEach(item => {
+    pagedItems.forEach(item => {
       const catClass = getCatClass(item.cat);
       const statusClass = item.status_class || "neutral";
 
@@ -287,10 +412,20 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     }
 
-    if (displayedLogCount) displayedLogCount.textContent = filtered.length;
+    const totalFiltered = filtered.length;
+    if (displayedLogCount) displayedLogCount.textContent = totalFiltered;
     if (totalLogCount) totalLogCount.textContent = allDropLogs.length;
 
-    if (filtered.length === 0) {
+    const totalPages = Math.ceil(totalFiltered / PAGE_SIZE) || 1;
+    if (currentPageDrop > totalPages) currentPageDrop = totalPages;
+    if (currentPageDrop < 1) currentPageDrop = 1;
+
+    renderPagination(pageControlsDrop, pageInfoDrop, currentPageDrop, totalFiltered, (p) => {
+      currentPageDrop = p;
+      renderDropTable();
+    });
+
+    if (totalFiltered === 0) {
       dropLogTableBody.innerHTML = `
         <tr>
           <td colspan="6" class="empty-state">
@@ -306,8 +441,10 @@ document.addEventListener("DOMContentLoaded", function () {
       return;
     }
 
+    const pagedItems = filtered.slice((currentPageDrop - 1) * PAGE_SIZE, currentPageDrop * PAGE_SIZE);
+
     let html = "";
-    filtered.forEach(item => {
+    pagedItems.forEach(item => {
       const typeBadge = getBeaconTypeBadge(item.code);
       const isMqtt = (item.code && item.code.toLowerCase() === "mqtt");
       const rssiDisplay = isMqtt ? `<span style="color:#64748b;">-</span>` : `<span class="rssi-val ${getRssiColorClass(item.rssi)}">${item.rssi} dBm</span>`;
@@ -401,6 +538,7 @@ document.addEventListener("DOMContentLoaded", function () {
       btn.classList.add("active");
 
       activeNetCategory = btn.getAttribute("data-cat") || "all";
+      currentPageNet = 1;
       renderNetTable();
     });
   }
@@ -415,6 +553,7 @@ document.addEventListener("DOMContentLoaded", function () {
       btn.classList.add("active");
 
       activeDropReason = btn.getAttribute("data-reason") || "all";
+      currentPageDrop = 1;
       renderDropTable();
     });
   }
@@ -423,6 +562,8 @@ document.addEventListener("DOMContentLoaded", function () {
   if (logSearchInput) {
     logSearchInput.addEventListener("input", function (e) {
       searchQuery = e.target.value;
+      currentPageNet = 1;
+      currentPageDrop = 1;
       renderCurrentTable();
     });
   }

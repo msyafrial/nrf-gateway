@@ -154,45 +154,32 @@ void LedManager::setSysState(SysLedState state) {
 
 void LedManager::setComState(ComLedState state) {
     if (s_otaMode) return;
-
-    // Strict Priority Guard:
-    // Jika SoftAP / Config Mode sedang aktif (Prioritas Level 1 Tertinggi),
-    // status di bawahnya DILARANG MENYALA dan perubahan state ditolak!
-    if ((s_configMode || s_softApActive) && state != ComLedState::SOFTAP) {
-        return;
-    }
-
     s_comState = state;
 }
 
 void LedManager::finishBoot() {
     s_bootDone = true;
     if (s_sysState == SysLedState::BOOTING) {
-        s_sysState = SysLedState::NORMAL;
+        s_sysState = s_configMode ? SysLedState::CONFIG : SysLedState::NORMAL;
     }
 }
 
 void LedManager::setOtaMode(bool active) {
     s_otaMode = active;
-    s_sysState = active ? SysLedState::OTA : (s_bootDone ? SysLedState::NORMAL : SysLedState::BOOTING);
+    if (active) {
+        s_sysState = SysLedState::OTA;
+    } else {
+        s_sysState = s_configMode ? SysLedState::CONFIG : (s_bootDone ? SysLedState::NORMAL : SysLedState::BOOTING);
+    }
 }
 
 void LedManager::setConfigMode(bool active) {
     s_configMode = active;
     s_softApActive = active;
     if (active) {
-        s_comState = ComLedState::SOFTAP;
+        s_sysState = SysLedState::CONFIG;
     } else {
-        // Re-evaluasi sesuai status koneksi aktual saat ini
-        if (!s_linkUp) {
-            s_comState = ComLedState::DISCONNECTED;
-        } else if (!s_hasIp) {
-            s_comState = ComLedState::CONNECTING;
-        } else if (!s_mqttConnected) {
-            s_comState = ComLedState::MQTT_OFFLINE;
-        } else {
-            s_comState = ComLedState::NORMAL;
-        }
+        s_sysState = s_bootDone ? SysLedState::NORMAL : SysLedState::BOOTING;
     }
 }
 
@@ -233,22 +220,18 @@ void LedManager::autoSync(bool linkUp, bool ipAcquired, bool mqttConnected, bool
     s_mqttConnected = mqttConnected;
     s_softApActive = isSoftAp;
 
-    // Hirarki Prioritas Mutlak LED COM:
-    // Sesuai aturan: Status berprioritas lebih rendah TIDAK BOLEH MENYALA jika level lebih tinggi aktif.
-    if (s_configMode || s_softApActive) {
-        // LEVEL 1 (TERTINGGI): SoftAP / Config Mode -> Biru Kedip 1 Hz (100% Kebal terhadap LAN/Wi-Fi/MQTT)
-        s_comState = ComLedState::SOFTAP;
-    } else if (!s_linkUp) {
-        // LEVEL 2: Link Fisik Terputus -> Merah Double Blink
+    // Hirarki Prioritas Murni LED NET/COM:
+    if (!s_linkUp) {
+        // LEVEL 1: Link Fisik Terputus -> Merah Double Blink
         s_comState = ComLedState::DISCONNECTED;
     } else if (!s_hasIp) {
-        // LEVEL 3: Link Up, Menunggu IP DHCP -> Kuning Kedip 2 Hz (Dilarang Merah!)
+        // LEVEL 2: Link Up, Menunggu IP DHCP -> Kuning Kedip 2 Hz
         s_comState = ComLedState::CONNECTING;
     } else if (!s_mqttConnected) {
-        // LEVEL 4: Dapat IP, Broker MQTT Belum Terhubung -> Cyan Kedip 1 Hz (Dilarang Merah & Kuning!)
+        // LEVEL 3: Dapat IP, Broker MQTT Belum Terhubung -> Cyan Kedip 1 Hz
         s_comState = ComLedState::MQTT_OFFLINE;
     } else {
-        // LEVEL 5 (TERENDAH): Operasi Normal -> Hijau Solid + Traffic Blip 90ms
+        // LEVEL 4: Operasi Normal -> Hijau Solid + Traffic Blip 90ms
         s_comState = ComLedState::NORMAL;
     }
 }
@@ -258,13 +241,19 @@ void LedManager::tick() {
     uint32_t nowMs = (uint32_t)(nowUs / 1000);
 
     // =================================================================
-    // 1. EVALUASI LED 1: SYS
+    // 1. EVALUASI LED 1: SYS (Pixel 0)
     // =================================================================
     uint32_t colorSys = COLOR_BLACK;
 
     if (s_identifyUntilUs > nowUs) {
-        // Mode Identifikasi: Biru 4 Hz (125ms On, 125ms Off)
+        // Prioritas 1: Mode Identifikasi (Biru 4 Hz: 125ms On, 125ms Off)
         colorSys = ((nowMs / 125) % 2 == 0) ? COLOR_BLUE : COLOR_BLACK;
+    } else if (s_otaMode || s_sysState == SysLedState::OTA) {
+        // Prioritas 2: OTA Flash (Oranye Fast Strobe 10 Hz: 50ms On, 50ms Off)
+        colorSys = ((nowMs / 50) % 2 == 0) ? COLOR_ORANGE : COLOR_BLACK;
+    } else if (s_configMode || s_softApActive || s_sysState == SysLedState::CONFIG) {
+        // Prioritas 3: Mode Konfigurasi / SoftAP / Direct PC (Biru Kedip 1 Hz: 500ms On, 500ms Off)
+        colorSys = ((nowMs / 500) % 2 == 0) ? COLOR_BLUE : COLOR_BLACK;
     } else {
         switch (s_sysState) {
             case SysLedState::NORMAL:
@@ -273,10 +262,6 @@ void LedManager::tick() {
             case SysLedState::BOOTING:
                 // Kuning 2 Hz (250ms On, 250ms Off)
                 colorSys = ((nowMs / 250) % 2 == 0) ? COLOR_YELLOW : COLOR_BLACK;
-                break;
-            case SysLedState::OTA:
-                // Oranye Fast Strobe 10 Hz (50ms On, 50ms Off)
-                colorSys = ((nowMs / 50) % 2 == 0) ? COLOR_ORANGE : COLOR_BLACK;
                 break;
             case SysLedState::FAULT:
                 colorSys = COLOR_RED;
@@ -289,51 +274,45 @@ void LedManager::tick() {
     }
 
     // =================================================================
-    // 2. EVALUASI LED 2: COM (Strict Priority Enforcement)
+    // 2. EVALUASI LED 2: COM / NET (Pixel 1 - Status Jaringan Murni)
     // =================================================================
     uint32_t colorCom = COLOR_BLACK;
 
-    // Evaluasi mutlak Level 1: Jika dalam mode Config / SoftAP, DILARANG MENAMPILKAN WARNA APAPUN SELAIN BIRU!
-    if (s_configMode || s_softApActive || s_comState == ComLedState::SOFTAP) {
-        // Biru Kedip 1 Hz (500ms On, 500ms Off)
-        colorCom = ((nowMs / 500) % 2 == 0) ? COLOR_BLUE : COLOR_BLACK;
-    } else {
-        switch (s_comState) {
-            case ComLedState::NORMAL:
-                // Hijau solid dengan traffic blip (padam sekejap 45ms)
-                if (s_trafficBlipUntilUs > nowUs) {
-                    colorCom = COLOR_BLACK;
-                } else {
-                    colorCom = COLOR_GREEN;
-                }
-                break;
-
-            case ComLedState::MQTT_OFFLINE:
-                // Cyan Kedip 1 Hz (500ms On, 500ms Off)
-                colorCom = ((nowMs / 500) % 2 == 0) ? COLOR_CYAN : COLOR_BLACK;
-                break;
-
-            case ComLedState::CONNECTING:
-                // Kuning Kedip 2 Hz (250ms On, 250ms Off)
-                colorCom = ((nowMs / 250) % 2 == 0) ? COLOR_YELLOW : COLOR_BLACK;
-                break;
-
-            case ComLedState::DISCONNECTED: {
-                // Merah Double Blink (Siklus 1000ms: On 100ms, Off 100ms, On 100ms, Off 700ms)
-                uint32_t phase = nowMs % 1000;
-                if (phase < 100 || (phase >= 200 && phase < 300)) {
-                    colorCom = COLOR_RED;
-                } else {
-                    colorCom = COLOR_BLACK;
-                }
-                break;
-            }
-
-            case ComLedState::OFF:
-            default:
+    switch (s_comState) {
+        case ComLedState::NORMAL:
+            // Hijau solid dengan traffic blip (padam sekejap 90ms)
+            if (s_trafficBlipUntilUs > nowUs) {
                 colorCom = COLOR_BLACK;
-                break;
+            } else {
+                colorCom = COLOR_GREEN;
+            }
+            break;
+
+        case ComLedState::MQTT_OFFLINE:
+            // Cyan Kedip 1 Hz (500ms On, 500ms Off)
+            colorCom = ((nowMs / 500) % 2 == 0) ? COLOR_CYAN : COLOR_BLACK;
+            break;
+
+        case ComLedState::CONNECTING:
+            // Kuning Kedip 2 Hz (250ms On, 250ms Off)
+            colorCom = ((nowMs / 250) % 2 == 0) ? COLOR_YELLOW : COLOR_BLACK;
+            break;
+
+        case ComLedState::DISCONNECTED: {
+            // Merah Double Blink (Siklus 1000ms: On 100ms, Off 100ms, On 100ms, Off 700ms)
+            uint32_t phase = nowMs % 1000;
+            if (phase < 100 || (phase >= 200 && phase < 300)) {
+                colorCom = COLOR_RED;
+            } else {
+                colorCom = COLOR_BLACK;
+            }
+            break;
         }
+
+        case ComLedState::OFF:
+        default:
+            colorCom = COLOR_BLACK;
+            break;
     }
 
     // =================================================================

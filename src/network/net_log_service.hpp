@@ -23,7 +23,12 @@ enum class NetEvent : uint8_t {
     STOPPED,
     CLIENT_JOIN,
     CLIENT_LEAVE,
-    BOOT
+    BOOT,
+    CONFIG_UPDATE,
+    CONFIG_RESET,
+    CONFIG_DISCARD,
+    AUTH_UPDATE,
+    LOG_CLEARED
 };
 
 constexpr size_t MAX_NET_LOGS = 50;
@@ -51,6 +56,15 @@ public:
     static const char* categoryToString(NetCategory cat);
     static const char* eventToString(NetEvent evt);
     static const char* eventToStatusClass(NetEvent evt);
+
+    // Telemetri Stabilitas & Jaringan (Tersimpan di AT24C256 EEPROM / RAM)
+    static uint32_t getBootCount();
+    static const char* getLastResetReasonString();
+    static uint32_t getWifiDisconnectCount();
+    static uint32_t getEthDisconnectCount();
+    static uint32_t getMqttDisconnectCount();
+    static void recordDisconnect(NetCategory cat);
+    static void resetDisconnectCounters();
 
     // Status media penyimpanan
     static const char* getStorageModeString();

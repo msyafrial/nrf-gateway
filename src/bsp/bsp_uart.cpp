@@ -38,11 +38,13 @@ static void uartEventTask(void *pvParameters) {
                 }
                 case UART_FIFO_OVF:
                     ESP_LOGW(TAG, "Hardware UART FIFO overflow!");
+                    Core::BeaconPipeline::recordDroppedBeacon("UART", "HwFifoOvf", 0, DropReason::QUEUE_OVERFLOW);
                     uart_flush_input(UART_NUM_2);
                     xQueueReset(s_uartEventQueue);
                     break;
                 case UART_BUFFER_FULL:
                     ESP_LOGW(TAG, "Driver UART Ring Buffer full!");
+                    Core::BeaconPipeline::recordDroppedBeacon("UART", "RingBufFull", 0, DropReason::QUEUE_OVERFLOW);
                     uart_flush_input(UART_NUM_2);
                     xQueueReset(s_uartEventQueue);
                     break;
@@ -76,7 +78,7 @@ esp_err_t UartManager::init() {
         "nRF_UART_Task",
         4096,
         nullptr,
-        configMAX_PRIORITIES - 2,
+        configMAX_PRIORITIES - 4,
         &s_uartTaskHandle,
         0 // Core 0 terdedikasi
     );

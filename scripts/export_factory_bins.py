@@ -16,6 +16,7 @@ Alur Kerja:
 import os
 import sys
 import shutil
+import socket
 import subprocess
 import configparser
 
@@ -237,6 +238,125 @@ echo "[SUKSES] FLASHING SELESAI 100%! UNIT SIAP DIGUNAKAN."
         f.write(content)
     log_success("File 'flash_linux.sh' berhasil dibuat.")
 
+def check_github_connectivity(timeout=3.0):
+    """
+    Pengecekan koneksi cepat (pre-flight check) ke github.com:443.
+    Mencegah terminal stuck/hang jika tidak ada internet atau koneksi lambat.
+    """
+    try:
+        with socket.create_connection(("github.com", 443), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+def sync_git_and_tag(project_dir, dev_model, fw_ver):
+    """
+    Sinkronisasi otomatis Git: commit, create/update tag sesuai firmware_version,
+    dan push ke GitHub dengan proteksi timeout dan penanganan kondisi offline.
+    """
+    # 1. Evaluasi apakah push diaktifkan
+    if "--no-push" in sys.argv:
+        print("  [INFO] Argumen '--no-push' terdeteksi. Sinkronisasi GitHub dilewati.")
+        return
+
+    should_push = False
+    if "--push" in sys.argv:
+        should_push = True
+    elif sys.stdin.isatty():
+        try:
+            prompt = f"\n  [GIT PROMPT] Apakah Anda ingin commit, buat/update tag '{fw_ver}', dan push ke GitHub? (y/N): "
+            ans = input(prompt).strip().lower()
+            should_push = (ans == "y")
+        except (EOFError, KeyboardInterrupt):
+            print("\n  -> Input dibatalkan oleh pengguna. Sinkronisasi GitHub dilewati.")
+            return
+    else:
+        print("  -> Lingkungan non-interaktif terdeteksi tanpa argumen '--push'.")
+        print("  -> Tips: Jalankan dengan argumen '--push' jika ingin otomatis sync di CI/CD atau background task.")
+        return
+
+    if not should_push:
+        print("  -> Sinkronisasi GitHub dilewati oleh pengguna.")
+        return
+
+    # 2. Deteksi branch aktif
+    try:
+        res_b = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=project_dir, capture_output=True, text=True, timeout=10)
+        branch = res_b.stdout.strip() if res_b.returncode == 0 else "main"
+    except Exception:
+        branch = "main"
+
+    # 3. Cek perubahan file lokal dan commit
+    try:
+        res_s = subprocess.run(["git", "status", "--porcelain"], cwd=project_dir, capture_output=True, text=True, timeout=10)
+        if res_s.returncode == 0 and res_s.stdout.strip():
+            print(f"  -> Menyimpan perubahan berkas ke Git (git add . & commit)...")
+            subprocess.run(["git", "add", "."], cwd=project_dir, check=True, timeout=15)
+            commit_msg = f"release: build & export {dev_model} firmware {fw_ver}"
+            subprocess.run(["git", "commit", "-m", commit_msg], cwd=project_dir, check=True, timeout=15)
+            log_success(f"Perubahan kode berhasil di-commit (branch: {branch}).")
+        else:
+            print("  -> Tidak ada perubahan kode baru yang perlu di-commit.")
+    except Exception as e:
+        print(f"  [WARNING] Gagal commit otomatis: {e}")
+
+    # 4. Pengecekan Tag (apakah sudah ada di lokal atau remote)
+    res_tl = subprocess.run(["git", "rev-parse", "-q", "--verify", f"refs/tags/{fw_ver}"], cwd=project_dir, capture_output=True, text=True, timeout=10)
+    tag_local_exists = (res_tl.returncode == 0)
+
+    tag_remote_exists = False
+    try:
+        res_tr = subprocess.run(["git", "-c", "http.timeout=5", "ls-remote", "--tags", "origin", f"refs/tags/{fw_ver}"], cwd=project_dir, capture_output=True, text=True, timeout=10)
+        if res_tr.returncode == 0 and res_tr.stdout.strip():
+            tag_remote_exists = True
+    except Exception:
+        pass
+
+    tag_exists = tag_local_exists or tag_remote_exists
+
+    if tag_exists:
+        print(f"  -> Tag '{fw_ver}' sudah ada. Memperbarui tag lokal ke commit terbaru (git tag -f)...")
+        subprocess.run(["git", "tag", "-f", "-a", fw_ver, "-m", f"Release {dev_model} Firmware {fw_ver} (updated)"], cwd=project_dir, check=True, timeout=10)
+        log_success(f"Tag lokal '{fw_ver}' berhasil diperbarui.")
+    else:
+        print(f"  -> Tag '{fw_ver}' belum ada. Membuat tag rilis baru (git tag -a)...")
+        subprocess.run(["git", "tag", "-a", fw_ver, "-m", f"Release {dev_model} Firmware {fw_ver}"], cwd=project_dir, check=True, timeout=10)
+        log_success(f"Tag lokal '{fw_ver}' berhasil dibuat.")
+
+    # 5. Pre-flight check koneksi internet (Timeout 3 Detik Anti-Stuck)
+    print("  -> Memeriksa konektivitas ke github.com (timeout 3 detik)...")
+    if not check_github_connectivity(timeout=3.0):
+        print(f"\n  [WARNING] Tidak ada koneksi internet / github.com tidak dapat dijangkau.")
+        print(f"  -> Seluruh file binary dan tag lokal '{fw_ver}' tetap aman 100%.")
+        print(f"  -> Anda dapat melakukan push manual nanti ketika online dengan:")
+        print(f"     git push origin {branch} && git push origin {fw_ver} {'--force' if tag_exists else ''}\n")
+        return
+    log_success("Koneksi ke github.com aktif dan siap.")
+
+    # 6. Push commit dan tag ke GitHub (dengan timeout ketat 20 detik)
+    try:
+        print(f"  -> Mendorong commit ke branch '{branch}' (git push origin {branch})...")
+        subprocess.run(["git", "-c", "http.timeout=15", "push", "origin", branch], cwd=project_dir, check=True, timeout=20)
+        log_success(f"Branch '{branch}' berhasil di-push ke GitHub.")
+
+        tag_cmd = ["git", "-c", "http.timeout=15", "push", "origin", fw_ver]
+        if tag_exists:
+            tag_cmd.append("--force")
+            print(f"  -> Memperbarui tag '{fw_ver}' di GitHub (git push origin {fw_ver} --force)...")
+        else:
+            print(f"  -> Mengunggah tag '{fw_ver}' ke GitHub (git push origin {fw_ver})...")
+
+        subprocess.run(tag_cmd, cwd=project_dir, check=True, timeout=20)
+        log_success(f"Tag '{fw_ver}' berhasil disinkronkan ke GitHub.")
+    except subprocess.TimeoutExpired:
+        print(f"\n  [TIMEOUT] Operasi git push melebihi batas waktu 20 detik (koneksi internet lambat/terputus).")
+        print(f"  -> File binary dan tag lokal tetap aman. Silakan ulangi push manual nanti bila perlu.\n")
+    except subprocess.CalledProcessError as e:
+        print(f"\n  [WARNING] Git push gagal dengan exit code {e.returncode}.")
+        print(f"  -> File binary dan tag lokal tetap aman tersimpan.\n")
+    except Exception as e:
+        print(f"\n  [WARNING] Terjadi kendala saat push ke GitHub: {e}\n")
+
 def main():
     project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     os.chdir(project_dir)
@@ -310,8 +430,12 @@ def main():
     create_windows_batch(target_dir, dev_model, fw_ver)
     create_linux_script(target_dir, dev_model, fw_ver)
 
-    # 7. Selesai
-    log_banner("BUILD & EXPORT PAKET FLASH PRODUKSI BERHASIL 100%!")
+    # 7. Sinkronisasi Git & Tagging Rilis GitHub (Fail-Safe & Anti-Stuck)
+    log_step(7, "Sinkronisasi Git & Tagging Rilis GitHub (Fail-Safe)")
+    sync_git_and_tag(project_dir, dev_model, fw_ver)
+
+    # 8. Selesai
+    log_banner("BUILD, EXPORT & RELEASE PRODUKSI SELESAI!")
     print(f"Lokasi Hasil Export:\n  {target_dir}\n")
     print("Isi Folder:")
     for item in sorted(os.listdir(target_dir)):

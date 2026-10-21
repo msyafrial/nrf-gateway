@@ -31,7 +31,7 @@ public:
 private:
     static void mqttPublisherTask(void* pvParameters);
     static void onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void* data);
-    static bool buildBinaryPayload(const BeaconPacket& p, uint8_t* outBuf, size_t& outLen);
+    static bool buildBinaryPayload(const BeaconPacket& p, uint8_t* outBuf, size_t outBufMaxLen, size_t& outLen);
 };
 
 } // namespace Iotaru::Network

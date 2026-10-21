@@ -542,6 +542,21 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
             </div>
 
             <div class="bento-grid">
+              <!-- Switch Enkripsi MQTTS (TLS/SSL) -->
+              <div class="item full">
+                <div class="toggle-card-row">
+                  <div class="toggle-card-info">
+                    <label class="toggle-card-title" for="mqttSslToggle">Enkripsi MQTTS (TLS/SSL)</label>
+                    <span class="toggle-card-desc">Mengamankan transmisi data ke broker menggunakan enkripsi TLS</span>
+                  </div>
+                  <label class="ios-switch">
+                    <input type="checkbox" id="mqttSslToggle" %mqtt_ssl_checked%>
+                    <span class="ios-slider"></span>
+                  </label>
+                  <input type="hidden" id="mqtt_use_ssl" name="mqtt_use_ssl" value="%mqtt_use_ssl%">
+                </div>
+              </div>
+
               <div class="item">
                 <label for="mqtt_host">MQTT Host / Broker IP</label>
                 <input type="text" id="mqtt_host" name="mqtt_host" value="%mqtt_host%" placeholder="socket.cubeacon.com" required>
@@ -631,6 +646,31 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
   <script src="assets/js/app.js"></script>
   <script>
     document.getElementById("year").textContent = new Date().getFullYear();
+
+    // Auto-sync MQTTS switch with hidden input & smart port adjustment
+    (function() {
+      var sslToggle = document.getElementById("mqttSslToggle");
+      var sslInput = document.getElementById("mqtt_use_ssl");
+      var portInput = document.getElementById("mqtt_port");
+
+      if (sslToggle && sslInput) {
+        sslToggle.addEventListener("change", function() {
+          sslInput.value = this.checked ? "1" : "0";
+          if (portInput) {
+            var curPort = parseInt(portInput.value, 10);
+            if (this.checked) {
+              if (curPort === 1883 || curPort === 1884 || isNaN(curPort)) {
+                portInput.value = "8883";
+              }
+            } else {
+              if (curPort === 8883) {
+                portInput.value = "1884";
+              }
+            }
+          }
+        });
+      }
+    })();
   </script>
   <!-- Modal Pop-up Pilihan Wi-Fi Scanner -->
   <div id="wifiScanModal" class="wifi-modal-backdrop" style="display:none;">

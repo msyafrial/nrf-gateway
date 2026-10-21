@@ -39,6 +39,7 @@ struct AppConfig {
     int  mqtt_port;
     char mqtt_user[32];
     char mqtt_password[32];
+    int  mqtt_use_ssl; // 0: TCP Plain (mqtt://), 1: TLS/SSL (mqtts://)
 
     // Gateway Namespace ("gateway" / "cfg_gate")
     char    device_model[16];

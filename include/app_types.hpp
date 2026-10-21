@@ -75,14 +75,15 @@ enum class SysLedState : uint8_t {
     BOOTING = 1, // Kuning Kedip 2 Hz
     OTA     = 2, // Oranye Fast Strobe 10 Hz
     FAULT   = 3, // Merah Solid
-    OFF     = 4  // Padam
+    CONFIG  = 4, // Biru Kedip 1 Hz (Config Mode: SoftAP / Direct PC)
+    OFF     = 5  // Padam
 };
 
 enum class ComLedState : uint8_t {
-    NORMAL        = 0, // Hijau Solid + Traffic Blip 35ms
+    NORMAL        = 0, // Hijau Solid + Traffic Blip 90ms
     MQTT_OFFLINE  = 1, // Cyan Kedip 1 Hz
     CONNECTING    = 2, // Kuning Kedip 2 Hz
-    SOFTAP        = 3, // Biru Kedip 1 Hz
+    SOFTAP        = 3, // Legacy alias (kini ditangani oleh SysLedState::CONFIG)
     DISCONNECTED  = 4, // Merah Double Blink
     OFF           = 5  // Padam
 };

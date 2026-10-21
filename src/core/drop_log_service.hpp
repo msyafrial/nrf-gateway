@@ -31,8 +31,8 @@ struct DropSummaryStats {
 class DropLogService {
 public:
     static void init();
-    static void record(const char* code, const char* tag, int8_t rssi, DropReason reason);
-    static void record(const BeaconPacket& packet, DropReason reason);
+    static void record(const char* code, const char* tag, int8_t rssi, DropReason reason, uint32_t count = 1);
+    static void record(const BeaconPacket& packet, DropReason reason, uint32_t count = 1);
 
     static size_t getLogs(DropLogEntry* outEntries, size_t maxCount);
     static size_t getLogCount();

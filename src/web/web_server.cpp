@@ -29,7 +29,39 @@ static inline uint32_t get_millis() {
 namespace Iotaru::Web::Server {
 
 static httpd_handle_t s_server = nullptr;
-static bool s_fs_mounted = false;
+static std::atomic<bool> s_fs_mounted{false};
+static std::atomic<bool> s_fs_maintenance{false};
+static std::atomic<int> s_active_file_reads{0};
+
+bool acquire_file_read() {
+    // Pola atomic anti-TOCTOU: Increment terlebih dahulu baru periksa status
+    s_active_file_reads.fetch_add(1, std::memory_order_seq_cst);
+    if (s_fs_maintenance.load(std::memory_order_seq_cst) || !s_fs_mounted.load(std::memory_order_seq_cst)) {
+        s_active_file_reads.fetch_sub(1, std::memory_order_seq_cst);
+        return false;
+    }
+    return true;
+}
+
+void release_file_read() {
+    s_active_file_reads.fetch_sub(1, std::memory_order_seq_cst);
+}
+
+int get_active_file_reads() {
+    return s_active_file_reads.load(std::memory_order_seq_cst);
+}
+
+void set_maintenance_mode(bool enable) {
+    s_fs_maintenance.store(enable, std::memory_order_seq_cst);
+}
+
+bool is_in_maintenance() {
+    return s_fs_maintenance.load(std::memory_order_seq_cst);
+}
+
+void mark_filesystem_unmounted() {
+    s_fs_mounted.store(false, std::memory_order_seq_cst);
+}
 
 struct WsClientSlot {
     int fd;
@@ -44,6 +76,7 @@ static WsClientSlot s_ws_slots[MAX_WS_CLIENTS];
 static SemaphoreHandle_t s_ws_mutex = nullptr;
 
 static TaskHandle_t s_telemetry_task = nullptr;
+static std::atomic<bool> s_telemetry_stop{false};
 
 static void init_ws_slots() {
     for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
@@ -65,8 +98,10 @@ static bool allocate_ws_slot(int fd, UserRole role, const char *token = nullptr)
             s_ws_slots[i].is_subscribed = false;
             s_ws_slots[i].last_activity_ms = get_millis();
             s_ws_slots[i].role = role;
-            if (token && token[0] != '\0') {
+            if (token && strlen(token) == Session::TOKEN_LEN) {
                 strlcpy(s_ws_slots[i].token, token, sizeof(s_ws_slots[i].token));
+            } else {
+                s_ws_slots[i].token[0] = '\0';
             }
             ok = true;
             break;
@@ -93,7 +128,7 @@ static void release_ws_slot(int fd) {
 }
 
 bool is_filesystem_ready() {
-    if (!s_fs_mounted) return false;
+    if (!s_fs_mounted.load(std::memory_order_seq_cst) || s_fs_maintenance.load(std::memory_order_seq_cst)) return false;
     struct stat st;
     return (stat("/storage/index.html", &st) == 0);
 }
@@ -125,29 +160,35 @@ void set_active_ws_subscribers(int count) {
 void broadcast_ws_text(const char *payload) {
     if (!s_server || !payload || !s_ws_mutex) return;
 
+    int active_fds[MAX_WS_CLIENTS];
+    size_t fd_count = 0;
+
+    // 1. Salin daftar FD aktif di dalam critical section singkat
+    xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
+    for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
+        if (s_ws_slots[i].fd != -1 && s_ws_slots[i].is_subscribed) {
+            active_fds[fd_count++] = s_ws_slots[i].fd;
+        }
+    }
+    xSemaphoreGive(s_ws_mutex);
+
+    if (fd_count == 0) return;
+
     httpd_ws_frame_t ws_pkt = {};
     ws_pkt.payload = (uint8_t *)payload;
     ws_pkt.len = strlen(payload);
     ws_pkt.type = HTTPD_WS_TYPE_TEXT;
     ws_pkt.final = true; // Kepatuhan penuh RFC 6455
 
-    xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
-    for (size_t i = 0; i < MAX_WS_CLIENTS; i++) {
-        if (s_ws_slots[i].fd != -1 && s_ws_slots[i].is_subscribed) {
-            int fd = s_ws_slots[i].fd;
-            esp_err_t ret = httpd_ws_send_frame_async(s_server, fd, &ws_pkt);
-            if (ret != ESP_OK) {
-                // Hanya putuskan jika koneksi socket memang sudah hangus/ditutup
-                if (ret == ESP_ERR_INVALID_STATE || ret == ESP_FAIL || ret == ESP_ERR_NOT_FOUND) {
-                    ESP_LOGD(TAG, "Koneksi WS fd %d terputus (ret=0x%x), membersihkan slot...", fd, ret);
-                    s_ws_slots[i].fd = -1;
-                    s_ws_slots[i].is_subscribed = false;
-                    s_ws_slots[i].role = UserRole::NONE;
-                }
-            }
+    // 2. Kirim frame di luar mutex untuk mencegah deadlock
+    for (size_t i = 0; i < fd_count; i++) {
+        int fd = active_fds[i];
+        esp_err_t ret = httpd_ws_send_frame_async(s_server, fd, &ws_pkt);
+        if (ret == ESP_ERR_INVALID_STATE || ret == ESP_FAIL || ret == ESP_ERR_NOT_FOUND) {
+            ESP_LOGD(TAG, "Koneksi WS fd %d terputus (ret=0x%x), membersihkan slot...", fd, ret);
+            release_ws_slot(fd);
         }
     }
-    xSemaphoreGive(s_ws_mutex);
 }
 
 // -------------------------------------------------------------
@@ -254,6 +295,12 @@ static esp_err_t ws_handler(httpd_req_t *req) {
 
     // 4. Tahap 2: Baca payload data teks jika ada
     if (ws_pkt.type == HTTPD_WS_TYPE_TEXT && ws_pkt.len > 0) {
+        if (ws_pkt.len > 1024) {
+            ESP_LOGW(TAG, "WS payload terlalu besar (%zu bytes), koneksi ditolak (fd %d)", ws_pkt.len, fd);
+            release_ws_slot(fd);
+            return ESP_ERR_INVALID_SIZE;
+        }
+
         char stack_buf[256];
         char *buf = stack_buf;
         if (ws_pkt.len >= sizeof(stack_buf)) {
@@ -422,18 +469,23 @@ void broadcast_live_ws_stats() {
 
 static void telemetry_task_func(void *arg) {
     ESP_LOGI(TAG, "Web Telemetry broadcast task aktif (250ms adaptive interval)");
-    while (true) {
+    while (!s_telemetry_stop.load(std::memory_order_relaxed)) {
         vTaskDelay(pdMS_TO_TICKS(250));
+        if (s_telemetry_stop.load(std::memory_order_relaxed)) break;
         Ota::check_watchdog();
+        // CATATAN: broadcast_live_ws_stats() menggunakan static buffer di BSS,
+        // hanya aman dipanggil dari satu task ini saja.
         broadcast_live_ws_stats();
     }
+    s_telemetry_task = nullptr;
+    vTaskDelete(nullptr);
 }
 
 // -------------------------------------------------------------
 // Server Lifecycle
 // -------------------------------------------------------------
 bool initStorage() {
-    if (s_fs_mounted) {
+    if (s_fs_mounted.load(std::memory_order_seq_cst)) {
         return true;
     }
 
@@ -442,7 +494,7 @@ bool initStorage() {
     esp_vfs_littlefs_conf_t conf = {};
     conf.base_path = "/storage";
     conf.partition_label = "storage";
-    conf.format_if_mount_failed = false;
+    conf.format_if_mount_failed = false; // Anti-format
     conf.read_only = 0;
     conf.dont_mount = 0;
     conf.grow_on_mount = 0;
@@ -450,13 +502,53 @@ bool initStorage() {
     esp_err_t ret = esp_vfs_littlefs_register(&conf);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Gagal me-mount LittleFS: 0x%x (Mode Darurat Aktif)", ret);
-        s_fs_mounted = false;
+        s_fs_mounted.store(false, std::memory_order_seq_cst);
         return false;
     }
 
-    ESP_LOGI(TAG, "LittleFS berhasil dimount di /storage");
-    s_fs_mounted = true;
+    // Verifikasi integritas saat cold boot (antisipasi jika mati lampu saat OTA)
+    struct stat st;
+    if (stat("/storage/index.html", &st) != 0) {
+        ESP_LOGW(TAG, "LittleFS ter-mount namun index.html tidak ditemukan (Inkomplit/Mati Lampu). Mode Darurat Aktif.");
+        esp_vfs_littlefs_unregister("storage");
+        s_fs_mounted.store(false, std::memory_order_seq_cst);
+        return false;
+    }
+
+    ESP_LOGI(TAG, "LittleFS berhasil dimount dan terverifikasi di /storage");
+    s_fs_mounted.store(true, std::memory_order_seq_cst);
     return true;
+}
+
+bool remountStorage() {
+    if (s_fs_mounted.load(std::memory_order_seq_cst)) return true;
+
+    esp_vfs_littlefs_conf_t conf = {};
+    conf.base_path = "/storage";
+    conf.partition_label = "storage";
+    conf.format_if_mount_failed = false; // WAJIB FALSE: Jangan auto-format!
+    conf.read_only = 0;
+    conf.dont_mount = 0;
+    conf.grow_on_mount = 0;
+
+    esp_err_t ret = esp_vfs_littlefs_register(&conf);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Gagal remount LittleFS: 0x%x", ret);
+        s_fs_mounted.store(false, std::memory_order_seq_cst);
+        return false;
+    }
+
+    struct stat st;
+    if (stat("/storage/index.html", &st) == 0) {
+        ESP_LOGI(TAG, "LittleFS berhasil di-remount kembali.");
+        s_fs_mounted.store(true, std::memory_order_seq_cst);
+        return true;
+    }
+
+    ESP_LOGW(TAG, "LittleFS ter-mount tetapi index.html tidak ditemukan.");
+    esp_vfs_littlefs_unregister("storage");
+    s_fs_mounted.store(false, std::memory_order_seq_cst);
+    return false;
 }
 
 bool init() {
@@ -503,6 +595,7 @@ bool init() {
     Routes::register_all(s_server);
 
     // Start 100ms Telemetry Broadcast & Watchdog Task on Core 1
+    s_telemetry_stop.store(false, std::memory_order_seq_cst);
     xTaskCreatePinnedToCore(telemetry_task_func, "web_telemetry", 8192, nullptr, 4, &s_telemetry_task, 1);
 
     ESP_LOGI(TAG, "Web Server native ESP-IDF siap dan aktif.");
@@ -511,16 +604,22 @@ bool init() {
 
 void stop() {
     if (s_telemetry_task) {
-        vTaskDelete(s_telemetry_task);
-        s_telemetry_task = nullptr;
+        s_telemetry_stop.store(true, std::memory_order_seq_cst);
+        for (int i = 0; i < 15 && s_telemetry_task != nullptr; i++) {
+            vTaskDelay(pdMS_TO_TICKS(25));
+        }
+        if (s_telemetry_task) {
+            vTaskDelete(s_telemetry_task);
+            s_telemetry_task = nullptr;
+        }
     }
     if (s_server) {
         httpd_stop(s_server);
         s_server = nullptr;
     }
-    if (s_fs_mounted) {
+    if (s_fs_mounted.load(std::memory_order_seq_cst)) {
         esp_vfs_littlefs_unregister("storage");
-        s_fs_mounted = false;
+        s_fs_mounted.store(false, std::memory_order_seq_cst);
     }
 }
 

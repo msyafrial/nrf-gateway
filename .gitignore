@@ -35,6 +35,8 @@ simulator2/
 scratch/
 persegi_dimensi.svg
 *.vectorcraft
+__pycache__/
+*.pyc
 
 # Backup files
 *-backup.*

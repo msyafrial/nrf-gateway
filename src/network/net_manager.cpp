@@ -1,9 +1,12 @@
 #include "net_manager.hpp"
+#include "micro_dhcp_server.hpp"
+#include "udp_discovery.hpp"
 #include "mqtt_service.hpp"
 #include "net_log_service.hpp"
 #include "bsp_led.hpp"
 #include "config_store.hpp"
 #include "esp_wifi.h"
+#include "esp_eth.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_sntp.h"
@@ -11,6 +14,11 @@
 #include "esp_timer.h"
 #include "esp_mac.h"
 #include "mdns.h"
+#include "lwip/sockets.h"
+#include "lwip/netif.h"
+#include "lwip/tcpip.h"
+#include "lwip/etharp.h"
+#include "lwip/dns.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <cstring>
@@ -21,9 +29,23 @@ static const char *TAG = "NET_MGR";
 
 namespace Iotaru::Network {
 
+enum class EthFsmState {
+    DISCONNECTED,
+    PROBING,
+    ROUTER_LAN,
+    DIRECT_PC,
+    PEER_SLAVE
+};
+
 static IEthernetDriver* s_ethDriver = nullptr;
 static esp_netif_t*     s_staNetif = nullptr;
 static esp_netif_t*     s_apNetif = nullptr;
+
+static EthFsmState s_ethFsmState = EthFsmState::DISCONNECTED;
+static uint32_t    s_ethProbeStartMs = 0;
+static uint32_t    s_ethProbeTimeoutMs = 12000;
+static uint32_t    s_directPcStartMs = 0;
+static uint32_t    s_slaveLastMasterCheckMs = 0;
 
 static bool s_wifiDriverInitialized = false;
 static bool s_wifiConnected = false;
@@ -46,6 +68,42 @@ static uint32_t s_pendingApStopMillis = 0;
 
 static bool s_dailyRestartExecutedToday = false;
 static int  s_lastCheckedMinute = -1;
+
+static void restoreWifiDnsAndDefaultRoute() {
+    if (s_staNetif != nullptr) {
+        esp_netif_set_default_netif(s_staNetif);
+
+        esp_netif_dns_info_t dns_info = {};
+        bool has_dns = false;
+        if (esp_netif_get_dns_info(s_staNetif, ESP_NETIF_DNS_MAIN, &dns_info) == ESP_OK && dns_info.ip.u_addr.ip4.addr != 0) {
+            has_dns = true;
+        } else if (strlen(g_config.w_dns) > 0) {
+            esp_netif_str_to_ip4(g_config.w_dns, &dns_info.ip.u_addr.ip4);
+            dns_info.ip.type = ESP_IPADDR_TYPE_V4;
+            has_dns = true;
+        } else {
+            IP4_ADDR(&dns_info.ip.u_addr.ip4, 8, 8, 8, 8); // Google DNS fallback
+            dns_info.ip.type = ESP_IPADDR_TYPE_V4;
+            has_dns = true;
+        }
+
+        if (has_dns) {
+            esp_netif_set_dns_info(s_staNetif, ESP_NETIF_DNS_MAIN, &dns_info);
+            ip_addr_t lwip_dns;
+            ip_addr_set_ip4_u32(&lwip_dns, dns_info.ip.u_addr.ip4.addr);
+            dns_setserver(0, &lwip_dns);
+
+            ip_addr_t lwip_dns2;
+            ip_addr_set_ip4_u32(&lwip_dns2, PP_HTONL(0x01010101)); // Cloudflare 1.1.1.1
+            dns_setserver(1, &lwip_dns2);
+        }
+        ESP_LOGI(TAG, "Default Netif dikunci ke Wi-Fi STA dan DNS dipulihkan (Main & Backup).");
+
+        if (!MqttService::isConnected()) {
+            MqttService::forceReconnect();
+        }
+    }
+}
 
 const char* NetworkManager::getWifiDisconnectReasonName(uint8_t reason) {
     switch (reason) {
@@ -99,7 +157,7 @@ static bool shouldWifiStaConnect() {
     if (s_manualConfigMode) return false;
     bool wifiModeActive = (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI));
     if (!wifiModeActive) return false;
-    if (s_ethDriver != nullptr && s_ethDriver->hasIp()) return false;
+    // Pada mode Wi-Fi, Wi-Fi Station adalah uplink utama (tidak diblokir oleh Ethernet Direct LAN)
     if (g_config.w_ssid[0] == '\0') return false;
     return true;
 }
@@ -126,7 +184,10 @@ void NetworkManager::onWifiEvent(void* arg, esp_event_base_t base, int32_t id, v
                 s_hasCachedAp = true;
                 s_fastRetryCount = 0;
                 esp_wifi_set_ps(WIFI_PS_NONE);
-                esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW20);
+                esp_err_t bw_err = esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW20);
+                if (bw_err != ESP_OK) {
+                    ESP_LOGW(TAG, "Gagal mengatur bandwidth Wi-Fi HT20: %s", esp_err_to_name(bw_err));
+                }
                 esp_wifi_set_max_tx_power(78);
                 ESP_LOGI(TAG, "Terhubung ke SSID: %s (Channel: %d, BW: HT20, Max TX: 78)", e->ssid, e->channel);
                 char det[80];
@@ -283,8 +344,26 @@ void NetworkManager::initMdns() {
 void NetworkManager::onIpEvent(void* arg, esp_event_base_t base, int32_t id, void* data) {
     if (base == IP_EVENT && (id == IP_EVENT_STA_GOT_IP || id == IP_EVENT_ETH_GOT_IP)) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*)data;
+
+        if (id == IP_EVENT_ETH_GOT_IP) {
+            // Jika sebelumnya dalam fase PROBING, ini adalah IP resmi dari Router DHCP
+            if (s_ethFsmState == EthFsmState::PROBING) {
+                s_ethFsmState = EthFsmState::ROUTER_LAN;
+                MicroDhcpServer::stop();
+                Bsp::LedManager::setConfigMode(false);
+                ESP_LOGI(TAG, "Ethernet transisi ke state ROUTER_LAN (Mendapatkan IP dari Router DHCP)!");
+            }
+
+            // Pada mode Wi-Fi: kunci default netif dan DNS tetap pada Wi-Fi Station agar uplink data & MQTT tidak terganggu
+            if (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI)) {
+                ESP_LOGI(TAG, "Mode Wi-Fi aktif: Menjaga Wi-Fi STA sebagai Default Netif & DNS Uplink...");
+                restoreWifiDnsAndDefaultRoute();
+            }
+        }
+
         if (id == IP_EVENT_STA_GOT_IP) {
             s_wifiHasIp = true;
+            restoreWifiDnsAndDefaultRoute();
         }
         s_disconStartTime = 0; // Reset watchdog timer
         Bsp::LedManager::autoSync(true, true, MqttService::isConnected(), s_apActive);
@@ -314,6 +393,58 @@ void NetworkManager::onIpEvent(void* arg, esp_event_base_t base, int32_t id, voi
     }
 }
 
+void NetworkManager::onEthEvent(void* arg, esp_event_base_t base, int32_t id, void* data) {
+    if (base == ETH_EVENT) {
+        switch (id) {
+            case ETHERNET_EVENT_CONNECTED: {
+                uint8_t mac[6] = {0};
+                esp_read_mac(mac, ESP_MAC_ETH);
+                uint32_t jitter = ((mac[4] << 8) | mac[5]) % 2000;
+                // Beri waktu 10-12 detik untuk kedua mode agar router/switch kantor/rumah sempat handshake DHCP
+                s_ethProbeTimeoutMs = 10000 + jitter;
+                s_ethProbeStartMs = (uint32_t)(esp_timer_get_time() / 1000);
+                s_ethFsmState = EthFsmState::PROBING;
+
+                esp_netif_t* eth_netif = s_ethDriver ? s_ethDriver->getNetif() : nullptr;
+                if (eth_netif) {
+                    char hostname[64];
+                    getMdnsHostname(hostname, sizeof(hostname));
+                    esp_netif_set_hostname(eth_netif, hostname);
+                    UdpDiscoveryService::start(eth_netif);
+                }
+                ESP_LOGI(TAG, "Ethernet Link Up terdeteksi. FSM: PROBING (Timeout: %lu ms)...",
+                         (unsigned long)s_ethProbeTimeoutMs);
+                break;
+            }
+
+            case ETHERNET_EVENT_DISCONNECTED: {
+                ESP_LOGW(TAG, "Ethernet Link Down terdeteksi. Mereset fallback FSM...");
+                MicroDhcpServer::stop();
+                s_ethFsmState = EthFsmState::DISCONNECTED;
+                s_ethProbeStartMs = 0;
+                s_directPcStartMs = 0;
+                s_slaveLastMasterCheckMs = 0;
+                Bsp::LedManager::setConfigMode(false);
+                Bsp::LedManager::autoSync(isLinkUp(), isConnected(), MqttService::isConnected(), s_apActive);
+
+                esp_netif_t* eth_netif = s_ethDriver ? s_ethDriver->getNetif() : nullptr;
+                if (eth_netif) {
+                    esp_netif_ip_info_t zero_ip = {};
+                    esp_netif_set_ip_info(eth_netif, &zero_ip);
+                }
+
+                if (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI)) {
+                    restoreWifiDnsAndDefaultRoute();
+                }
+                break;
+            }
+
+            default:
+                break;
+        }
+    }
+}
+
 void NetworkManager::earlyInit(IEthernetDriver* driver) {
     s_ethDriver = driver;
     if (s_ethDriver) {
@@ -330,38 +461,47 @@ void NetworkManager::init(IEthernetDriver* driver) {
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &onWifiEvent, nullptr));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &onIpEvent, nullptr));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &onIpEvent, nullptr));
+    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &onEthEvent, nullptr));
 
     bool ethPreferred = (g_config.connection_mode == static_cast<int>(ConnectionMode::ETHERNET));
 
     bool ethStarted = false;
-    if (ethPreferred && s_ethDriver != nullptr) {
-        ESP_LOGI(TAG, "Memulai Ethernet Controller W5500 SPI DMA...");
+    if (s_ethDriver != nullptr) {
+        ESP_LOGI(TAG, "Memulai Ethernet Controller W5500 SPI DMA (Dual-Interface / Maintenance Ready)...");
 
         esp_ip4_addr_t ip = {}, gw = {}, mask = {}, dns = {}, dns2 = {};
-        if (!g_config.eth_dhcp && strlen(g_config.eth_ip) > 0) {
-            esp_netif_str_to_ip4(g_config.eth_ip, &ip);
-            esp_netif_str_to_ip4(g_config.eth_gateway, &gw);
-            esp_netif_str_to_ip4(g_config.eth_subnet, &mask);
-            if (strlen(g_config.eth_dns) > 0) {
-                esp_netif_str_to_ip4(g_config.eth_dns, &dns);
-            } else {
-                dns = gw;
+        bool use_dhcp = true;
+
+        if (ethPreferred) {
+            if (!g_config.eth_dhcp && strlen(g_config.eth_ip) > 0) {
+                esp_netif_str_to_ip4(g_config.eth_ip, &ip);
+                esp_netif_str_to_ip4(g_config.eth_gateway, &gw);
+                esp_netif_str_to_ip4(g_config.eth_subnet, &mask);
+                if (strlen(g_config.eth_dns) > 0) {
+                    esp_netif_str_to_ip4(g_config.eth_dns, &dns);
+                } else {
+                    dns = gw;
+                }
+                if (strlen(g_config.eth_dns2) > 0) {
+                    esp_netif_str_to_ip4(g_config.eth_dns2, &dns2);
+                }
+                use_dhcp = false;
             }
-            if (strlen(g_config.eth_dns2) > 0) {
-                esp_netif_str_to_ip4(g_config.eth_dns2, &dns2);
-            }
+        } else {
+            // Mode Wi-Fi: Ethernet siaga sebagai DHCP client untuk Direct LAN Maintenance Port
+            use_dhcp = true;
         }
 
-        char client_id[32];
-        Core::ConfigStore::getDeviceId(client_id, sizeof(client_id));
+        char hostname[64];
+        getMdnsHostname(hostname, sizeof(hostname));
 
         ethStarted = s_ethDriver->begin(
             ip.addr,
             gw.addr,
             mask.addr,
             dns.addr,
-            g_config.eth_dhcp != 0,
-            client_id,
+            use_dhcp,
+            hostname,
             dns2.addr
         );
     }
@@ -433,7 +573,10 @@ void NetworkManager::initWifiStation() {
 
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-    esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW20);
+    esp_err_t bw_err = esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW20);
+    if (bw_err != ESP_OK) {
+        ESP_LOGW(TAG, "Gagal mengatur bandwidth Wi-Fi HT20: %s", esp_err_to_name(bw_err));
+    }
     esp_wifi_set_max_tx_power(78);
     ESP_LOGI(TAG, "Wi-Fi PS: None | Bandwidth: HT20 (20MHz) | Max TX Power: 78 (19.5 dBm)");
 }
@@ -459,7 +602,6 @@ void NetworkManager::startConfigAP() {
     recordApActivity();
 
     Bsp::LedManager::setConfigMode(true);
-    Bsp::LedManager::setComState(ComLedState::SOFTAP);
 
     if (s_apNetif == nullptr) {
         s_apNetif = esp_netif_create_default_wifi_ap();
@@ -506,7 +648,9 @@ void NetworkManager::stopConfigAP() {
 
         NetLogService::log(NetCategory::SOFTAP, NetEvent::STOPPED, "Hotspot konfigurasi dinonaktifkan");
 
-        Bsp::LedManager::setConfigMode(false);
+        if (s_ethFsmState != EthFsmState::DIRECT_PC && s_ethFsmState != EthFsmState::PEER_SLAVE) {
+            Bsp::LedManager::setConfigMode(false);
+        }
 
         bool ethPreferred = (g_config.connection_mode == static_cast<int>(ConnectionMode::ETHERNET));
         if (ethPreferred && s_ethDriver != nullptr && s_ethDriver->hasIp()) {
@@ -537,7 +681,16 @@ uint32_t NetworkManager::getApRemainingSeconds() {
     return (AP_INACTIVITY_TIMEOUT_MS - elapsed) / 1000;
 }
 
+bool NetworkManager::isEthernetDirectPcMode() {
+    return (s_ethFsmState == EthFsmState::DIRECT_PC);
+}
+
+bool NetworkManager::isEthernetPeerSlaveMode() {
+    return (s_ethFsmState == EthFsmState::PEER_SLAVE);
+}
+
 bool NetworkManager::isConnected() {
+    if (s_ethFsmState == EthFsmState::DIRECT_PC || s_ethFsmState == EthFsmState::PEER_SLAVE) return true;
     if (s_ethDriver && s_ethDriver->hasIp()) return true;
     return s_wifiHasIp;
 }
@@ -547,7 +700,12 @@ bool NetworkManager::isLinkUp() {
     return s_wifiConnected;
 }
 
+bool NetworkManager::isEthernetLinkUp() {
+    return (s_ethDriver != nullptr && s_ethDriver->isConnected());
+}
+
 bool NetworkManager::isEthernetActive() {
+    if (s_ethFsmState == EthFsmState::DIRECT_PC || s_ethFsmState == EthFsmState::PEER_SLAVE) return true;
     return (s_ethDriver != nullptr && s_ethDriver->hasIp());
 }
 
@@ -570,6 +728,89 @@ void NetworkManager::getActiveIp(char* outBuf, size_t maxLen) {
         if (esp_netif_get_ip_info(s_staNetif, &ip_info) == ESP_OK) {
             esp_ip4addr_ntoa(&ip_info.ip, outBuf, maxLen);
         }
+    }
+}
+
+void NetworkManager::getActiveMac(char* outBuf, size_t maxLen) {
+    if (!outBuf || maxLen == 0) return;
+    outBuf[0] = '\0';
+
+    if (g_config.connection_mode == 1) {
+        if (s_ethDriver) {
+            s_ethDriver->getMac(outBuf, maxLen);
+        }
+        if (outBuf[0] == '\0') {
+            uint8_t mac[6] = {0};
+            if (esp_read_mac(mac, ESP_MAC_ETH) == ESP_OK) {
+                snprintf(outBuf, maxLen, "%02X:%02X:%02X:%02X:%02X:%02X",
+                         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            }
+        }
+    } else {
+        uint8_t mac[6] = {0};
+        if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
+            snprintf(outBuf, maxLen, "%02X:%02X:%02X:%02X:%02X:%02X",
+                     mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        }
+    }
+}
+
+void NetworkManager::getWifiIp(char* outBuf, size_t maxLen) {
+    if (!outBuf || maxLen == 0) return;
+    outBuf[0] = '\0';
+    if (s_staNetif != nullptr) {
+        esp_netif_ip_info_t ip_info;
+        if (esp_netif_get_ip_info(s_staNetif, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
+            esp_ip4addr_ntoa(&ip_info.ip, outBuf, maxLen);
+            return;
+        }
+    }
+    snprintf(outBuf, maxLen, "-");
+}
+
+void NetworkManager::getWifiMac(char* outBuf, size_t maxLen) {
+    if (!outBuf || maxLen == 0) return;
+    outBuf[0] = '\0';
+    uint8_t mac[6] = {0};
+    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
+        snprintf(outBuf, maxLen, "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    } else {
+        snprintf(outBuf, maxLen, "-");
+    }
+}
+
+void NetworkManager::getEthernetIp(char* outBuf, size_t maxLen) {
+    if (!outBuf || maxLen == 0) return;
+    outBuf[0] = '\0';
+    if (s_ethDriver && s_ethDriver->isHardwareDetected()) {
+        if (!s_ethDriver->isConnected()) {
+            snprintf(outBuf, maxLen, "Kabel Terputus (Link Down)");
+            return;
+        }
+        s_ethDriver->getIp(outBuf, maxLen);
+        if (strlen(outBuf) > 0 && strcmp(outBuf, "0.0.0.0") != 0) {
+            return;
+        }
+        snprintf(outBuf, maxLen, "Menunggu IP (DHCP)...");
+        return;
+    }
+    snprintf(outBuf, maxLen, "-");
+}
+
+void NetworkManager::getEthernetMac(char* outBuf, size_t maxLen) {
+    if (!outBuf || maxLen == 0) return;
+    outBuf[0] = '\0';
+    if (s_ethDriver && s_ethDriver->isHardwareDetected()) {
+        s_ethDriver->getMac(outBuf, maxLen);
+        if (outBuf[0] != '\0') return;
+    }
+    uint8_t mac[6] = {0};
+    if (esp_read_mac(mac, ESP_MAC_ETH) == ESP_OK) {
+        snprintf(outBuf, maxLen, "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    } else {
+        snprintf(outBuf, maxLen, "-");
     }
 }
 
@@ -680,11 +921,197 @@ void NetworkManager::checkDailyRestart() {
     }
 }
 
+void NetworkManager::checkEthernetFallback() {
+    if (s_ethDriver == nullptr || !s_ethDriver->isConnected()) {
+        return;
+    }
+
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    esp_netif_t* eth_netif = s_ethDriver->getNetif();
+    if (!eth_netif) return;
+
+    if (s_ethFsmState == EthFsmState::PROBING) {
+        // Cek jika user sengaja mengatur IP Statis di menu konfigurasi (DHCP mati) pada mode Ethernet
+        if (g_config.connection_mode == static_cast<int>(ConnectionMode::ETHERNET) && !g_config.eth_dhcp && strlen(g_config.eth_ip) > 0) {
+            s_ethFsmState = EthFsmState::ROUTER_LAN;
+            return;
+        }
+
+        if (s_ethProbeStartMs > 0 && (now - s_ethProbeStartMs) >= s_ethProbeTimeoutMs) {
+            ESP_LOGW(TAG, "DHCP Probe Timeout (%lu ms)! Memulai Fallback Direct LAN...",
+                     (unsigned long)s_ethProbeTimeoutMs);
+
+            // 1. Matikan Wi-Fi SoftAP terlebih dahulu sebelum mengubah IP Ethernet (Mencegah collision)
+            if (isApActive()) {
+                ESP_LOGI(TAG, "Mematikan Wi-Fi SoftAP sebelum mengaktifkan subnet LAN 192.168.4.x...");
+                stopConfigAP();
+            }
+            vTaskDelay(pdMS_TO_TICKS(15));
+
+            // 2. Stop DHCP client pada Ethernet
+            esp_netif_dhcpc_stop(eth_netif);
+
+            // 3. Thread-safe ARP Probe untuk mengecek apakah 192.168.4.1 sudah dipakai perangkat lain
+            char if_name[16] = {0};
+            esp_netif_get_netif_impl_name(eth_netif, if_name);
+
+            bool ip_occupied = false;
+            LOCK_TCPIP_CORE();
+            struct netif* lwip_n = netif_find(if_name);
+            if (lwip_n != nullptr) {
+                ip4_addr_t target_ip;
+                IP4_ADDR(&target_ip, 192, 168, 4, 1);
+                etharp_request(lwip_n, &target_ip);
+            }
+            UNLOCK_TCPIP_CORE();
+
+            vTaskDelay(pdMS_TO_TICKS(200));
+
+            LOCK_TCPIP_CORE();
+            if (lwip_n != nullptr) {
+                ip4_addr_t target_ip;
+                IP4_ADDR(&target_ip, 192, 168, 4, 1);
+                struct eth_addr* eth_ret = nullptr;
+                const ip4_addr* ip_ret = nullptr;
+                s8_t idx = etharp_find_addr(lwip_n, &target_ip, &eth_ret, &ip_ret);
+                ip_occupied = (idx >= 0);
+            }
+            UNLOCK_TCPIP_CORE();
+
+            // 4. Set LED COM: Biru Kedip 1 Hz (Mode Konfigurasi Aktif)
+            Bsp::LedManager::setConfigMode(true);
+
+            if (!ip_occupied) {
+                // MASTER NODE: Ambil 192.168.4.1 dan jalankan Micro-DHCP
+                ESP_LOGI(TAG, "192.168.4.1 bebas -> SG-10 terpilih sebagai MASTER (Direct PC Mode)!");
+                s_ethFsmState = EthFsmState::DIRECT_PC;
+                s_directPcStartMs = now;
+
+                esp_netif_ip_info_t ip_info = {};
+                IP4_ADDR(&ip_info.ip, 192, 168, 4, 1);
+                IP4_ADDR(&ip_info.gw, 0, 0, 0, 0); // Omit gateway
+                IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
+                esp_netif_set_ip_info(eth_netif, &ip_info);
+
+                // Pada mode Wi-Fi, pastikan default route internet tetap berada pada Wi-Fi Station & pulihkan DNS lwIP
+                if (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI)) {
+                    restoreWifiDnsAndDefaultRoute();
+                }
+
+                MicroDhcpServer::start(eth_netif, 0xC0A80401, 0xC0A80402);
+
+                NetLogService::log(NetCategory::ETHERNET, NetEvent::STARTED,
+                                   "Direct LAN Terhubung (Master: 192.168.4.1, Micro-DHCP Aktif)");
+            } else {
+                // SLAVE / PEER NODE: Tetapkan IP unik berbasis MAC
+                uint8_t mac[6] = {0};
+                esp_read_mac(mac, ESP_MAC_ETH);
+                uint8_t host_octet = 10 + (mac[5] % 240);
+                if (host_octet == 1 || host_octet == 2) host_octet += 10;
+
+                ESP_LOGW(TAG, "192.168.4.1 terdeteksi sibuk -> Menjadi SLAVE PEER dengan IP 192.168.4.%d", host_octet);
+                s_ethFsmState = EthFsmState::PEER_SLAVE;
+                s_slaveLastMasterCheckMs = now;
+
+                esp_netif_ip_info_t ip_info = {};
+                IP4_ADDR(&ip_info.ip, 192, 168, 4, host_octet);
+                IP4_ADDR(&ip_info.gw, 0, 0, 0, 0);
+                IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
+                esp_netif_set_ip_info(eth_netif, &ip_info);
+
+                if (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI)) {
+                    restoreWifiDnsAndDefaultRoute();
+                }
+
+                char det[80];
+                snprintf(det, sizeof(det), "Hub Terdeteksi (Slave Peer: 192.168.4.%d, Master 192.168.4.1)", host_octet);
+                NetLogService::log(NetCategory::ETHERNET, NetEvent::STARTED, det);
+            }
+
+            // Inisialisasi mDNS pada IP baru
+            initMdns();
+        }
+    } else if (s_ethFsmState == EthFsmState::DIRECT_PC) {
+        // Pada mode Ethernet: jika belum ada PC yang mengambil lease setelah 30 detik, re-probe router kantor
+        // Pada mode Wi-Fi: Direct PC tetap aktif selama kabel LAN terhubung (tanpa time-out 30s)
+        bool ethPreferred = (g_config.connection_mode == static_cast<int>(ConnectionMode::ETHERNET));
+        if (ethPreferred && !MicroDhcpServer::hasActiveClientLease()) {
+            if (s_directPcStartMs > 0 && (now - s_directPcStartMs) >= 30000) {
+                ESP_LOGI(TAG, "Direct PC idle 30s tanpa klien -> Re-probe router kantor...");
+                MicroDhcpServer::stop();
+                Bsp::LedManager::setConfigMode(false);
+
+                // Reset IP ke 0.0.0.0 sebelum menyalakan kembali DHCP client
+                esp_netif_ip_info_t zero_ip = {};
+                esp_netif_set_ip_info(eth_netif, &zero_ip);
+
+                esp_netif_dhcpc_start(eth_netif);
+
+                uint8_t mac[6] = {0};
+                esp_read_mac(mac, ESP_MAC_ETH);
+                uint32_t jitter = ((mac[4] << 8) | mac[5]) % 2000;
+                s_ethProbeTimeoutMs = 11500 + jitter;
+                s_ethProbeStartMs = now;
+                s_ethFsmState = EthFsmState::PROBING;
+            }
+        }
+    } else if (s_ethFsmState == EthFsmState::PEER_SLAVE) {
+        // Cek heartbeat Master setiap 30 detik: jika Master sudah pergi, kembali ke PROBING
+        if (s_slaveLastMasterCheckMs > 0 && (now - s_slaveLastMasterCheckMs) >= 30000) {
+            s_slaveLastMasterCheckMs = now;
+
+            char if_name[16] = {0};
+            esp_netif_get_netif_impl_name(eth_netif, if_name);
+
+            bool master_alive = false;
+            LOCK_TCPIP_CORE();
+            struct netif* lwip_n = netif_find(if_name);
+            if (lwip_n != nullptr) {
+                ip4_addr_t master_ip;
+                IP4_ADDR(&master_ip, 192, 168, 4, 1);
+                etharp_request(lwip_n, &master_ip);
+            }
+            UNLOCK_TCPIP_CORE();
+
+            vTaskDelay(pdMS_TO_TICKS(150));
+
+            LOCK_TCPIP_CORE();
+            if (lwip_n != nullptr) {
+                ip4_addr_t master_ip;
+                IP4_ADDR(&master_ip, 192, 168, 4, 1);
+                struct eth_addr* eth_ret = nullptr;
+                const ip4_addr* ip_ret = nullptr;
+                s8_t idx = etharp_find_addr(lwip_n, &master_ip, &eth_ret, &ip_ret);
+                master_alive = (idx >= 0);
+            }
+            UNLOCK_TCPIP_CORE();
+
+            if (!master_alive) {
+                ESP_LOGW(TAG, "Master 192.168.4.1 tidak lagi merespons -> Slave kembali ke PROBING!");
+                Bsp::LedManager::setConfigMode(false);
+
+                esp_netif_ip_info_t zero_ip = {};
+                esp_netif_set_ip_info(eth_netif, &zero_ip);
+
+                esp_netif_dhcpc_start(eth_netif);
+
+                uint8_t mac[6] = {0};
+                esp_read_mac(mac, ESP_MAC_ETH);
+                uint32_t jitter = ((mac[4] << 8) | mac[5]) % 2000;
+                s_ethProbeTimeoutMs = 11500 + jitter;
+                s_ethProbeStartMs = now;
+                s_ethFsmState = EthFsmState::PROBING;
+            }
+        }
+    }
+}
+
 void NetworkManager::tickWatchdog() {
     checkNtpWatchdog();
     checkDisconWatchdog();
     checkApInactivityTimeout();
     checkDailyRestart();
+    checkEthernetFallback();
 }
 
 } // namespace Iotaru::Network

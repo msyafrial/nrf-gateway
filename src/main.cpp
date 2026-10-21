@@ -31,8 +31,11 @@ static void supervisorTask(void *pvParameters) {
         // 1. Tick network & watchdog timers
         Network::NetworkManager::tickWatchdog();
 
-        // 2. Update throughput metrics
+        // 2. Update throughput metrics & bersihkan paket kadaluarsa saat offline (Zero-Loss Pruning)
         Core::BeaconPipeline::updateMetrics();
+        if (!Network::MqttService::isConnected()) {
+            Core::BeaconPipeline::pruneExpired();
+        }
 
         // 3. Auto-sync LED state to physical network & MQTT broker reality
         Bsp::LedManager::autoSync(

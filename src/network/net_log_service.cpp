@@ -3,12 +3,14 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_crc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <algorithm>
+#include <atomic>
 
 static const char *TAG = "NET_LOG";
 
@@ -26,19 +28,70 @@ static NetCategory s_lastCat = NetCategory::SYSTEM;
 static NetEvent s_lastEvt = NetEvent::BOOT;
 static uint32_t s_lastLogTimeSec = 0;
 
+// Telemetri Persistensi Sistem (AT24C256 EEPROM / RAM)
+static std::atomic<uint32_t> s_bootCount{1};
+static std::atomic<uint32_t> s_wifiDisconnectCount{0};
+static std::atomic<uint32_t> s_ethDisconnectCount{0};
+static std::atomic<uint32_t> s_mqttDisconnectCount{0};
+static uint8_t s_lastResetReason = static_cast<uint8_t>(ESP_RST_UNKNOWN);
+static uint32_t s_lastStatsCommitUptime = 0;
+
+static uint16_t calculateStatsChecksum(const Bsp::SystemStatsStore& s) {
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);
+    constexpr size_t LEN = offsetof(Bsp::SystemStatsStore, checksum);
+    return esp_crc16_le(0, p, LEN);
+}
+
+static void loadStatsFromEeprom() {
+    Bsp::SystemStatsStore store = {};
+    if (Bsp::At24c256::readBuffer(Bsp::EEPROM_SYSTEM_STATS_ADDR,
+                                  reinterpret_cast<uint8_t*>(&store),
+                                  sizeof(store)) == ESP_OK) {
+        if (store.magic == Bsp::SYSTEM_STATS_MAGIC &&
+            store.checksum == calculateStatsChecksum(store)) {
+            s_bootCount.store(store.boot_count);
+            s_wifiDisconnectCount.store(store.wifi_disconnects);
+            s_ethDisconnectCount.store(store.eth_disconnects);
+            s_mqttDisconnectCount.store(store.mqtt_disconnects);
+            return;
+        }
+    }
+    s_bootCount.store(0);
+    s_wifiDisconnectCount.store(0);
+    s_ethDisconnectCount.store(0);
+    s_mqttDisconnectCount.store(0);
+}
+
+static void saveStatsToEeprom() {
+    if (!Bsp::At24c256::isDetected()) return;
+    Bsp::SystemStatsStore store = {};
+    store.magic = Bsp::SYSTEM_STATS_MAGIC;
+    store.boot_count = s_bootCount.load();
+    store.wifi_disconnects = s_wifiDisconnectCount.load();
+    store.eth_disconnects = s_ethDisconnectCount.load();
+    store.mqtt_disconnects = s_mqttDisconnectCount.load();
+    store.last_boot_uptime = static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);
+    store.last_reset_reason = s_lastResetReason;
+    store.checksum = calculateStatsChecksum(store);
+
+    Bsp::At24c256::writePage(Bsp::EEPROM_SYSTEM_STATS_ADDR,
+                             reinterpret_cast<const uint8_t*>(&store),
+                             sizeof(store));
+}
+
 static const char* resetReasonToString(esp_reset_reason_t reason) {
     switch (reason) {
-        case ESP_RST_POWERON:   return "Power-on";
-        case ESP_RST_EXT:       return "External Pin";
-        case ESP_RST_SW:        return "Software Reboot";
-        case ESP_RST_PANIC:     return "Software Panic/Crash";
-        case ESP_RST_INT_WDT:   return "Interrupt Watchdog";
-        case ESP_RST_TASK_WDT:  return "Task Watchdog";
-        case ESP_RST_WDT:       return "Other Watchdog";
+        case ESP_RST_POWERON:   return "Power-On Cold Boot";
+        case ESP_RST_EXT:       return "External Pin Reset";
+        case ESP_RST_SW:        return "Software Reboot Manual";
+        case ESP_RST_PANIC:     return "Software Panic / Crash";
+        case ESP_RST_INT_WDT:   return "Interrupt Watchdog Timer";
+        case ESP_RST_TASK_WDT:  return "Task Watchdog Timer (TWDT)";
+        case ESP_RST_WDT:       return "System Watchdog Timer";
         case ESP_RST_DEEPSLEEP: return "Deep Sleep Wakeup";
-        case ESP_RST_BROWNOUT:  return "Brownout (Under-voltage)";
+        case ESP_RST_BROWNOUT:  return "Brownout Undervoltage (<2.7V)";
         case ESP_RST_SDIO:      return "SDIO Reset";
-        default:                return "Unknown";
+        default:                return "Unknown Reset";
     }
 }
 
@@ -55,16 +108,21 @@ const char* NetLogService::categoryToString(NetCategory cat) {
 
 const char* NetLogService::eventToString(NetEvent evt) {
     switch (evt) {
-        case NetEvent::CONNECTED:    return "CONNECTED";
-        case NetEvent::DISCONNECTED: return "DISCONNECTED";
-        case NetEvent::GOT_IP:       return "GOT IP";
-        case NetEvent::ERROR_EVT:    return "ERROR";
-        case NetEvent::STARTED:      return "STARTED";
-        case NetEvent::STOPPED:      return "STOPPED";
-        case NetEvent::CLIENT_JOIN:  return "CLIENT JOIN";
-        case NetEvent::CLIENT_LEAVE: return "CLIENT LEAVE";
-        case NetEvent::BOOT:         return "SYSTEM BOOT";
-        default:                     return "UNKNOWN";
+        case NetEvent::CONNECTED:      return "CONNECTED";
+        case NetEvent::DISCONNECTED:   return "DISCONNECTED";
+        case NetEvent::GOT_IP:         return "GOT IP";
+        case NetEvent::ERROR_EVT:      return "ERROR";
+        case NetEvent::STARTED:        return "STARTED";
+        case NetEvent::STOPPED:        return "STOPPED";
+        case NetEvent::CLIENT_JOIN:    return "CLIENT JOIN";
+        case NetEvent::CLIENT_LEAVE:   return "CLIENT LEAVE";
+        case NetEvent::BOOT:           return "SYSTEM BOOT";
+        case NetEvent::CONFIG_UPDATE:  return "CONFIG UPDATE";
+        case NetEvent::CONFIG_RESET:   return "FACTORY RESET";
+        case NetEvent::CONFIG_DISCARD: return "CONFIG DISCARD";
+        case NetEvent::AUTH_UPDATE:    return "AUTH UPDATE";
+        case NetEvent::LOG_CLEARED:    return "LOG CLEARED";
+        default:                       return "UNKNOWN";
     }
 }
 
@@ -75,13 +133,18 @@ const char* NetLogService::eventToStatusClass(NetEvent evt) {
             return "success";
         case NetEvent::DISCONNECTED:
         case NetEvent::ERROR_EVT:
+        case NetEvent::CONFIG_RESET:
             return "danger";
         case NetEvent::STARTED:
         case NetEvent::BOOT:
+        case NetEvent::CONFIG_UPDATE:
+        case NetEvent::AUTH_UPDATE:
             return "primary";
         case NetEvent::CLIENT_JOIN:
         case NetEvent::CLIENT_LEAVE:
         case NetEvent::STOPPED:
+        case NetEvent::CONFIG_DISCARD:
+        case NetEvent::LOG_CLEARED:
             return "warning";
         default:
             return "neutral";
@@ -125,8 +188,21 @@ void NetLogService::init() {
             ESP_LOGW(TAG, "Mode Penyimpanan: RAM-Only Fallback (Zero Flash Wear). LittleFS TIDAK DITULIS.");
         }
 
-        // Catat peristiwa Booting sistem
+        // Inisialisasi Telemetri Boot & Disconnect (AT24C256 / RAM)
         esp_reset_reason_t reason = esp_reset_reason();
+        s_lastResetReason = static_cast<uint8_t>(reason);
+        if (Bsp::At24c256::isDetected()) {
+            loadStatsFromEeprom();
+            s_bootCount.fetch_add(1);
+            saveStatsToEeprom();
+            ESP_LOGI(TAG, "Telemetri AT24C256: Boot Count = %u, Reset: %s",
+                     (unsigned int)s_bootCount.load(), resetReasonToString(reason));
+        } else {
+            s_bootCount.store(1);
+            ESP_LOGW(TAG, "Telemetri RAM-Only: Boot Count = 1 (EEPROM Tidak Terdeteksi)");
+        }
+
+        // Catat peristiwa Booting sistem
         char bootDetail[80];
         snprintf(bootDetail, sizeof(bootDetail), "Gateway IOTARU SG-10 aktif (Reset Reason: %s)", resetReasonToString(reason));
 
@@ -190,6 +266,10 @@ void NetLogService::log(NetCategory cat, NetEvent evt, const char* detail) {
         s_initialized = true;
     }
 
+    if (evt == NetEvent::DISCONNECTED) {
+        recordDisconnect(cat);
+    }
+
     char timeStr[24] = {0};
     formatTimestamp(timeStr, sizeof(timeStr), uptimeSec);
 
@@ -249,6 +329,8 @@ void NetLogService::clearLogs() {
         s_nextId = 1;
         s_headSlot = -1;
     }
+
+    resetDisconnectCounters();
 
     if (Bsp::At24c256::isDetected()) {
         // Bersihkan magic marker pada slot EEPROM dengan cooperative yielding agar tidak starvation (VULN-MEM-05)
@@ -389,4 +471,47 @@ const char* NetLogService::getStorageModeString() {
     return "RAM Only (Flash Protection Active)";
 }
 
+uint32_t NetLogService::getBootCount() {
+    return s_bootCount.load();
+}
+
+const char* NetLogService::getLastResetReasonString() {
+    return resetReasonToString(static_cast<esp_reset_reason_t>(s_lastResetReason));
+}
+
+uint32_t NetLogService::getWifiDisconnectCount() {
+    return s_wifiDisconnectCount.load();
+}
+
+uint32_t NetLogService::getEthDisconnectCount() {
+    return s_ethDisconnectCount.load();
+}
+
+uint32_t NetLogService::getMqttDisconnectCount() {
+    return s_mqttDisconnectCount.load();
+}
+
+void NetLogService::recordDisconnect(NetCategory cat) {
+    switch (cat) {
+        case NetCategory::WIFI:     s_wifiDisconnectCount.fetch_add(1); break;
+        case NetCategory::ETHERNET: s_ethDisconnectCount.fetch_add(1); break;
+        case NetCategory::MQTT:     s_mqttDisconnectCount.fetch_add(1); break;
+        default: break;
+    }
+
+    uint32_t nowSec = static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);
+    if (nowSec - s_lastStatsCommitUptime >= 3) {
+        s_lastStatsCommitUptime = nowSec;
+        saveStatsToEeprom();
+    }
+}
+
+void NetLogService::resetDisconnectCounters() {
+    s_wifiDisconnectCount.store(0);
+    s_ethDisconnectCount.store(0);
+    s_mqttDisconnectCount.store(0);
+    saveStatsToEeprom();
+}
+
 } // namespace Iotaru::Network
+

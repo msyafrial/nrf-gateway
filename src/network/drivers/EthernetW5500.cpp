@@ -19,6 +19,7 @@ namespace Iotaru::Network {
 bool EthernetW5500::s_connected = false;
 bool EthernetW5500::s_hasIp = false;
 bool EthernetW5500::s_hardwareDetected = false;
+static bool s_isDhcp = true;
 esp_eth_handle_t EthernetW5500::s_eth_handle = nullptr;
 esp_netif_t* EthernetW5500::s_eth_netif = nullptr;
 esp_eth_netif_glue_handle_t EthernetW5500::s_eth_glue = nullptr;
@@ -55,10 +56,22 @@ void EthernetW5500::onEthEvent(void* arg, esp_event_base_t base, int32_t id, voi
             s_connected = true;
             Bsp::LedManager::setComState(ComLedState::CONNECTING);
             esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);
-            ESP_LOGI(TAG, "Kabel LAN W5500 Terhubung (Link Up) | MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+
+            eth_speed_t speed = ETH_SPEED_10M;
+            eth_duplex_t duplex = ETH_DUPLEX_HALF;
+            esp_eth_ioctl(eth_handle, ETH_CMD_G_SPEED, &speed);
+            esp_eth_ioctl(eth_handle, ETH_CMD_G_DUPLEX_MODE, &duplex);
+
+            const char* speedStr = (speed == ETH_SPEED_100M) ? "100" : "10";
+            const char* duplexStr = (duplex == ETH_DUPLEX_FULL) ? "Full" : "Half";
+
+            ESP_LOGI(TAG, "Kabel LAN W5500 Terhubung (Link Up: %sM %s-Duplex) | MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+                     speedStr, duplexStr,
                      mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+
             char det[80];
-            snprintf(det, sizeof(det), "Kabel LAN terhubung (Link Up) | MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+            snprintf(det, sizeof(det), "Link Up: %s Mbps %s-Duplex (Auto-Neg) | MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+                     speedStr, duplexStr,
                      mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
             NetLogService::log(NetCategory::ETHERNET, NetEvent::CONNECTED, det);
             break;
@@ -69,7 +82,8 @@ void EthernetW5500::onEthEvent(void* arg, esp_event_base_t base, int32_t id, voi
             s_hasIp = false;
             Bsp::LedManager::setComState(ComLedState::DISCONNECTED);
             ESP_LOGW(TAG, "Kabel LAN W5500 Terputus (Link Down)!");
-            NetLogService::log(NetCategory::ETHERNET, NetEvent::DISCONNECTED, "Kabel LAN terputus (Link Down)");
+            NetLogService::log(NetCategory::ETHERNET, NetEvent::DISCONNECTED,
+                               "Kabel Fisik RJ45 Terputus / Switch Port Nonaktif (Link Down)");
             break;
 
         case ETHERNET_EVENT_START:
@@ -80,6 +94,8 @@ void EthernetW5500::onEthEvent(void* arg, esp_event_base_t base, int32_t id, voi
             s_connected = false;
             s_hasIp = false;
             ESP_LOGI(TAG, "Driver Ethernet W5500 dihentikan.");
+            NetLogService::log(NetCategory::ETHERNET, NetEvent::STOPPED,
+                               "Interface Ethernet Dinonaktifkan (Peralihan ke Mode Wi-Fi)");
             break;
 
         default:
@@ -104,7 +120,8 @@ void EthernetW5500::onIpEvent(void* arg, esp_event_base_t base, int32_t id, void
         ESP_LOGI(TAG, "=======================================================");
 
         char det[80];
-        snprintf(det, sizeof(det), "IP: %s | GW: %s", ipStr, gwStr);
+        snprintf(det, sizeof(det), "IP (%s): %s | GW: %s | Mask: %s",
+                 s_isDhcp ? "DHCP Client" : "Static IP", ipStr, gwStr, maskStr);
         NetLogService::log(NetCategory::ETHERNET, NetEvent::GOT_IP, det);
     }
 }
@@ -251,6 +268,11 @@ bool EthernetW5500::begin(uint32_t ip, uint32_t gw, uint32_t mask,
     }
 
     s_hardwareDetected = true;
+    s_isDhcp = dhcp;
+    char detStarted[80];
+    snprintf(detStarted, sizeof(detStarted), "Hardware W5500 Terdeteksi (SPI3 Host, Mode: %s)",
+             dhcp ? "DHCP Client" : "Static IP");
+    NetLogService::log(NetCategory::ETHERNET, NetEvent::STARTED, detStarted);
     ESP_LOGI(TAG, "Driver Ethernet W5500 siap bekerja.");
     return true;
 }

@@ -8,6 +8,8 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_crc.h"
+#include "esp_crt_bundle.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -38,14 +40,12 @@ struct __attribute__((packed)) MqttSeqStore {
 static uint32_t s_recentSeqRam[10] = {0};
 static uint8_t s_recentCountRam = 0;
 
+static void saveCriticalSeqStore(const MqttSeqStore& inStore);
+
 static uint16_t calculateSeqStoreChecksum(const MqttSeqStore& s) {
-    uint16_t cs = 0;
     const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);
     constexpr size_t LEN = offsetof(MqttSeqStore, checksum);
-    for (size_t i = 0; i < LEN; i++) {
-        cs ^= p[i];
-    }
-    return cs;
+    return esp_crc16_le(0, p, LEN);
 }
 
 static bool loadCriticalSeqStore(MqttSeqStore& outStore) {
@@ -54,7 +54,23 @@ static bool loadCriticalSeqStore(MqttSeqStore& outStore) {
         return false;
     }
     if (outStore.magic != MQTT_SEQ_MAGIC) return false;
-    if (outStore.checksum != calculateSeqStoreChecksum(outStore)) return false;
+
+    uint16_t crc = calculateSeqStoreChecksum(outStore);
+    if (outStore.checksum != crc) {
+        // Fallback backward-compatible: cek legacy XOR checksum
+        uint16_t xor_cs = 0;
+        const uint8_t* p = reinterpret_cast<const uint8_t*>(&outStore);
+        constexpr size_t LEN = offsetof(MqttSeqStore, checksum);
+        for (size_t i = 0; i < LEN; i++) {
+            xor_cs ^= p[i];
+        }
+        if (outStore.checksum == xor_cs) {
+            // Migrasi otomatis ke CRC16 di EEPROM
+            saveCriticalSeqStore(outStore);
+        } else {
+            return false;
+        }
+    }
     if (outStore.count > 10) outStore.count = 10;
     return true;
 }
@@ -170,10 +186,25 @@ static std::atomic<size_t> s_statLastBatchPktCount{0};
 static std::atomic<uint32_t> s_statWireBytesAcc{0};
 static std::atomic<uint64_t> s_statTotalWireBytes{0};
 static std::atomic<float> s_statBandwidthKBps{0.0f};
+static uint32_t s_lastBwCalcMs = 0;
 
 static inline void recordWireBytes(uint32_t bytes) {
     s_statWireBytesAcc += bytes;
     s_statTotalWireBytes += bytes;
+}
+
+static size_t calculatePubackWireBytes() {
+    size_t mqttPubackLen = 4; // 2B MQTT Header (0x40, 0x02) + 2B MsgID
+    size_t tcpIpLen = 40;     // 20B IPv4 + 20B TCP
+    size_t l2Len = NetworkManager::isEthernetActive() ? 18 : 36;
+    return mqttPubackLen + tcpIpLen + l2Len;
+}
+
+static size_t calculateSubackWireBytes() {
+    size_t mqttSubackLen = 5; // 2B MQTT Header + 2B MsgID + 1B ReturnCode
+    size_t tcpIpLen = 40;     // 20B IPv4 + 20B TCP
+    size_t l2Len = NetworkManager::isEthernetActive() ? 18 : 36;
+    return mqttSubackLen + tcpIpLen + l2Len;
 }
 
 static void sanitizeToken(const char* input, char* output, size_t maxLen, bool forceLower = false) {
@@ -200,13 +231,13 @@ static size_t calculateWireBytes(size_t topicLen, size_t payloadLen, uint8_t qos
     size_t mqttTotal = fixHeaderLen + varLen;
     size_t tcpIpLen = 40; // 20B IPv4 + 20B TCP
     size_t l2Len = NetworkManager::isEthernetActive() ? 18 : 36;
-    size_t totalBytes = mqttTotal + tcpIpLen + l2Len;
-    if (qos > 0) totalBytes += (tcpIpLen + l2Len);
-    return totalBytes;
+    return mqttTotal + tcpIpLen + l2Len;
 }
 
-bool MqttService::buildBinaryPayload(const BeaconPacket& p, uint8_t* outBuf, size_t& outLen) {
+bool MqttService::buildBinaryPayload(const BeaconPacket& p, uint8_t* outBuf, size_t outBufMaxLen, size_t& outLen) {
+    if (!outBuf) return false;
     if (p.type == BeaconType::IBEACON) {
+        if (outBufMaxLen < 6) return false;
         outBuf[0] = 0x00;
         outBuf[1] = (uint8_t)(p.major >> 8);
         outBuf[2] = (uint8_t)(p.major & 0xFF);
@@ -216,6 +247,7 @@ bool MqttService::buildBinaryPayload(const BeaconPacket& p, uint8_t* outBuf, siz
         outLen = 6;
         return true;
     } else if (p.type == BeaconType::IBEACON_EXT || p.type == BeaconType::MINEW_B) {
+        if (outBufMaxLen < 7) return false;
         outBuf[0] = 0x01;
         outBuf[1] = (uint8_t)(p.major >> 8);
         outBuf[2] = (uint8_t)(p.major & 0xFF);
@@ -253,15 +285,117 @@ void MqttService::updateTopicNames() {
     ESP_LOGI(TAG, "  -> Heartbeat : %s", s_topicHeartbeat);
 }
 
+static void formatMqttDisconnectDetail(esp_mqtt_event_handle_t event, char* outBuf, size_t maxLen) {
+    if (!outBuf || maxLen == 0) return;
+    outBuf[0] = '\0';
+
+    if (!event || !event->error_handle) {
+        snprintf(outBuf, maxLen, "Sesi Dihentikan oleh Broker (TCP FIN)");
+        return;
+    }
+
+    if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
+        int sock_err = event->error_handle->esp_transport_sock_errno;
+        int tls_err = event->error_handle->esp_tls_last_esp_err;
+
+        switch (sock_err) {
+            case 104: // ECONNRESET
+                snprintf(outBuf, maxLen, "Koneksi Di-reset Paksa oleh Broker (ECONNRESET:104)");
+                break;
+            case 110: // ETIMEDOUT
+                snprintf(outBuf, maxLen, "Batas Waktu Respon Terlampaui (ETIMEDOUT:110)");
+                break;
+            case 113: // EHOSTUNREACH
+                snprintf(outBuf, maxLen, "Rute Host Broker Tidak Ditemukan (EHOSTUNREACH:113)");
+                break;
+            case 111: // ECONNREFUSED
+                snprintf(outBuf, maxLen, "Port Broker Menolak Koneksi (ECONNREFUSED:111)");
+                break;
+            case 32:  // EPIPE
+                snprintf(outBuf, maxLen, "Pipa Soket Komunikasi Terputus (EPIPE:32)");
+                break;
+            case 128: // ENOTCONN
+                snprintf(outBuf, maxLen, "Soket Tidak Terhubung ke Jaringan (ENOTCONN:128)");
+                break;
+            case 118: // EHOSTDOWN
+                snprintf(outBuf, maxLen, "Server Broker Tidak Aktif / Offline (EHOSTDOWN:118)");
+                break;
+            default:
+                if (tls_err != 0) {
+                    if (tls_err == 0x8001) {
+                        snprintf(outBuf, maxLen, "Gagal Resolusi Domain Broker (DNS Error: 0x8001)");
+                    } else {
+                        snprintf(outBuf, maxLen, "Kegagalan Enkripsi TLS Handshake (Error: 0x%04X)", tls_err);
+                    }
+                } else if (sock_err != 0) {
+                    snprintf(outBuf, maxLen, "Kegagalan Lapisan Transport TCP (Errno: %d)", sock_err);
+                } else {
+                    snprintf(outBuf, maxLen, "Sesi Dihentikan oleh Broker (TCP FIN / Keepalive Timeout)");
+                }
+                break;
+        }
+    } else if (event->error_handle->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
+        switch (event->error_handle->connect_return_code) {
+            case 1:
+                snprintf(outBuf, maxLen, "Versi Protokol MQTT Ditolak oleh Broker (Code 1)");
+                break;
+            case 2:
+                snprintf(outBuf, maxLen, "Client ID Ditolak oleh Broker (Code 2)");
+                break;
+            case 3:
+                snprintf(outBuf, maxLen, "Layanan Broker Tidak Tersedia / Overload (Code 3)");
+                break;
+            case 4:
+                snprintf(outBuf, maxLen, "Kredensial Ditolak: Username atau Password Salah (Code 4)");
+                break;
+            case 5:
+                snprintf(outBuf, maxLen, "Otorisasi Ditolak: Hak Akses ACL Dibatasi (Code 5)");
+                break;
+            default:
+                snprintf(outBuf, maxLen, "Koneksi Ditolak oleh Broker (Return Code: %d)", event->error_handle->connect_return_code);
+                break;
+        }
+    } else {
+        snprintf(outBuf, maxLen, "Sesi Dihentikan oleh Broker (TCP FIN / Keepalive Timeout)");
+    }
+}
+
+static void formatMqttErrorDetail(esp_mqtt_event_handle_t event, char* outBuf, size_t maxLen) {
+    if (!outBuf || maxLen == 0) return;
+    outBuf[0] = '\0';
+    if (event && event->error_handle) {
+        if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
+            int sock_err = event->error_handle->esp_transport_sock_errno;
+            int tls_err = event->error_handle->esp_tls_last_esp_err;
+            if (tls_err != 0) {
+                if (tls_err == 0x8001) {
+                    snprintf(outBuf, maxLen, "Gagal Resolusi Domain Broker (DNS Error: 0x8001, sock_errno: %d)", sock_err);
+                } else {
+                    snprintf(outBuf, maxLen, "Kegagalan Handshake TLS (Error: 0x%04X, sock_errno: %d)", tls_err, sock_err);
+                }
+            } else if (sock_err != 0) {
+                snprintf(outBuf, maxLen, "Kegagalan Lapisan Transport TCP (sock_errno: %d)", sock_err);
+            } else {
+                snprintf(outBuf, maxLen, "Kegagalan Lapisan Transport TCP");
+            }
+            return;
+        }
+    }
+    snprintf(outBuf, maxLen, "Anomali Parsing Frame Paket Protokol MQTT");
+}
+
 void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void* data) {
     esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)data;
 
     switch ((esp_mqtt_event_id_t)id) {
         case MQTT_EVENT_CONNECTED: {
             s_mqttConnected = true;
-            strncpy(s_lastError, "Connected", sizeof(s_lastError));
+            strlcpy(s_lastError, "Connected", sizeof(s_lastError));
             ESP_LOGI(TAG, "Terhubung ke broker MQTT!");
             Bsp::LedManager::setComState(ComLedState::NORMAL);
+
+            // Bersihkan antrean lama saat booting/offline agar tidak menimbulkan drop TTL palsu
+            Core::BeaconPipeline::flushQueue();
 
             // 1. Kirim Birth Message (QoS 1, Retain 1)
             char ip_str[16];
@@ -288,25 +422,18 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
             publishHeartbeat();
 
             char det[128];
-            snprintf(det, sizeof(det), "Broker: %s:%d | ID: %s", g_config.mqtt_host, g_config.mqtt_port, device_id);
+            const char* scheme = g_config.mqtt_use_ssl ? "mqtts" : "mqtt";
+            snprintf(det, sizeof(det), "Broker: %s://%s:%d | ID: %s", scheme, g_config.mqtt_host, g_config.mqtt_port, device_id);
             NetLogService::log(NetCategory::MQTT, NetEvent::CONNECTED, det);
             break;
         }
 
         case MQTT_EVENT_DISCONNECTED: {
             s_mqttConnected = false;
-            strncpy(s_lastError, "Disconnected", sizeof(s_lastError));
+            strlcpy(s_lastError, "Disconnected", sizeof(s_lastError));
             ESP_LOGW(TAG, "Terputus dari broker MQTT!");
-            char det[128];
-            if (event->error_handle && event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
-                snprintf(det, sizeof(det), "TCP Err: sock_errno=%d, tls_err=0x%x",
-                         event->error_handle->esp_transport_sock_errno,
-                         event->error_handle->esp_tls_last_esp_err);
-            } else if (event->error_handle && event->error_handle->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
-                snprintf(det, sizeof(det), "Conn Refused: code=%d", event->error_handle->connect_return_code);
-            } else {
-                snprintf(det, sizeof(det), "Terputus dari broker MQTT");
-            }
+            char det[80];
+            formatMqttDisconnectDetail(event, det, sizeof(det));
             NetLogService::log(NetCategory::MQTT, NetEvent::DISCONNECTED, det);
             if (NetworkManager::isConnected()) {
                 Bsp::LedManager::setComState(ComLedState::MQTT_OFFLINE);
@@ -315,12 +442,25 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
         }
 
         case MQTT_EVENT_PUBLISHED:
-            // Broker berhasil menerima data dan mengirimkan PUBACK (QoS 1 Ack)
+            // Broker berhasil menerima data dan mengirimkan PUBACK (QoS 1 Ack downlink feedback)
             ESP_LOGD(TAG, "PUBACK diterima dari broker untuk MsgID=%d", event->msg_id);
+            recordWireBytes(calculatePubackWireBytes());
+            break;
+
+        case MQTT_EVENT_SUBSCRIBED:
+            ESP_LOGD(TAG, "SUBACK diterima dari broker untuk MsgID=%d", event->msg_id);
+            recordWireBytes(calculateSubackWireBytes());
             break;
 
         case MQTT_EVENT_DATA: {
             if (event->topic && event->topic_len > 0) {
+                // Catat downlink wire bytes dari broker (termasuk TCP/IP dan MAC overhead)
+                size_t varLen = 2 + event->topic_len + event->data_len;
+                size_t fixHeaderLen = 1 + (varLen < 128 ? 1 : ((varLen < 16384) ? 2 : 3));
+                size_t tcpIpLen = 40;
+                size_t l2Len = NetworkManager::isEthernetActive() ? 18 : 36;
+                recordWireBytes(fixHeaderLen + varLen + tcpIpLen + l2Len);
+
                 // Exact topic matching untuk mencegah sub-topic collision (VULN-SEC-08)
                 if (event->topic_len == strlen(s_topicCmd) && strncmp(event->topic, s_topicCmd, event->topic_len) == 0) {
                     char payload[384] = {0};
@@ -328,11 +468,19 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
                     memcpy(payload, event->data, copyLen);
                     ESP_LOGI(TAG, "Perintah MQTT Diterima: %s", payload);
 
+                    auto pubResponse = [](const char* resBuf) {
+                        int mId = esp_mqtt_client_publish(s_mqttClient, s_topicRes, resBuf, strlen(resBuf), 1, 0);
+                        if (mId >= 0) {
+                            recordWireBytes(calculateWireBytes(strlen(s_topicRes), strlen(resBuf), 1));
+                        }
+                        return mId;
+                    };
+
                     cJSON *root = cJSON_Parse(payload);
                     if (!root) {
                         char errBuf[96];
                         snprintf(errBuf, sizeof(errBuf), "{\"res\":\"err\",\"code\":1,\"seq\":0}");
-                        esp_mqtt_client_publish(s_mqttClient, s_topicRes, errBuf, strlen(errBuf), 1, 0);
+                        pubResponse(errBuf);
                         break;
                     }
 
@@ -344,7 +492,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
                         uint32_t fallbackSeq = (seqItem && cJSON_IsNumber(seqItem)) ? (uint32_t)seqItem->valuedouble : 0;
                         char errBuf[96];
                         snprintf(errBuf, sizeof(errBuf), "{\"res\":\"err\",\"code\":1,\"seq\":%u}", (unsigned int)fallbackSeq);
-                        esp_mqtt_client_publish(s_mqttClient, s_topicRes, errBuf, strlen(errBuf), 1, 0);
+                        pubResponse(errBuf);
                         cJSON_Delete(root);
                         break;
                     }
@@ -358,7 +506,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
                         ESP_LOGW(TAG, "Otentikasi perintah MQTT GAGAL! cmd='%s', seq=%u", cmdStr, (unsigned int)seqVal);
                         char errBuf[128];
                         snprintf(errBuf, sizeof(errBuf), "{\"res\":\"err\",\"code\":2,\"cmd\":\"%s\",\"seq\":%u}", cmdStr, (unsigned int)seqVal);
-                        esp_mqtt_client_publish(s_mqttClient, s_topicRes, errBuf, strlen(errBuf), 1, 0);
+                        pubResponse(errBuf);
                         cJSON_Delete(root);
                         break;
                     }
@@ -369,7 +517,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
                         ESP_LOGW(TAG, "Perintah MQTT Ditolak: Duplicate Sequence #%u terdeteksi!", (unsigned int)seqVal);
                         char errBuf[128];
                         snprintf(errBuf, sizeof(errBuf), "{\"res\":\"err\",\"code\":3,\"cmd\":\"%s\",\"seq\":%u}", cmdStr, (unsigned int)seqVal);
-                        esp_mqtt_client_publish(s_mqttClient, s_topicRes, errBuf, strlen(errBuf), 1, 0);
+                        pubResponse(errBuf);
                         cJSON_Delete(root);
                         break;
                     }
@@ -380,25 +528,25 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
                         char resBuf[160];
                         snprintf(resBuf, sizeof(resBuf), "{\"res\":\"ok\",\"code\":0,\"cmd\":\"ping\",\"seq\":%u,\"timestamp\":%u}",
                                  (unsigned int)seqVal, (unsigned int)nowMs);
-                        esp_mqtt_client_publish(s_mqttClient, s_topicRes, resBuf, strlen(resBuf), 1, 0);
+                        pubResponse(resBuf);
                     } else if (strcmp(cmdStr, "identify") == 0) {
                         Bsp::LedManager::triggerIdentify(3000);
                         char resBuf[128];
                         snprintf(resBuf, sizeof(resBuf), "{\"res\":\"ok\",\"code\":0,\"cmd\":\"identify\",\"seq\":%u}", (unsigned int)seqVal);
-                        esp_mqtt_client_publish(s_mqttClient, s_topicRes, resBuf, strlen(resBuf), 1, 0);
+                        pubResponse(resBuf);
                     } else if (strcmp(cmdStr, "reboot") == 0) {
                         char resBuf[128];
                         snprintf(resBuf, sizeof(resBuf), "{\"res\":\"ok\",\"code\":0,\"cmd\":\"reboot\",\"seq\":%u}", (unsigned int)seqVal);
-                        esp_mqtt_client_publish(s_mqttClient, s_topicRes, resBuf, strlen(resBuf), 1, 0);
+                        pubResponse(resBuf);
                         // Jalankan reboot di task terpisah dengan jeda 1000ms agar MQTT response ter-flush tuntas
-                        xTaskCreate([](void*) {
+                        xTaskCreatePinnedToCore([](void*) {
                             vTaskDelay(pdMS_TO_TICKS(1000));
                             esp_restart();
-                        }, "reboot_task", 3072, nullptr, 5, nullptr);
+                        }, "reboot_task", 3072, nullptr, 5, nullptr, 1);
                     } else {
                         char errBuf[128];
                         snprintf(errBuf, sizeof(errBuf), "{\"res\":\"err\",\"code\":4,\"cmd\":\"%s\",\"seq\":%u}", cmdStr, (unsigned int)seqVal);
-                        esp_mqtt_client_publish(s_mqttClient, s_topicRes, errBuf, strlen(errBuf), 1, 0);
+                        pubResponse(errBuf);
                     }
 
                     cJSON_Delete(root);
@@ -407,11 +555,14 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
             break;
         }
 
-        case MQTT_EVENT_ERROR:
-            strncpy(s_lastError, "MQTT Protocol/Socket Error", sizeof(s_lastError));
+        case MQTT_EVENT_ERROR: {
+            strlcpy(s_lastError, "MQTT Protocol/Socket Error", sizeof(s_lastError));
             ESP_LOGE(TAG, "MQTT Event Error terdeteksi!");
-            NetLogService::log(NetCategory::MQTT, NetEvent::ERROR_EVT, "MQTT Protocol / Socket Error");
+            char detErr[80];
+            formatMqttErrorDetail(event, detErr, sizeof(detErr));
+            NetLogService::log(NetCategory::MQTT, NetEvent::ERROR_EVT, detErr);
             break;
+        }
 
         default:
             break;
@@ -427,10 +578,26 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
     for (;;) {
         uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
 
+        // 0. Kalibrasi Laju Bandwidth per Detik Riil (Rolling 1000ms Sampling Window)
+        if (s_lastBwCalcMs == 0) {
+            s_lastBwCalcMs = now;
+        } else {
+            uint32_t deltaMs = now - s_lastBwCalcMs;
+            if (deltaMs >= 1000) {
+                uint32_t bytesInWindow = s_statWireBytesAcc.exchange(0);
+                float kbps = ((float)bytesInWindow / 1024.0f) / ((float)deltaMs / 1000.0f);
+                s_statBandwidthKBps.store(kbps, std::memory_order_relaxed);
+                s_lastBwCalcMs = now;
+            }
+        }
+
         // 1. Cek konektivitas jaringan
         if (!NetworkManager::isConnected()) {
-            batchLen = 0;
-            batchCount = 0;
+            if (batchCount > 0) {
+                Core::BeaconPipeline::recordMqttFailed(batchCount);
+                batchLen = 0;
+                batchCount = 0;
+            }
             vTaskDelay(pdMS_TO_TICKS(200));
             continue;
         }
@@ -442,8 +609,11 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
 
         // 2. Cek konektivitas MQTT
         if (!s_mqttConnected) {
-            batchLen = 0;
-            batchCount = 0;
+            if (batchCount > 0) {
+                Core::BeaconPipeline::recordMqttFailed(batchCount);
+                batchLen = 0;
+                batchCount = 0;
+            }
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
@@ -453,12 +623,13 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
         while (bQueue != nullptr && xQueueReceive(bQueue, &packet, 0) == pdTRUE) {
             uint32_t age = now - packet.timestamp;
             if (g_config.data_ttl > 0 && age > (uint32_t)g_config.data_ttl) {
-                continue; // Buang paket kadaluarsa
+                Core::BeaconPipeline::recordDroppedBeacon(packet, DropReason::TTL_EXPIRED);
+                continue; // Buang paket kadaluarsa dan catat ke DropLog
             }
 
             uint8_t binBuffer[16];
             size_t binLen = 0;
-            if (buildBinaryPayload(packet, binBuffer, binLen)) {
+            if (buildBinaryPayload(packet, binBuffer, sizeof(binBuffer), binLen)) {
                 // Periksa apakah batch saat ini sudah penuh sebelum menambah item baru
                 if ((batchLen + binLen > MQTT_BATCH_BUFFER_SIZE) ||
                     (batchCount >= (size_t)g_config.batch_max)) {
@@ -486,6 +657,9 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                 memcpy(s_batchBuffer + batchLen, binBuffer, binLen);
                 batchLen += binLen;
                 batchCount++;
+            } else {
+                // Tipe payload tidak valid/korup
+                Core::BeaconPipeline::recordDroppedBeacon(packet, DropReason::TTL_EXPIRED);
             }
         }
 
@@ -534,7 +708,8 @@ void MqttService::init() {
 
     if (strlen(g_config.mqtt_host) > 0 && g_config.mqtt_port > 0) {
         char mqttUri[128];
-        snprintf(mqttUri, sizeof(mqttUri), "mqtt://%s:%d", g_config.mqtt_host, g_config.mqtt_port);
+        const char* scheme = g_config.mqtt_use_ssl ? "mqtts" : "mqtt";
+        snprintf(mqttUri, sizeof(mqttUri), "%s://%s:%d", scheme, g_config.mqtt_host, g_config.mqtt_port);
 
         char client_id[32];
         Core::ConfigStore::getDeviceId(client_id, sizeof(client_id));
@@ -549,28 +724,34 @@ void MqttService::init() {
             mqtt_cfg.credentials.authentication.password = g_config.mqtt_password;
         }
 
+        if (g_config.mqtt_use_ssl) {
+            mqtt_cfg.broker.verification.crt_bundle_attach = esp_crt_bundle_attach;
+        }
+
         mqtt_cfg.session.last_will.topic = s_topicStatus;
         mqtt_cfg.session.last_will.msg = "{\"status\":\"offline\"}";
         mqtt_cfg.session.last_will.msg_len = 20;
         mqtt_cfg.session.last_will.qos = 1;
         mqtt_cfg.session.last_will.retain = 1;
-        mqtt_cfg.session.keepalive = 15;
-        mqtt_cfg.session.message_retransmit_timeout = 500;
-        mqtt_cfg.network.reconnect_timeout_ms = 500;
+        mqtt_cfg.session.keepalive = 30;
+        mqtt_cfg.network.reconnect_timeout_ms = 3000;
         mqtt_cfg.network.timeout_ms = 5000;
-        mqtt_cfg.network.tcp_keep_alive_cfg.keep_alive_enable = false;
         mqtt_cfg.buffer.size = 4096;
         mqtt_cfg.buffer.out_size = 4096;
         mqtt_cfg.outbox.limit = 4096;
         mqtt_cfg.task.priority = 6;
-        mqtt_cfg.task.stack_size = 6144;
+        mqtt_cfg.task.stack_size = 8192;
 
         s_mqttClient = esp_mqtt_client_init(&mqtt_cfg);
-        esp_mqtt_client_register_event(s_mqttClient, MQTT_EVENT_ANY, &onMqttEvent, nullptr);
+        if (s_mqttClient == nullptr) {
+            ESP_LOGE(TAG, "Gagal menginisialisasi esp_mqtt_client untuk URI: %s", mqttUri);
+        } else {
+            esp_mqtt_client_register_event(s_mqttClient, MQTT_EVENT_ANY, &onMqttEvent, nullptr);
 
-        if (NetworkManager::isConnected()) {
-            esp_mqtt_client_start(s_mqttClient);
-            s_mqttStarted = true;
+            if (NetworkManager::isConnected()) {
+                esp_mqtt_client_start(s_mqttClient);
+                s_mqttStarted = true;
+            }
         }
     } else {
         ESP_LOGW(TAG, "MQTT Broker Host belum dikonfigurasi.");
@@ -584,8 +765,14 @@ bool MqttService::isConnected() { return s_mqttConnected; }
 
 void MqttService::forceReconnect() {
     if (s_mqttClient != nullptr) {
-        ESP_LOGI(TAG, "Memicu force reconnect MQTT seketika (ala PubSubClient)...");
-        esp_mqtt_client_reconnect(s_mqttClient);
+        if (!s_mqttStarted) {
+            ESP_LOGI(TAG, "Memulai MQTT client pada koneksi jaringan pertama...");
+            esp_mqtt_client_start(s_mqttClient);
+            s_mqttStarted = true;
+        } else {
+            ESP_LOGI(TAG, "Memicu force reconnect MQTT seketika (ala PubSubClient)...");
+            esp_mqtt_client_reconnect(s_mqttClient);
+        }
     }
 }
 
@@ -637,9 +824,7 @@ void MqttService::publishHeartbeat() {
 }
 
 float MqttService::getBandwidthKBps() {
-    uint32_t bytesSec = s_statWireBytesAcc.exchange(0);
-    s_statBandwidthKBps = (float)bytesSec / 1024.0f;
-    return s_statBandwidthKBps;
+    return s_statBandwidthKBps.load(std::memory_order_relaxed);
 }
 
 uint64_t MqttService::getTotalWireBytes() {

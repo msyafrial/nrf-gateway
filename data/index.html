@@ -4,8 +4,846 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IOTARU %model% - Overview</title>
-  <link rel="stylesheet" href="assets/css/app.css">
+  <link rel="stylesheet" href="assets/css/app.css?v=1.0.7">
   <script src="assets/js/swal-lite.js"></script>
+<style>
+  .ap-banner-card {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.88) 100%);
+    border: 1px solid rgba(59, 130, 246, 0.45);
+    box-shadow: 0 8px 24px rgba(2, 132, 199, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(12px);
+    border-radius: 12px;
+    padding: 12px 18px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .ap-banner-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 4px;
+    background: linear-gradient(180deg, #38bdf8, #0284c7);
+  }
+  .ap-banner-left { display: flex; align-items: center; gap: 14px; }
+  .ap-pulse-ring { position: relative; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
+  .ap-pulse-dot { width: 10px; height: 10px; border-radius: 50%; background: #0284c7; box-shadow: 0 0 10px #38bdf8; z-index: 2; }
+  .ap-pulse-ring::after {
+    content: "";
+    position: absolute;
+    width: 100%; height: 100%;
+    border-radius: 50%;
+    background: #38bdf8;
+    animation: apPulseAnim 1.6s ease-out infinite;
+    z-index: 1;
+  }
+  @keyframes apPulseAnim {
+    0% { transform: scale(0.95); opacity: 0.8; }
+    70% { transform: scale(2.4); opacity: 0; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+  .ap-banner-text { display: flex; flex-direction: column; gap: 2px; }
+  .ap-banner-title { font-size: 0.95rem; font-weight: 600; color: #f8fafc; letter-spacing: 0.2px; }
+  .ap-banner-subtitle { font-size: 0.82rem; color: #94a3b8; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ap-banner-subtitle strong { color: #38bdf8; font-weight: 600; }
+  .ap-timer-pill {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    padding: 1px 8px;
+    border-radius: 9999px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    font-family: monospace;
+  }
+  .btn-ap-stop {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: rgba(249, 115, 22, 0.15);
+    border: 1px solid rgba(249, 115, 22, 0.4);
+    color: #fb923c;
+    border-radius: 8px;
+    font-size: 0.84rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+  .btn-ap-stop:hover {
+    background: rgba(249, 115, 22, 0.28);
+    border-color: rgba(249, 115, 22, 0.7);
+    color: #fdba74;
+    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25);
+    transform: translateY(-1px);
+  }
+  @media (max-width: 640px) {
+    .ap-banner-card { flex-direction: column; align-items: stretch; gap: 12px; }
+    .btn-ap-stop { width: 100%; justify-content: center; }
+  }
+
+  /* ========================================================================= */
+  /* SG-10 OVERVIEW BENTO GRID & DUAL INTERFACE SYSTEM (2026 CYBERNETIC DARK)  */
+  /* ========================================================================= */
+  .content {
+    max-width: 1440px !important;
+    width: 100% !important;
+    padding: 24px 28px 28px 28px !important;
+  }
+
+  /* 1. SLIM TOP HEADER CARD */
+  .sg-header-card {
+    background: #0d121f;
+    border: 1px solid #1a2333;
+    border-radius: 14px;
+    padding: 16px 22px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+
+  .sg-header-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+  }
+  .sg-chip-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    background: rgba(30, 58, 138, 0.25);
+    border: 1px solid rgba(59, 130, 246, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #60a5fa;
+    flex-shrink: 0;
+  }
+  .sg-title-group {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  @media (min-width: 640px) {
+    .sg-title-group {
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+    }
+  }
+  .sg-title {
+    font-size: 1.08rem;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    margin: 0;
+    line-height: 1.2;
+  }
+  .sg-title-dot {
+    display: none;
+    color: #475569;
+    font-size: 1rem;
+  }
+  @media (min-width: 640px) {
+    .sg-title-dot {
+      display: inline;
+    }
+  }
+  .sg-subtitle {
+    font-size: 0.88rem;
+    color: #94a3b8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin: 0;
+  }
+
+  /* 2. BENTO MAIN GRID */
+  .sg-bento-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+    width: 100%;
+    margin-bottom: 20px;
+  }
+  @media (min-width: 1080px) {
+    .sg-bento-grid {
+      grid-template-columns: minmax(340px, 36%) 1fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+  }
+
+  /* PANEL KIRI (IDENTITAS & SISTEM) */
+  .sg-panel-left {
+    background: #0d121f;
+    border: 1px solid #1a2333;
+    border-radius: 16px;
+    padding: 24px 26px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  /* PANEL KANAN (STATUS & KONEKTIVITAS) */
+  .sg-panel-right {
+    background: #0d121f;
+    border: 1px solid #1a2333;
+    border-radius: 16px;
+    padding: 24px 26px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 16px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  /* PANEL HEADERS (SEAMLESS CLEAN HEADER, NO DIVIDER) */
+  .sg-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 6px;
+    margin-bottom: 12px;
+    gap: 12px;
+  }
+  @media (max-width: 640px) {
+    .sg-card-header {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+    }
+  }
+  .sg-card-title-group {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+  }
+  .sg-card-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .sg-card-icon.navy {
+    background: rgba(26, 36, 54, 0.7);
+    border: 1px solid rgba(51, 65, 85, 0.6);
+    color: #94a3b8;
+  }
+  .sg-card-header h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 0;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+  }
+  .sg-card-header p {
+    font-size: 0.84rem;
+    color: #8191a6;
+    margin: 3px 0 0 0;
+  }
+
+  /* SINGLE MODE BADGE PILL (CAPSULE PILL) */
+  .sg-net-header-badges {
+    display: flex;
+    align-items: center;
+  }
+  @media (max-width: 640px) {
+    .sg-net-header-badges {
+      width: 100%;
+    }
+    .sg-net-header-badges .sg-badge-pill {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+  .sg-badge-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 18px;
+    border-radius: 9999px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    min-width: 0;
+    transition: all 0.2s ease;
+  }
+  .sg-badge-pill.mode-wifi {
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.45);
+    color: #10b981;
+  }
+  .sg-badge-pill.mode-eth {
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.45);
+    color: #60a5fa;
+  }
+  .sg-badge-pill.mode-smart {
+    background: rgba(168, 85, 247, 0.1);
+    border: 1px solid rgba(168, 85, 247, 0.45);
+    color: #c084fc;
+  }
+  .sg-dot {
+    font-size: 0.78rem;
+    line-height: 1;
+    display: inline-block;
+  }
+
+  /* KEY-VALUE ROWS (LEFT PANEL) */
+  .sg-kv-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .sg-kv-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    gap: 12px;
+  }
+  .sg-kv-row:last-child {
+    border-bottom: none;
+  }
+  .sg-kv-label {
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: #94a3b8;
+    flex-shrink: 0;
+  }
+  .sg-kv-value {
+    font-weight: 700;
+    color: #ffffff;
+    font-size: 0.96rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .sg-chip-code {
+    background: #141c2c;
+    border: 1px solid #233148;
+    border-radius: 8px;
+    padding: 5px 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.90rem;
+    font-weight: 700;
+    color: #ffffff;
+  }
+
+  /* COPY BUTTON */
+  .sg-copy-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+  .sg-copy-btn:hover {
+    background: #1e293b;
+    color: #ffffff;
+  }
+  .sg-copy-btn:active {
+    transform: scale(0.9);
+  }
+
+  /* TRIPLE VERSION TILES */
+  .sg-version-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: auto;
+    margin-bottom: 6px;
+    padding-top: 0;
+    border-top: none;
+  }
+  .sg-version-tile {
+    background: #090e18;
+    border: 1px solid #1a2333;
+    border-radius: 10px;
+    padding: 10px 6px;
+    text-align: center;
+  }
+  .sg-version-tile-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #8191a6;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sg-version-tile-val {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 1.02rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin-top: 3px;
+  }
+
+  /* SUBCARDS GRID & INTERFACES (WI-FI & ETHERNET) */
+  .sg-subcards-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin-top: 10px;
+  }
+  @media (min-width: 680px) {
+    .sg-subcards-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+  }
+
+  .sg-interface-card {
+    background: #090e18;
+    border: 1px solid #1a2333;
+    border-radius: 14px;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.2s ease;
+    min-width: 0;
+  }
+  .sg-interface-card.active-online,
+  .sg-interface-card.active-wifi,
+  .sg-interface-card.active-eth {
+    border-color: rgba(16, 185, 129, 0.4);
+  }
+  .sg-interface-card.link-down {
+    border-color: #1a2333;
+  }
+
+  /* Subcard Header */
+  .sg-subcard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    gap: 8px;
+  }
+  .sg-subcard-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .sg-subcard-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .sg-subcard-icon.emerald {
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #10b981;
+  }
+  .sg-subcard-icon.blue {
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    color: #60a5fa;
+  }
+  .sg-subcard-icon.slate {
+    background: rgba(30, 41, 59, 0.6);
+    border: 1px solid rgba(51, 65, 85, 0.5);
+    color: #8191a6;
+  }
+  .sg-subcard-icon.cyan {
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    color: #38bdf8;
+  }
+  .sg-subcard-title-wrap {
+    min-width: 0;
+  }
+  .sg-subcard-title-wrap h4 {
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 0;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .sg-subcard-role {
+    font-size: 0.80rem;
+    font-weight: 400;
+    display: block;
+    margin-top: 2px;
+    color: #8191a6;
+    white-space: nowrap;
+  }
+
+  /* Subcard Status Badges */
+  .sg-subcard-status-badge {
+    padding: 3px 9px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .sg-subcard-status-badge.active {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+  }
+  .sg-subcard-status-badge.amber {
+    background: rgba(245, 158, 11, 0.12);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.38);
+  }
+  .sg-subcard-status-badge.slate {
+    background: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+  }
+
+  /* Subcard Data Rows (Clean Divided Rows) */
+  .sg-subcard-data {
+    display: flex;
+    flex-direction: column;
+  }
+  .sg-subcard-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    gap: 8px;
+  }
+  .sg-subcard-row:last-child {
+    border-bottom: none;
+    padding-bottom: 2px;
+  }
+  .sg-subcard-label {
+    font-size: 0.86rem;
+    font-weight: 500;
+    color: #94a3b8;
+    flex-shrink: 0;
+  }
+  .sg-subcard-val-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .sg-subcard-val {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-weight: 700;
+    font-size: 0.94rem;
+    color: #ffffff;
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+  }
+  .sg-subcard-val.slate-mac {
+    color: #f1f5f9;
+    font-size: 0.90rem;
+  }
+  .sg-subcard-val.unassigned {
+    font-weight: 400;
+    color: #64748b;
+    font-size: 0.88rem;
+  }
+  .sg-subcard-val.amber, .sg-subcard-link-text.amber {
+    color: #f59e0b;
+    font-weight: 700;
+    font-size: 0.94rem;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  /* Signal Bars */
+  .sg-signal-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 14px;
+    margin-right: 2px;
+  }
+  .sg-signal-bar {
+    width: 3.5px;
+    border-radius: 1px;
+    background: #1e293b;
+  }
+  .sg-signal-bar.on {
+    background: #10b981;
+  }
+  .sg-signal-bar:nth-child(1) { height: 4px; }
+  .sg-signal-bar:nth-child(2) { height: 7px; }
+  .sg-signal-bar:nth-child(3) { height: 10px; }
+  .sg-signal-bar:nth-child(4) { height: 14px; }
+
+  /* 3. SLIM MQTT TELEMETRY CARD */
+  .sg-mqtt-card {
+    margin-top: 14px;
+    padding: 13px 18px;
+    border-radius: 12px;
+    background: #090e18;
+    border: 1px solid #1a2333;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: all 0.2s ease;
+  }
+  .sg-mqtt-card.active-online,
+  .sg-mqtt-card.active-mqtt {
+    border-color: rgba(16, 185, 129, 0.4);
+  }
+  .sg-mqtt-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding-bottom: 9px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+  .sg-mqtt-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .sg-mqtt-header-left h4 {
+    font-size: 0.90rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 0;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .sg-mqtt-role {
+    font-size: 0.76rem;
+    color: #8191a6;
+    margin-left: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  @media (max-width: 640px) {
+    .sg-mqtt-role {
+      display: none;
+    }
+  }
+
+  /* Responsive 2-Tier Mobile Grid / 3-Column Desktop Grid */
+  .sg-mqtt-data-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+  }
+  .sg-mqtt-col {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+  }
+  .sg-mqtt-col-host {
+    grid-column: 1 / -1;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .sg-mqtt-col-label {
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: #8191a6;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  .sg-mqtt-col-val {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.90rem;
+    font-weight: 700;
+    color: #ffffff;
+    min-width: 0;
+    width: 100%;
+  }
+  .sg-mqtt-col-host .sg-mqtt-col-val {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 8px;
+  }
+  .sg-mqtt-col-host .sg-mqtt-col-val span {
+    word-break: break-all;
+    white-space: normal;
+    line-height: 1.35;
+    overflow: visible;
+    text-overflow: clip;
+    font-size: 0.88rem;
+  }
+  .sg-mqtt-col-val span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  @media (min-width: 680px) {
+    .sg-mqtt-data-grid {
+      grid-template-columns: 1.6fr 0.9fr 1.2fr;
+      gap: 16px;
+      align-items: center;
+    }
+    .sg-mqtt-col-host {
+      grid-column: auto;
+    }
+    .sg-mqtt-col-host .sg-mqtt-col-val {
+      justify-content: flex-start;
+    }
+    .sg-mqtt-col-host .sg-mqtt-col-val span {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 0.90rem;
+    }
+  }
+
+  /* 4. TOAST NOTIFICATION */
+  .sg-toast {
+    position: fixed;
+    bottom: calc(var(--bottom-nav-h, 64px) + 16px);
+    left: 16px;
+    right: 16px;
+    z-index: 999;
+    transform: translateY(20px);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    justify-content: center;
+  }
+  @media (min-width: 640px) {
+    .sg-toast {
+      bottom: 24px;
+      right: 24px;
+      left: auto;
+      justify-content: flex-end;
+    }
+  }
+  .sg-toast.show {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .sg-toast-box {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 500;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  }
+
+  /* 4. MOBILE VIEWPORT ADAPTATIONS (< 640px) */
+  @media (max-width: 640px) {
+    .content {
+      padding: 16px 12px !important;
+    }
+    .sg-header-card {
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }
+    .sg-panel-left, .sg-panel-right {
+      padding: 18px 14px;
+      border-radius: 14px;
+    }
+    .sg-interface-card {
+      padding: 16px 14px;
+    }
+    .sg-subcard-header {
+      padding-bottom: 10px;
+    }
+    .sg-subcard-title-wrap h4 {
+      font-size: 0.92rem;
+    }
+    .sg-subcard-role {
+      font-size: 0.76rem;
+    }
+    .sg-subcard-status-badge {
+      font-size: 0.70rem;
+      padding: 2px 7px;
+    }
+    .sg-subcard-row {
+      padding: 12px 0;
+    }
+    .sg-subcard-label {
+      font-size: 0.82rem;
+    }
+    .sg-subcard-val {
+      font-size: 0.88rem;
+    }
+    .sg-version-grid {
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .sg-version-tile {
+      padding: 10px 4px;
+    }
+    .sg-version-tile-val {
+      font-size: 0.94rem;
+    }
+    .sg-kv-row {
+      padding: 12px 0;
+    }
+    .sg-kv-label {
+      font-size: 0.82rem;
+    }
+    .sg-kv-value {
+      font-size: 0.90rem;
+    }
+    .sg-mqtt-card {
+      padding: 12px 14px;
+      gap: 8px;
+    }
+    .sg-mqtt-col-label {
+      font-size: 0.76rem;
+    }
+    .sg-mqtt-col-val {
+      font-size: 0.86rem;
+    }
+  }
+</style>
 </head>
 <body>
   <div class="wrapper">
@@ -87,11 +925,11 @@
           <a href="/" class="mobile-logo-link">
             <img src="assets/img/logo.png" alt="IOTARU" class="mobile-logo-img">
           </a>
-          <span class="navbar-brand">Overview Gateway</span>
+          <span class="navbar-brand">Gateway Overview</span>
         </div>
         <a href="/logout" class="mobile-logout-btn" id="mobileLogoutBtn" title="Logout">
           <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          <span>Keluar</span>
+          <span>Logout</span>
         </a>
       </header>
 
@@ -104,109 +942,27 @@
             <line x1="12" y1="9" x2="12" y2="13"/>
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
-          <span>Perubahan jaringan tersimpan di NVS. Reboot diperlukan untuk mengaktifkan ke hardware.</span>
+          <span>Network configuration changes saved to NVS. Reboot required to apply to hardware.</span>
         </div>
         <div class="pending-banner-actions">
-          <button type="button" class="btn-banner-reboot" onclick="triggerRebootNow()">Reboot Sekarang</button>
-          <button type="button" class="btn-banner-discard" onclick="discardPendingNetworkChanges()">Batalkan</button>
+          <button type="button" class="btn-banner-reboot" onclick="triggerRebootNow()">Reboot Now</button>
+          <button type="button" class="btn-banner-discard" onclick="discardPendingNetworkChanges()">Discard</button>
         </div>
       </div>
 
 <!-- ================= AP MODE CONFIG BANNER COMPONENT ================= -->
-<style>
-  .ap-banner-card {
-    display: none;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.88) 100%);
-    border: 1px solid rgba(59, 130, 246, 0.45);
-    box-shadow: 0 8px 24px rgba(2, 132, 199, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(12px);
-    border-radius: 12px;
-    padding: 12px 18px;
-    margin-bottom: 20px;
-    position: relative;
-    overflow: hidden;
-  }
-  .ap-banner-card::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; bottom: 0;
-    width: 4px;
-    background: linear-gradient(180deg, #38bdf8, #0284c7);
-  }
-  .ap-banner-left { display: flex; align-items: center; gap: 14px; }
-  .ap-pulse-ring { position: relative; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
-  .ap-pulse-dot { width: 10px; height: 10px; border-radius: 50%; background: #0284c7; box-shadow: 0 0 10px #38bdf8; z-index: 2; }
-  .ap-pulse-ring::after {
-    content: "";
-    position: absolute;
-    width: 100%; height: 100%;
-    border-radius: 50%;
-    background: #38bdf8;
-    animation: apPulseAnim 1.6s ease-out infinite;
-    z-index: 1;
-  }
-  @keyframes apPulseAnim {
-    0% { transform: scale(0.95); opacity: 0.8; }
-    70% { transform: scale(2.4); opacity: 0; }
-    100% { transform: scale(2.4); opacity: 0; }
-  }
-  .ap-banner-text { display: flex; flex-direction: column; gap: 2px; }
-  .ap-banner-title { font-size: 0.95rem; font-weight: 600; color: #f8fafc; letter-spacing: 0.2px; }
-  .ap-banner-subtitle { font-size: 0.82rem; color: #94a3b8; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .ap-banner-subtitle strong { color: #38bdf8; font-weight: 600; }
-  .ap-timer-pill {
-    background: rgba(56, 189, 248, 0.15);
-    color: #38bdf8;
-    border: 1px solid rgba(56, 189, 248, 0.3);
-    padding: 1px 8px;
-    border-radius: 9999px;
-    font-size: 0.76rem;
-    font-weight: 600;
-    font-family: monospace;
-  }
-  .btn-ap-stop {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 14px;
-    background: rgba(249, 115, 22, 0.15);
-    border: 1px solid rgba(249, 115, 22, 0.4);
-    color: #fb923c;
-    border-radius: 8px;
-    font-size: 0.84rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-  }
-  .btn-ap-stop:hover {
-    background: rgba(249, 115, 22, 0.28);
-    border-color: rgba(249, 115, 22, 0.7);
-    color: #fdba74;
-    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25);
-    transform: translateY(-1px);
-  }
-  @media (max-width: 640px) {
-    .ap-banner-card { flex-direction: column; align-items: stretch; gap: 12px; }
-    .btn-ap-stop { width: 100%; justify-content: center; }
-  }
-</style>
-
 <div id="apModeBanner" class="ap-banner-card" style="display:none;">
   <div class="ap-banner-left">
     <div class="ap-pulse-ring"><span class="ap-pulse-dot"></span></div>
     <div class="ap-banner-text">
-      <div class="ap-banner-title">Hotspot Mode Konfigurasi Aktif</div>
+      <div class="ap-banner-title">Configuration Hotspot Active</div>
       <div class="ap-banner-subtitle">
         SSID: <strong id="apBannerSsid">%ap_ssid%</strong> &bull; Auto-off idle: <span id="apBannerTimer" class="ap-timer-pill">60s</span>
       </div>
     </div>
   </div>
   <div class="ap-banner-right">
-    <button type="button" id="btnStopAp" class="btn-ap-stop" title="Matikan Hotspot Konfigurasi">
+    <button type="button" id="btnStopAp" class="btn-ap-stop" title="Disable Configuration Hotspot">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <line x1="1" y1="1" x2="23" y2="23"/>
         <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
@@ -216,7 +972,7 @@
         <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
         <line x1="12" y1="20" x2="12.01" y2="20"/>
       </svg>
-      <span>Nonaktifkan AP</span>
+      <span>Disable AP</span>
     </button>
   </div>
 </div>
@@ -228,126 +984,310 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 }
 </script>
 <!-- ================= END AP MODE CONFIG BANNER COMPONENT ================= -->
-        <!-- Industrial Machine Banner -->
-        <div class="machine-header-card">
-          <div class="machine-info">
-            <div class="machine-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+        <!-- ========================================================================= -->
+        <!-- 1. SLIM HEADER CARD: SMART GUARD (%model%)                                -->
+        <!-- ========================================================================= -->
+        <section class="sg-header-card">
+          <!-- Kiri: Ikon + Nama Perangkat & Deskripsi Sejajar -->
+          <div class="sg-header-left">
+            <div class="sg-chip-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect width="16" height="16" x="4" y="4" rx="2"/>
                 <rect width="6" height="6" x="9" y="9" rx="1"/>
                 <path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>
               </svg>
             </div>
+            <div class="sg-title-group">
+              <h2 class="sg-title">SMART GUARD (%model%)</h2>
+              <span class="sg-title-dot">•</span>
+              <p class="sg-subtitle">Industrial Smart BLE Beacon Gateway Controller</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================================================= -->
+        <!-- 2. MODERN BENTO GRID (RESPONSIVE 12 KOLOM DESKTOP, 1 KOLOM MOBILE)        -->
+        <!-- ========================================================================= -->
+        <section class="sg-bento-grid">
+          <!-- --------------------------------------------------------------------- -->
+          <!-- PANEL KIRI (5 KOLOM): IDENTITAS, UPTIME & VERSI SISTEM                -->
+          <!-- --------------------------------------------------------------------- -->
+          <div class="sg-panel-left">
             <div>
-              <div class="machine-title">SMART GUARD (%model%)</div>
-              <div class="machine-subtitle">Industrial Smart BLE Beacon Gateway Controller</div>
+              <!-- Header Kartu -->
+              <div class="sg-card-header">
+                <div class="sg-card-title-group">
+                  <div class="sg-card-icon navy">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect width="20" height="8" x="2" y="3" rx="2"/><rect width="20" height="8" x="2" y="13" rx="2"/>
+                      <line x1="6" y1="7" x2="6.01" y2="7"/><line x1="6" y1="17" x2="6.01" y2="17"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3>Gateway Identity & System</h3>
+                    <p>Unit identification parameters and live uptime</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Daftar Properti Ringkas (Key-Value) -->
+              <div class="sg-kv-list">
+                <!-- Model -->
+                <div class="sg-kv-row">
+                  <span class="sg-kv-label">Device Model</span>
+                  <span class="sg-kv-value">%model%</span>
+                </div>
+
+                <!-- Manufacture -->
+                <div class="sg-kv-row">
+                  <span class="sg-kv-label">Manufacturer</span>
+                  <div class="sg-kv-value">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span>IoT Gateway</span>
+                  </div>
+                </div>
+
+                <!-- Device ID (mDNS) -->
+                <div class="sg-kv-row">
+                  <span class="sg-kv-label">Device ID (mDNS)</span>
+                  <div class="sg-kv-value">
+                    <code class="sg-chip-code">%device_id%</code>
+                    <button type="button" onclick="copyText('%device_id%')" class="sg-copy-btn" title="Copy Device ID">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- System Uptime (Live Counter) -->
+                <div class="sg-kv-row">
+                  <span class="sg-kv-label">System Uptime</span>
+                  <div class="sg-kv-value">
+                    <span style="color:#10b981;font-size:0.75rem;line-height:1;margin-right:2px;">●</span>
+                    <span id="detail-uptime-live" style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:#ffffff;font-size:0.92rem;font-weight:700;">%uptime_detail%</span>
+                  </div>
+                </div>
+
+                <!-- System RAM -->
+                <div class="sg-kv-row">
+                  <span class="sg-kv-label">System RAM</span>
+                  <div class="sg-kv-value">
+                    <span style="color:#10b981;font-size:0.75rem;line-height:1;margin-right:2px;">●</span>
+                    <span id="detail-ram-live" style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:#ffffff;font-size:0.92rem;font-weight:700;">%free_heap_kb% KB Free</span>
+                  </div>
+                </div>
+
+                <!-- Bandwidth -->
+                <div class="sg-kv-row">
+                  <span class="sg-kv-label">Bandwidth</span>
+                  <div class="sg-kv-value">
+                    <span id="detail-bandwidth-live" style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:#ffffff;font-size:0.92rem;font-weight:700;">%net_bandwidth% KB/s</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Grid Bawah: 3 Versi Sistem (Device, Firmware, UI) -->
+            <div class="sg-version-grid">
+              <div class="sg-version-tile">
+                <div class="sg-version-tile-label">DEVICE VER</div>
+                <div class="sg-version-tile-val">%device_version%</div>
+              </div>
+              <div class="sg-version-tile">
+                <div class="sg-version-tile-label">FIRMWARE</div>
+                <div class="sg-version-tile-val">%firmware_version%</div>
+              </div>
+              <div class="sg-version-tile">
+                <div class="sg-version-tile-label">UI VERSION</div>
+                <div class="sg-version-tile-val">%ui_version%</div>
+              </div>
             </div>
           </div>
-          <div class="status-pill">
-            <span class="pulse-dot"></span>
-            <span>Gateway Online</span>
+
+          <!-- --------------------------------------------------------------------- -->
+          <!-- PANEL KANAN (7 KOLOM): KONEKTIVITAS JARINGAN & RUNNING MODE           -->
+          <!-- --------------------------------------------------------------------- -->
+          <div class="sg-panel-right">
+            <div>
+              <!-- Header Kartu -->
+              <div class="sg-card-header">
+                <div class="sg-card-title-group">
+                  <div class="sg-card-icon navy">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg>
+                  </div>
+                  <div>
+                    <h3>Network Status & Connectivity</h3>
+                    <p id="network-mode-desc">%network_mode_desc%</p>
+                  </div>
+                </div>
+                <div class="sg-net-header-badges">
+                  <!-- Connection Mode Badge (Single Capsule Pill) -->
+                  <div id="conn-mode-badge" class="sg-badge-pill %conn_mode_class%">
+                    <span class="sg-dot">●</span>
+                    <span>MODE: <strong id="conn-mode-text">%conn_mode_text%</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Grid 2 Kartu Interface (1 Kolom di HP, 2 Kolom di Desktop/Tablet) -->
+              <div class="sg-subcards-grid">
+                <!-- ==================== KARTU WI-FI INTERFACE ==================== -->
+                <div id="card-wifi" class="sg-interface-card %wifi_card_class%">
+                  <!-- Header Interface -->
+                  <div class="sg-subcard-header">
+                    <div class="sg-subcard-header-left">
+                      <span id="wifi-icon-box" class="sg-subcard-icon emerald">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+                      </span>
+                      <div class="sg-subcard-title-wrap">
+                        <h4>Wi-Fi Interface</h4>
+                        <span id="wifi-role-label" class="sg-subcard-role">%wifi_role_label%</span>
+                      </div>
+                    </div>
+                    <span id="wifi-status-dot" class="sg-subcard-status-badge %wifi_status_class%">
+                      %wifi_status_text%
+                    </span>
+                  </div>
+
+                  <!-- Detail IP, MAC, & Sinyal Wi-Fi (3 Baris Bersih & Sejajar) -->
+                  <div class="sg-subcard-data">
+                    <div class="sg-subcard-row">
+                      <span class="sg-subcard-label">IPv4 Address</span>
+                      <div class="sg-subcard-val-wrap">
+                        <span id="wifi-ip-text" class="sg-subcard-val">%wifi_ip%</span>
+                        <button type="button" id="wifi-ip-copy" onclick="copyText(document.getElementById('wifi-ip-text').textContent)" class="sg-copy-btn" title="Copy Wi-Fi IPv4">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="sg-subcard-row">
+                      <span class="sg-subcard-label">MAC Address</span>
+                      <div class="sg-subcard-val-wrap">
+                        <span id="wifi-mac-text" class="sg-subcard-val slate-mac">%wifi_mac%</span>
+                        <button type="button" onclick="copyText(document.getElementById('wifi-mac-text').textContent)" class="sg-copy-btn" title="Copy Wi-Fi MAC">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="sg-subcard-row">
+                      <span class="sg-subcard-label">Signal Strength</span>
+                      <div id="wifi-signal-container" class="sg-subcard-val-wrap">
+                        <div class="sg-signal-bars" title="Signal Strength Indicator">
+                          <span class="sg-signal-bar on"></span>
+                          <span class="sg-signal-bar on"></span>
+                          <span class="sg-signal-bar on"></span>
+                          <span class="sg-signal-bar on"></span>
+                        </div>
+                        <span id="wifi-rssi-val" class="sg-subcard-val">%wifi_signal_spec%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ==================== KARTU ETHERNET INTERFACE ==================== -->
+                <div id="card-ethernet" class="sg-interface-card %eth_card_class%" style="%eth_tiles_style%">
+                  <!-- Header Interface -->
+                  <div class="sg-subcard-header">
+                    <div class="sg-subcard-header-left">
+                      <span id="eth-icon-box" class="sg-subcard-icon emerald">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1v2"/><path d="M19 15V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V9"/><path d="M21 21v1a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1"/></svg>
+                      </span>
+                      <div class="sg-subcard-title-wrap">
+                        <h4>Ethernet Interface</h4>
+                        <span id="eth-role-label" class="sg-subcard-role">%eth_role_label%</span>
+                      </div>
+                    </div>
+                    <span id="eth-status-dot" class="sg-subcard-status-badge %eth_status_class%">
+                      %eth_status_text%
+                    </span>
+                  </div>
+
+                  <!-- Detail IP, MAC, & Physical Link Ethernet -->
+                  <div class="sg-subcard-data">
+                    <div class="sg-subcard-row">
+                      <span class="sg-subcard-label">IPv4 Address</span>
+                      <div class="sg-subcard-val-wrap">
+                        <span id="eth-ip-text" class="sg-subcard-val %eth_ip_class%">%eth_ip_display%</span>
+                        <button type="button" id="eth-ip-copy" onclick="copyText(document.getElementById('eth-ip-text').textContent)" class="sg-copy-btn" title="Copy Ethernet IPv4" style="%eth_copy_style%">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="sg-subcard-row">
+                      <span class="sg-subcard-label">MAC Address</span>
+                      <div class="sg-subcard-val-wrap">
+                        <span id="eth-mac-text" class="sg-subcard-val slate-mac">%eth_mac%</span>
+                        <button type="button" onclick="copyText(document.getElementById('eth-mac-text').textContent)" class="sg-copy-btn" title="Copy Ethernet MAC">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="sg-subcard-row">
+                      <span id="eth-footer-label" class="sg-subcard-label">%eth_footer_label%</span>
+                      <div id="eth-footer-value" class="sg-subcard-val-wrap">
+                        %eth_footer_value%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ==================== KARTU TELEMETRI MQTT BROKER ==================== -->
+              <div id="card-mqtt" class="sg-mqtt-card %mqtt_card_class%">
+                <!-- Header Telemetri MQTT -->
+                <div class="sg-mqtt-header">
+                  <div class="sg-mqtt-header-left">
+                    <span id="mqtt-icon-box" class="sg-subcard-icon %mqtt_icon_class%" style="width:26px;height:26px;border-radius:6px;">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+                        <path d="M12 13v4"/>
+                        <path d="M10 15l2-2 2 2"/>
+                      </svg>
+                    </span>
+                    <h4>MQTT Telemetry</h4>
+                    <span id="mqtt-role-desc" class="sg-mqtt-role">• %mqtt_role_label%</span>
+                  </div>
+                  <div id="mqtt-status-badge">
+                    %mqtt_conn_badge%
+                  </div>
+                </div>
+
+                <!-- Grid Data (2-Tier Mobile, 3-Col Desktop) -->
+                <div class="sg-mqtt-data-grid">
+                  <!-- Kolom 1: Broker Host (Full Width on Mobile) -->
+                  <div class="sg-mqtt-col sg-mqtt-col-host">
+                    <span class="sg-mqtt-col-label">Broker Host</span>
+                    <div class="sg-mqtt-col-val">
+                      <span id="mqtt-broker-val">%mqtt_broker_host%</span>
+                      <button type="button" onclick="copyText(document.getElementById('mqtt-broker-val').textContent)" class="sg-copy-btn" title="Copy MQTT Broker Host">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Kolom 2: Port -->
+                  <div class="sg-mqtt-col">
+                    <span class="sg-mqtt-col-label">Port</span>
+                    <div class="sg-mqtt-col-val">
+                      <span id="mqtt-port-val">%mqtt_broker_port%</span>
+                    </div>
+                  </div>
+
+                  <!-- Kolom 3: Security (TLS) -->
+                  <div class="sg-mqtt-col">
+                    <span class="sg-mqtt-col-label">Security (TLS)</span>
+                    <div id="mqtt-tls-val" class="sg-mqtt-col-val">
+                      %mqtt_tls_badge%
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-
-        <!-- Industrial Device Specifications Matrix -->
-        <div class="bento-card">
-          <div class="bento-header">
-            <div class="bento-icon cyan">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            </div>
-            <div class="bento-title-group">
-              <div class="bento-title">Spesifikasi & Status Gateway</div>
-              <div class="bento-sub">Parameter identifikasi unit dan status konektivitas jaringan</div>
-            </div>
-          </div>
-
-          <div class="spec-grid">
-            <div class="spec-tile">
-              <span class="spec-label">Model</span>
-              <div class="spec-value">%model%</div>
-            </div>
-
-            <div class="spec-tile">
-              <span class="spec-label">Manufacture</span>
-              <div class="spec-value">
-                <span style="display:inline-flex;align-items:center;gap:6px;color:#38bdf8;">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                  IoT Gateway
-                </span>
-              </div>
-            </div>
-
-            <div class="spec-tile">
-              <span class="spec-label">Device ID (mDNS)</span>
-              <div class="spec-value">
-                <code class="chip-code">%device_id%</code>
-              </div>
-            </div>
-
-            <div class="spec-tile">
-              <span class="spec-label">Device Version</span>
-              <div class="spec-value">%device_version%</div>
-            </div>
-
-            <div class="spec-tile">
-              <span class="spec-label">Firmware Version</span>
-              <div class="spec-value">
-                <span class="badge-tech">%firmware_version%</span>
-              </div>
-            </div>
-
-            <div class="spec-tile">
-              <span class="spec-label">UI Version</span>
-              <div class="spec-value">
-                <span class="badge-tech">%ui_version%</span>
-              </div>
-            </div>
-
-            <div class="spec-tile">
-              <span class="spec-label">IP Address</span>
-              <div class="spec-value" style="font-family:var(--font-mono, monospace);color:#34d399;">%ip_address%</div>
-            </div>
-
-            <div class="spec-tile">
-              <span class="spec-label">Running Mode</span>
-              <div class="spec-value">
-                <span class="badge-tech %net_badge_class%" id="badgeConnMode">%net_status%</span>
-              </div>
-            </div>
-
-            <div class="spec-tile">
-              <span class="spec-label" id="labelSignalStrength">Signal Strength</span>
-              <div class="spec-value" id="valSignalStrength">%signal_spec%</div>
-            </div>
-
-            <div class="spec-tile">
-              <span class="spec-label">MQTT Telemetri</span>
-              <div class="spec-value">
-                <span class="badge-tech %mqtt_badge_class%" id="badgeMqttStatus">%mqtt_status%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Info Card -->
-        <div class="bento-card">
-          <div class="bento-header">
-            <div class="bento-icon amber">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            </div>
-            <div class="bento-title-group">
-              <div class="bento-title">Uji Diagnostik Realtime</div>
-              <div class="bento-sub">Pemantauan paket beacon nRF52840 berkecepatan tinggi</div>
-            </div>
-          </div>
-          <p style="color:var(--text-muted);font-size:0.92rem;line-height:1.6;margin-bottom:16px;">
-            Sistem gateway membaca ratusan paket iBeacon dan ibeacon_ext setiap detik melalui antarmuka UART 1 Mbps. Untuk melihat laju transmisi, kapasitas antrean FreeRTOS, dan inspeksi paket beacon realtime, silakan buka menu <strong>Live Test Monitor</strong>.
-          </p>
-          <a href="/test" class="btn btn-info" style="text-decoration:none;display:inline-flex;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            Buka Live Test Monitor
-          </a>
-        </div>
+        </section>
       </section>
 
       <footer>
@@ -385,58 +1325,285 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
     </nav>
   </div>
 
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast" class="sg-toast">
+    <div class="sg-toast-box">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <span id="toastMessage">Berhasil disalin ke clipboard!</span>
+    </div>
+  </div>
+
   <script src="assets/js/app.js"></script>
   <script>
     document.getElementById("year").textContent = new Date().getFullYear();
-    // Polling berkala untuk sinkronisasi status koneksi Wi-Fi/Ethernet & MQTT di Dashboard
+
+    // ================= LIVE UPTIME COUNTER =================
+    let uptimeSeconds = parseInt("%uptime_sec%") || 0;
+
+    function updateUptimeDisplay() {
+      uptimeSeconds++;
+      const days = Math.floor(uptimeSeconds / 86400);
+      const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+      const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+      const seconds = uptimeSeconds % 60;
+      const pad = (n) => String(n).padStart(2, '0');
+
+      const detailEl = document.getElementById('detail-uptime-live');
+      if (detailEl) {
+        detailEl.textContent = `${days} ${days === 1 ? 'Day' : 'Days'} ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+      }
+    }
+    setInterval(updateUptimeDisplay, 1000);
+
+    // ================= CLIPBOARD & TOAST =================
+    let toastTimeout;
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      const toastMessage = document.getElementById('toastMessage');
+      if (!toast || !toastMessage) return;
+
+      toastMessage.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2400);
+    }
+
+    function copyText(text) {
+      if (!text || text === "-" || text.indexOf("Disconnected") !== -1) return;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => {
+          showToast(`Copied to clipboard: ${text}`);
+        }).catch(() => {
+          fallbackCopy(text);
+        });
+      } else {
+        fallbackCopy(text);
+      }
+    }
+
+    function fallbackCopy(text) {
+      const tempInput = document.createElement('textarea');
+      tempInput.value = text;
+      tempInput.style.position = 'fixed';
+      tempInput.style.opacity = '0';
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      try {
+        document.execCommand('copy');
+        showToast(`Copied to clipboard: ${text}`);
+      } catch (e) {}
+      document.body.removeChild(tempInput);
+    }
+
+    // ================= POLING BERKALA DASHBOARD =================
     function syncDashboardStatus() {
       fetch("/api/v1/system/version", { cache: "no-store" })
         .then(r => r.json())
         .then(d => {
-          const badgeConn = document.getElementById("badgeConnMode");
-          if (badgeConn && d.net_mode) {
-            const isConn = !!d.net_connected;
-            if (d.net_mode === "Ethernet") {
-              const speedInfo = d.eth_link_up ? ` (${d.eth_speed}M ${d.eth_duplex})` : " (Link Down)";
-              badgeConn.textContent = `${d.net_mode}${isConn ? speedInfo : " (Disconnected)"}`;
-            } else {
-              badgeConn.textContent = `${d.net_mode} (${isConn ? "Connected" : "Disconnected"})`;
+          if (d.uptime_sec !== undefined && typeof d.uptime_sec === "number") {
+            uptimeSeconds = Math.floor(d.uptime_sec);
+          }
+
+          // System RAM & Bandwidth Live Metrics
+          if (d.free_heap_kb !== undefined) {
+            const ramEl = document.getElementById("detail-ram-live");
+            if (ramEl) ramEl.textContent = `${Math.round(d.free_heap_kb)} KB Free`;
+          }
+          if (d.net_bandwidth !== undefined) {
+            const bwEl = document.getElementById("detail-bandwidth-live");
+            if (bwEl) bwEl.textContent = `${Number(d.net_bandwidth).toFixed(1)} KB/s`;
+          }
+
+          const isConn = !!d.net_connected;
+          const isEthMode = (d.net_mode === "Ethernet");
+          const isDirect = !!d.eth_direct_mode;
+          const isSlave = !!d.eth_slave_mode;
+          const isEthLinkUp = !!d.eth_link_up;
+          const hasEthHw = (d.eth_hw_detected !== undefined) ? !!d.eth_hw_detected : true;
+
+          // 1. Connection Mode & Network Description
+          const connModeBadge = document.getElementById("conn-mode-badge");
+          const connModeText = document.getElementById("conn-mode-text");
+          const netDesc = document.getElementById("network-mode-desc");
+
+          if (isDirect) {
+            if (connModeBadge) connModeBadge.className = "sg-badge-pill mode-smart";
+            if (connModeText) connModeText.textContent = "SMART CONNECT";
+            if (netDesc) netDesc.textContent = "Direct LAN Active — Technician direct access via IP 192.168.4.1";
+          } else if (isEthMode) {
+            if (connModeBadge) connModeBadge.className = "sg-badge-pill mode-eth";
+            if (connModeText) connModeText.textContent = "ETHERNET";
+            if (netDesc) netDesc.textContent = isConn ? "Ethernet Mode (LAN) — Physical cable active as primary uplink" : "Ethernet Mode (LAN) — Waiting for physical cable link";
+          } else {
+            if (connModeBadge) connModeBadge.className = "sg-badge-pill mode-wifi";
+            if (connModeText) connModeText.textContent = "WI-FI";
+            if (netDesc) netDesc.textContent = isConn ? "Wi-Fi Standalone Mode — Wireless link active as primary uplink" : "Wi-Fi Standalone Mode — Waiting for Wi-Fi connection";
+          }
+
+          // 2. Wi-Fi Interface Card
+          const cardWifi = document.getElementById("card-wifi");
+          const wifiIcon = document.getElementById("wifi-icon-box");
+          const wifiRole = document.getElementById("wifi-role-label");
+          const wifiStatus = document.getElementById("wifi-status-dot");
+          const wifiIpText = document.getElementById("wifi-ip-text");
+          const wifiMacText = document.getElementById("wifi-mac-text");
+          const wifiRssi = document.getElementById("wifi-rssi-val");
+          const wifiSigContainer = document.getElementById("wifi-signal-container");
+
+          if (wifiIpText && d.wifi_ip) wifiIpText.textContent = d.wifi_ip;
+          if (wifiMacText && d.wifi_mac) wifiMacText.textContent = d.wifi_mac;
+
+          if (!isEthMode) {
+            if (cardWifi) cardWifi.className = isConn ? "sg-interface-card active-online" : "sg-interface-card";
+            if (wifiIcon) wifiIcon.className = isConn ? "sg-subcard-icon emerald" : "sg-subcard-icon slate";
+            if (wifiRole) {
+              wifiRole.className = isConn ? "sg-subcard-role emerald" : "sg-subcard-role slate";
+              wifiRole.textContent = isConn ? "Primary Link (WLAN)" : "Wi-Fi Disconnected";
             }
-            badgeConn.className = `badge-tech ${isConn ? "conn" : "offline"}`;
-          }
-
-          const lblSignal = document.getElementById("labelSignalStrength");
-          const valSignal = document.getElementById("valSignalStrength");
-          if (lblSignal && valSignal && d.net_mode) {
-            if (d.net_mode === "Ethernet") {
-              lblSignal.textContent = "Ethernet Link";
-              valSignal.textContent = d.eth_link_up ? `${d.eth_speed} Mbps (${d.eth_duplex} Duplex)` : "Kabel Terputus (Link Down)";
-            } else {
-              lblSignal.textContent = "Signal Strength";
-              valSignal.textContent = (d.wifi_rssi !== undefined) ? `${d.wifi_rssi} dBm` : "-";
+            if (wifiStatus) {
+              wifiStatus.className = isConn ? "sg-subcard-status-badge active" : "sg-subcard-status-badge amber";
+              wifiStatus.textContent = isConn ? "Active" : "Offline";
+            }
+          } else {
+            if (cardWifi) cardWifi.className = "sg-interface-card";
+            if (wifiIcon) wifiIcon.className = "sg-subcard-icon slate";
+            if (wifiRole) {
+              wifiRole.className = "sg-subcard-role slate";
+              wifiRole.textContent = "Radio Inactive (LAN Mode)";
+            }
+            if (wifiStatus) {
+              wifiStatus.className = "sg-subcard-status-badge slate";
+              wifiStatus.textContent = "Disabled";
             }
           }
 
-          const badgeMqtt = document.getElementById("badgeMqttStatus");
-          if (badgeMqtt && d.mqtt_connected !== undefined) {
-            const isMqtt = !!d.mqtt_connected;
-            badgeMqtt.textContent = isMqtt ? "Connected" : "Disconnected";
-            badgeMqtt.className = `badge-tech ${isMqtt ? "mqtt-online" : "mqtt-offline"}`;
+          if (d.wifi_rssi !== undefined && wifiRssi) {
+            wifiRssi.textContent = `${d.wifi_rssi} dBm`;
+            const bars = wifiSigContainer ? wifiSigContainer.querySelectorAll(".sg-signal-bar") : [];
+            const r = d.wifi_rssi;
+            bars.forEach((b, idx) => {
+              let on = false;
+              if (idx === 0) on = (r >= -90);
+              if (idx === 1) on = (r >= -80);
+              if (idx === 2) on = (r >= -70);
+              if (idx === 3) on = (r >= -60);
+              b.className = on ? "sg-signal-bar on" : "sg-signal-bar";
+            });
           }
 
+          // 3. Ethernet Interface Card
+          const cardEth = document.getElementById("card-ethernet");
+          if (cardEth) cardEth.style.display = hasEthHw ? "" : "none";
+
+          const ethIcon = document.getElementById("eth-icon-box");
+          const ethRole = document.getElementById("eth-role-label");
+          const ethStatus = document.getElementById("eth-status-dot");
+          const ethIpText = document.getElementById("eth-ip-text");
+          const ethMacText = document.getElementById("eth-mac-text");
+          const ethIpCopy = document.getElementById("eth-ip-copy");
+          const ethFootLabel = document.getElementById("eth-footer-label");
+          const ethFootVal = document.getElementById("eth-footer-value");
+
+          if (ethMacText && d.eth_mac) ethMacText.textContent = d.eth_mac;
+          if (ethFootLabel) ethFootLabel.textContent = "Physical Link";
+
+          if (isDirect) {
+            if (cardEth) cardEth.className = "sg-interface-card active-online";
+            if (ethIcon) ethIcon.className = "sg-subcard-icon emerald";
+            if (ethRole) {
+              ethRole.className = "sg-subcard-role emerald";
+              ethRole.textContent = "Direct LAN / Maintenance Port";
+            }
+            if (ethStatus) {
+              ethStatus.className = "sg-subcard-status-badge active";
+              ethStatus.textContent = "Direct PC";
+            }
+            if (ethIpText) {
+              ethIpText.className = "sg-subcard-val";
+              ethIpText.textContent = d.eth_ip || "192.168.4.1";
+            }
+            if (ethIpCopy) ethIpCopy.style.display = "inline-flex";
+            if (ethFootVal) ethFootVal.innerHTML = `<span class="sg-subcard-status-badge active">100M FD • Micro-DHCP</span>`;
+          } else if (isEthLinkUp) {
+            if (cardEth) cardEth.className = "sg-interface-card active-online";
+            if (ethIcon) ethIcon.className = "sg-subcard-icon emerald";
+            if (ethRole) {
+              ethRole.className = "sg-subcard-role emerald";
+              ethRole.textContent = "Router LAN Connected";
+            }
+            if (ethStatus) {
+              ethStatus.className = "sg-subcard-status-badge active";
+              ethStatus.textContent = "Active";
+            }
+            if (ethIpText) {
+              ethIpText.className = d.eth_ip ? "sg-subcard-val" : "sg-subcard-val unassigned";
+              ethIpText.textContent = d.eth_ip || "— (Unassigned)";
+            }
+            if (ethIpCopy) ethIpCopy.style.display = d.eth_ip ? "inline-flex" : "none";
+            if (ethFootVal) ethFootVal.innerHTML = `<span class="sg-subcard-status-badge active">${d.eth_speed || 100} Mbps ${d.eth_duplex || "Full"}-Duplex</span>`;
+          } else {
+            if (cardEth) cardEth.className = "sg-interface-card link-down";
+            if (ethIcon) ethIcon.className = "sg-subcard-icon slate";
+            if (ethRole) {
+              ethRole.className = "sg-subcard-role slate";
+              ethRole.textContent = "Secondary / LAN Port";
+            }
+            if (ethStatus) {
+              ethStatus.className = "sg-subcard-status-badge amber";
+              ethStatus.textContent = "Link Down";
+            }
+            if (ethIpText) {
+              ethIpText.className = "sg-subcard-val unassigned";
+              ethIpText.textContent = "— (Unassigned)";
+            }
+            if (ethIpCopy) ethIpCopy.style.display = "none";
+            if (ethFootVal) ethFootVal.innerHTML = `<span class="sg-subcard-link-text amber">Cable Disconnected</span>`;
+          }
+
+          // 4. MQTT Telemetry Card Live Sync
+          const isMqttConn = !!d.mqtt_connected;
+          const cardMqtt = document.getElementById("card-mqtt");
+          const mqttIcon = document.getElementById("mqtt-icon-box");
+          const mqttStatusBadge = document.getElementById("mqtt-status-badge");
+          const mqttRoleDesc = document.getElementById("mqtt-role-desc");
+          const mqttBrokerVal = document.getElementById("mqtt-broker-val");
+          const mqttPortVal = document.getElementById("mqtt-port-val");
+          const mqttTlsVal = document.getElementById("mqtt-tls-val");
+
+          if (cardMqtt) cardMqtt.className = isMqttConn ? "sg-mqtt-card active-online" : "sg-mqtt-card";
+          if (mqttIcon) mqttIcon.className = isMqttConn ? "sg-subcard-icon emerald" : "sg-subcard-icon slate";
+          if (mqttStatusBadge) {
+            mqttStatusBadge.innerHTML = isMqttConn
+              ? `<span id="mqtt-status-dot" class="sg-subcard-status-badge active">● Connected</span>`
+              : `<span id="mqtt-status-dot" class="sg-subcard-status-badge amber">● Disconnected</span>`;
+          }
+          if (mqttRoleDesc) {
+            mqttRoleDesc.textContent = isMqttConn ? "• Broker Connected — Beacon Uplink Active" : "• Waiting for IoT Broker Connection";
+          }
+          if (mqttBrokerVal && d.mqtt_host) {
+            mqttBrokerVal.textContent = d.mqtt_host;
+          }
+          if (mqttPortVal && d.mqtt_port !== undefined) {
+            mqttPortVal.textContent = d.mqtt_port;
+          }
+          if (mqttTlsVal && d.mqtt_ssl !== undefined) {
+            mqttTlsVal.innerHTML = d.mqtt_ssl
+              ? `<span class="sg-subcard-status-badge active"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-1px;margin-right:3px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>TLS Active</span>`
+              : `<span class="sg-subcard-status-badge slate"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px;margin-right:3px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9 -1"/></svg>Plain TCP</span>`;
+          }
+
+          // 5. Pending Reboot Safety Banner
           if (d.reboot_required !== undefined && typeof updatePendingRebootBanner === "function") {
             updatePendingRebootBanner(!!d.reboot_required);
-          }
-
-          const elIp = document.querySelector(".spec-tile .spec-value[style*='color:#34d399']");
-          if (elIp && d.ip_address) {
-            elIp.textContent = d.ip_address;
           }
         })
         .catch(() => {});
     }
 
-    // Refresh realtime setiap 5 detik
+    // Sinkronisasi data realtime segera saat halaman dimuat, lalu setiap 5 detik
+    syncDashboardStatus();
     setInterval(syncDashboardStatus, 5000);
   </script>
 </body>

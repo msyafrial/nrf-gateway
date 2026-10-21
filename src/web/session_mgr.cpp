@@ -57,37 +57,45 @@ void init() {
     }
 }
 
+static bool constant_time_eq(const char *a, const char *b) {
+    if (!a || !b) return false;
+    size_t len_a = strlen(a);
+    size_t len_b = strlen(b);
+    if (len_a == 0 && len_b == 0) return true;
+    size_t max_len = len_a > len_b ? len_a : len_b;
+    unsigned char diff = static_cast<unsigned char>(len_a ^ len_b);
+    for (size_t i = 0; i < max_len; i++) {
+        unsigned char ca = (i < len_a) ? static_cast<unsigned char>(a[i]) : 0;
+        unsigned char cb = (i < len_b) ? static_cast<unsigned char>(b[i]) : 0;
+        diff |= (ca ^ cb);
+    }
+    return (diff == 0);
+}
+
 static void generate_token(char *out_buf, size_t max_len) {
     if (max_len < TOKEN_LEN + 1) return;
     for (int i = 0; i < 8; i++) {
         uint32_t r = esp_random();
-        snprintf(out_buf + (i * 4), 5, "%04x", static_cast<unsigned int>(r & 0xFFFF));
+        snprintf(out_buf + (i * 8), 9, "%08x", static_cast<unsigned int>(r));
     }
     out_buf[TOKEN_LEN] = '\0';
 }
 
 bool is_rate_limited(httpd_req_t *req) {
     uint32_t ip = extract_client_ip(req);
+    if (ip == 0) {
+        return false;
+    }
     uint32_t now = get_millis();
 
     if (s_sessionMutex && xSemaphoreTake(s_sessionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         bool limited = false;
-        if (ip != 0) {
-            for (size_t i = 0; i < MAX_FAILED_IPS; i++) {
-                if (s_failedIps[i].ip == ip) {
-                    if (s_failedIps[i].count >= 5 && (now - s_failedIps[i].last_attempt_ms < 60000)) {
-                        limited = true;
-                    }
-                    break;
-                }
-            }
-        } else {
-            // Jika IP tidak terbaca, cek apakah ada IP yang sedang locked
-            for (size_t i = 0; i < MAX_FAILED_IPS; i++) {
-                if (s_failedIps[i].ip != 0 && s_failedIps[i].count >= 5 && (now - s_failedIps[i].last_attempt_ms < 60000)) {
+        for (size_t i = 0; i < MAX_FAILED_IPS; i++) {
+            if (s_failedIps[i].ip == ip) {
+                if (s_failedIps[i].count >= 5 && (now - s_failedIps[i].last_attempt_ms < 60000)) {
                     limited = true;
-                    break;
                 }
+                break;
             }
         }
         xSemaphoreGive(s_sessionMutex);
@@ -98,6 +106,7 @@ bool is_rate_limited(httpd_req_t *req) {
 
 void record_failed_attempt(httpd_req_t *req) {
     uint32_t ip = extract_client_ip(req);
+    if (ip == 0) return;
     uint32_t now = get_millis();
 
     if (s_sessionMutex && xSemaphoreTake(s_sessionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
@@ -208,7 +217,7 @@ UserRole validate(httpd_req_t *req, char *out_token, size_t max_len) {
 
     if (s_sessionMutex && xSemaphoreTake(s_sessionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         for (size_t i = 0; i < MAX_SESSIONS; i++) {
-            if (s_sessions[i].active && (strcmp(s_sessions[i].token, token) == 0)) {
+            if (s_sessions[i].active && constant_time_eq(s_sessions[i].token, token)) {
                 // Check 15-minute sliding expiration (SESSION_TIMEOUT_MS = 900000 ms)
                 if (now - s_sessions[i].last_activity_ms > SESSION_TIMEOUT_MS) {
                     s_sessions[i].active = false;
@@ -234,7 +243,7 @@ void touch(const char *token) {
     uint32_t now = get_millis();
     if (s_sessionMutex && xSemaphoreTake(s_sessionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         for (size_t i = 0; i < MAX_SESSIONS; i++) {
-            if (s_sessions[i].active && (strcmp(s_sessions[i].token, token) == 0)) {
+            if (s_sessions[i].active && constant_time_eq(s_sessions[i].token, token)) {
                 s_sessions[i].last_activity_ms = now;
                 break;
             }
@@ -261,21 +270,6 @@ size_t get_active_count() {
         xSemaphoreGive(s_sessionMutex);
     }
     return count;
-}
-
-static bool constant_time_eq(const char *a, const char *b) {
-    if (!a || !b) return false;
-    size_t len_a = strlen(a);
-    size_t len_b = strlen(b);
-    if (len_a == 0 && len_b == 0) return true;
-    size_t max_len = len_a > len_b ? len_a : len_b;
-    unsigned char diff = static_cast<unsigned char>(len_a ^ len_b);
-    for (size_t i = 0; i < max_len; i++) {
-        unsigned char ca = (i < len_a) ? static_cast<unsigned char>(a[i]) : 0;
-        unsigned char cb = (i < len_b) ? static_cast<unsigned char>(b[i]) : 0;
-        diff |= (ca ^ cb);
-    }
-    return (diff == 0);
 }
 
 AuthResult authenticate(httpd_req_t *req, const char *user, const char *pass, UserRole &out_role, char *out_token, size_t max_len) {
@@ -315,16 +309,19 @@ AuthResult authenticate(httpd_req_t *req, const char *user, const char *pass, Us
     // Ekstrak existing token dari Cookie jika ada (Re-login dari browser yang sama)
     char existing_token[TOKEN_LEN + 1] = {0};
     if (req) {
-        char cookie_buf[256];
-        if (httpd_req_get_hdr_value_str(req, "Cookie", cookie_buf, sizeof(cookie_buf)) == ESP_OK) {
-            const char *pos = strstr(cookie_buf, "token=");
-            if (pos) {
-                pos += 6;
-                const char *end = strchr(pos, ';');
-                size_t len = end ? static_cast<size_t>(end - pos) : strlen(pos);
-                if (len == TOKEN_LEN) {
-                    memcpy(existing_token, pos, TOKEN_LEN);
-                    existing_token[TOKEN_LEN] = '\0';
+        size_t cookie_len = httpd_req_get_hdr_value_len(req, "Cookie");
+        if (cookie_len > 0 && cookie_len < 256) {
+            char cookie_buf[256];
+            if (httpd_req_get_hdr_value_str(req, "Cookie", cookie_buf, sizeof(cookie_buf)) == ESP_OK) {
+                const char *pos = strstr(cookie_buf, "token=");
+                if (pos) {
+                    pos += 6;
+                    const char *end = strchr(pos, ';');
+                    size_t len = end ? static_cast<size_t>(end - pos) : strlen(pos);
+                    if (len == TOKEN_LEN) {
+                        memcpy(existing_token, pos, TOKEN_LEN);
+                        existing_token[TOKEN_LEN] = '\0';
+                    }
                 }
             }
         }
@@ -343,7 +340,7 @@ AuthResult authenticate(httpd_req_t *req, const char *user, const char *pass, Us
         // Cek apakah klien ini sudah memiliki sesi aktif (HANYA via token valid, BUKAN via IP NAT) (VULN-SEC-06)
         for (size_t i = 0; i < MAX_CONCURRENT_SESSIONS; i++) {
             if (s_sessions[i].active) {
-                bool matches_token = (existing_token[0] != '\0' && strcmp(s_sessions[i].token, existing_token) == 0);
+                bool matches_token = (existing_token[0] != '\0' && constant_time_eq(s_sessions[i].token, existing_token));
                 if (matches_token) {
                     // Perbarui sesi yang ada tanpa memakan kuota baru
                     char new_token[TOKEN_LEN + 1];
@@ -416,7 +413,7 @@ void invalidate(const char *token) {
     if (!token || token[0] == '\0') return;
     if (s_sessionMutex && xSemaphoreTake(s_sessionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         for (size_t i = 0; i < MAX_SESSIONS; i++) {
-            if (s_sessions[i].active && (strcmp(s_sessions[i].token, token) == 0)) {
+            if (s_sessions[i].active && constant_time_eq(s_sessions[i].token, token)) {
                 s_sessions[i].active = false;
                 s_sessions[i].token[0] = '\0';
                 s_sessions[i].client_ip = 0;

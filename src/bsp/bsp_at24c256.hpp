@@ -8,6 +8,8 @@
 namespace Iotaru::Bsp {
 
 constexpr uint32_t AT24C256_MAGIC = 0xA55A1074;
+constexpr uint16_t EEPROM_SYSTEM_STATS_ADDR = 0x6440;
+constexpr uint32_t SYSTEM_STATS_MAGIC = 0x53544154; // "STAT"
 
 struct __attribute__((packed)) EepromSlotData {
     uint32_t magic;         // 0xA55A1074
@@ -22,6 +24,21 @@ struct __attribute__((packed)) EepromSlotData {
 };
 
 static_assert(sizeof(EepromSlotData) == Pins::AT24C256_SLOT_SIZE, "EepromSlotData must be exactly 128 bytes");
+
+struct __attribute__((packed)) SystemStatsStore {
+    uint32_t magic;              // 0x53544154
+    uint32_t boot_count;         // Total kumulatif reboot ESP32
+    uint32_t wifi_disconnects;   // Total diskoneksi Wi-Fi
+    uint32_t eth_disconnects;    // Total diskoneksi Ethernet
+    uint32_t mqtt_disconnects;   // Total diskoneksi MQTT
+    uint32_t last_boot_uptime;   // Timestamp uptime boot terakhir
+    uint8_t  last_reset_reason;  // esp_reset_reason_t
+    uint8_t  reserved[37];       // Padding cadangan
+    uint16_t checksum;           // CRC16-LE
+};
+
+static_assert(sizeof(SystemStatsStore) == Pins::AT24C256_PAGE_SIZE, "SystemStatsStore must be exactly 64 bytes");
+
 
 class At24c256 {
 public:

@@ -589,6 +589,71 @@
         justify-content: flex-start;
       }
     }
+
+    /* Pagination Styling */
+    .log-pagination-wrap {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 18px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(15, 23, 42, 0.4);
+      border-bottom-left-radius: 12px;
+      border-bottom-right-radius: 12px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .pagination-info {
+      font-size: 0.82rem;
+      color: #94a3b8;
+    }
+
+    .pagination-info strong {
+      color: #f8fafc;
+      font-family: monospace;
+    }
+
+    .pagination-nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-page {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #94a3b8;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: monospace;
+      min-width: 34px;
+      text-align: center;
+    }
+
+    .btn-page:hover:not(:disabled) {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+    }
+
+    .btn-page.active {
+      background: #38bdf8;
+      border-color: #38bdf8;
+      color: #0f172a;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+      font-weight: 700;
+    }
+
+    .btn-page:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      border-color: rgba(255, 255, 255, 0.05);
+    }
   </style>
 </head>
 
@@ -760,7 +825,7 @@
             <div class="kpi-value-row">
               <span class="kpi-value" id="kpiWifiSsid">-</span>
             </div>
-            <div class="kpi-sub">IP: <strong id="kpiWifiIp">-</strong></div>
+            <div class="kpi-sub">IP: <strong id="kpiWifiIp">-</strong> • DC: <strong id="kpiWifiDc">0</strong> kali</div>
           </div>
 
           <!-- KPI 2: Ethernet W5500 -->
@@ -772,32 +837,32 @@
             <div class="kpi-value-row">
               <span class="kpi-value" id="kpiEthLink">-</span>
             </div>
-            <div class="kpi-sub">IP: <strong id="kpiEthIp">-</strong></div>
+            <div class="kpi-sub">IP: <strong id="kpiEthIp">-</strong> • DC: <strong id="kpiEthDc">0</strong> kali</div>
           </div>
 
           <!-- KPI 3: MQTT Broker -->
           <div class="kpi-card" id="cardKpiMqtt">
             <div class="kpi-card-header">
-              <span class="kpi-title">MQTT Broker</span>
+              <span class="kpi-title" id="kpiMqttTitle">MQTT Broker</span>
               <span class="kpi-badge" id="kpiMqttBadge"><span class="pulse-dot-sm" id="dotMqtt"></span><span id="textMqttStatus">Memuat...</span></span>
             </div>
             <div class="kpi-value-row">
               <span class="kpi-value" id="kpiMqttState">-</span>
             </div>
-            <div class="kpi-sub">Host: <strong id="kpiMqttHost">-</strong></div>
+            <div class="kpi-sub">Port: <strong id="kpiMqttPort">1883</strong> • DC: <strong id="kpiMqttDc">0</strong> kali</div>
           </div>
 
-          <!-- KPI 4: Log Storage -->
+          <!-- KPI 4: Total Reboot ESP32 -->
           <div class="kpi-card">
             <div class="kpi-card-header">
-              <span class="kpi-title">Kapasitas Flash</span>
-              <span class="kpi-badge badge-cyan">LittleFS</span>
+              <span class="kpi-title">Total Reboot ESP32</span>
+              <span class="kpi-badge badge-cyan" id="kpiBootStorageBadge">AT24C256</span>
             </div>
             <div class="kpi-value-row">
-              <span class="kpi-value" id="kpiLogCount">0</span>
-              <span style="font-size: 0.85rem; color: #94a3b8; font-weight: 600;">/ 50 Data</span>
+              <span class="kpi-value" id="kpiBootCount">0</span>
+              <span style="font-size: 0.85rem; color: #94a3b8; font-weight: 600;">kali</span>
             </div>
-            <div class="kpi-sub">Status: <strong>Rolling FIFO Persisten</strong></div>
+            <div class="kpi-sub">Reset: <strong id="kpiResetReason">Power-On Cold Boot</strong></div>
           </div>
         </div>
 
@@ -840,17 +905,17 @@
             <div class="kpi-sub">UUID: <strong id="kpiDropUuid">0</strong> | Major: <strong id="kpiDropMajor">0</strong></div>
           </div>
 
-          <!-- KPI Drop 4: Buffer Status -->
+          <!-- KPI Drop 4: MQTT Fail -->
           <div class="kpi-card">
             <div class="kpi-card-header">
-              <span class="kpi-title">Buffer Riwayat</span>
-              <span class="kpi-badge badge-green">RAM FIFO</span>
+              <span class="kpi-title">Gagal Publish MQTT</span>
+              <span class="kpi-badge badge-rose"><span class="pulse-dot-sm rose"></span>Broker Fail</span>
             </div>
             <div class="kpi-value-row">
-              <span class="kpi-value" id="kpiDropBufCount">0</span>
-              <span style="font-size: 0.85rem; color: #94a3b8; font-weight: 600;">/ 50 Data</span>
+              <span class="kpi-value" id="kpiDropMqtt">0</span>
+              <span style="font-size: 0.85rem; color: #94a3b8; font-weight: 600;">paket</span>
             </div>
-            <div class="kpi-sub">Status: <strong>Zero Flash Wear-out</strong></div>
+            <div class="kpi-sub">Paket gagal terkirim ke broker MQTT</div>
           </div>
         </div>
 
@@ -991,6 +1056,10 @@
               </tbody>
             </table>
           </div>
+          <div class="log-pagination-wrap" id="wrapPaginationNet">
+            <div class="pagination-info" id="pageInfoNet">Menampilkan <strong>0 - 0</strong> dari <strong>0</strong> data</div>
+            <div class="pagination-nav" id="pageControlsNet"></div>
+          </div>
         </div>
 
         <!-- Container 2: Tabel Log Drop Data Beacon (6 Kolom Presisi Tanpa Keterangan) -->
@@ -1031,6 +1100,10 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+          <div class="log-pagination-wrap" id="wrapPaginationDrop">
+            <div class="pagination-info" id="pageInfoDrop">Menampilkan <strong>0 - 0</strong> dari <strong>0</strong> data</div>
+            <div class="pagination-nav" id="pageControlsDrop"></div>
           </div>
         </div>
 

@@ -313,7 +313,7 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
 
         <div class="form-group">
           <label for="adminPass">Kata Sandi Administrator</label>
-          <input type="password" id="adminPass" placeholder="Masukkan password admin (default: admin)" value="admin" required>
+          <input type="password" id="adminPass" placeholder="Masukkan password administrator" required>
         </div>
 
         <button type="submit" class="btn btn-primary" id="btnUpload">
@@ -457,11 +457,12 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
           progressPercent.textContent = '100%';
           progressText.textContent = 'Pemulihan Berhasil! Gateway me-reboot dalam 5 detik...';
           let countdown = 5;
-          setInterval(() => {
+          let iv = setInterval(() => {
             countdown--;
             if (countdown > 0) {
               progressText.textContent = 'Pemulihan Berhasil! Me-reboot dalam ' + countdown + ' detik...';
             } else {
+              clearInterval(iv);
               window.location.href = '/';
             }
           }, 1000);
@@ -483,7 +484,7 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
 
     async function rebootDevice() {
       if (!confirm('Apakah Anda yakin ingin me-reboot gateway?')) return;
-      const pass = prompt('Masukkan password admin untuk reboot:', 'admin');
+      const pass = prompt('Masukkan password admin untuk reboot:');
       if (!pass) return;
       try {
         const authData = new URLSearchParams();

@@ -9,7 +9,7 @@ namespace Iotaru::Web::Session {
 
 constexpr size_t MAX_CONCURRENT_SESSIONS = 2; // Batas maksimal 2 perangkat login
 constexpr size_t MAX_SESSIONS = MAX_CONCURRENT_SESSIONS;
-constexpr size_t TOKEN_LEN = 32;
+constexpr size_t TOKEN_LEN = 64;              // 256-bit (8 x 32-bit hex) full hardware entropy
 constexpr uint32_t SESSION_TIMEOUT_MS = 900000; // Tepat 15 Menit (900 detik)
 
 enum class AuthResult {

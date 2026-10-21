@@ -2,6 +2,7 @@
 #include "device_id.hpp"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_random.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "aes/esp_aes.h"
@@ -16,6 +17,41 @@ static const char *TAG = "CONFIG_STORE";
 static void deriveHardwareKey(uint8_t key[16]) {
     uint8_t mac[6] = {0};
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
+
+    static char s_devSalt[33] = {0};
+    if (s_devSalt[0] == '\0') {
+        nvs_handle_t hSys;
+        if (nvs_open("cfg_sys", NVS_READWRITE, &hSys) == ESP_OK) {
+            size_t len = sizeof(s_devSalt);
+            if (nvs_get_str(hSys, "k_salt", s_devSalt, &len) != ESP_OK || strlen(s_devSalt) < 16) {
+                for (int i = 0; i < 4; i++) {
+                    snprintf(s_devSalt + (i * 8), 9, "%08x", (unsigned int)esp_random());
+                }
+                nvs_set_str(hSys, "k_salt", s_devSalt);
+                nvs_commit(hSys);
+            }
+            nvs_close(hSys);
+        } else {
+            strlcpy(s_devSalt, "SG10_IOTARU_ENC_SALT_2026", sizeof(s_devSalt));
+        }
+    }
+
+    uint8_t inputBuf[64];
+    size_t saltLen = strlen(s_devSalt);
+    memcpy(inputBuf, mac, 6);
+    memcpy(inputBuf + 6, s_devSalt, saltLen);
+
+    psa_crypto_init();
+    uint8_t hash[32];
+    size_t hashLen = 0;
+    psa_hash_compute(PSA_ALG_SHA_256, inputBuf, 6 + saltLen, hash, sizeof(hash), &hashLen);
+    memcpy(key, hash, 16);
+}
+
+// Fallback kunci statis lama untuk membuka cipher "enc:" legacy
+static void deriveLegacyHardwareKey(uint8_t key[16]) {
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
     const char* salt = "SG10_IOTARU_ENC_SALT_2026";
     uint8_t inputBuf[38];
     memcpy(inputBuf, mac, 6);
@@ -25,12 +61,11 @@ static void deriveHardwareKey(uint8_t key[16]) {
     uint8_t hash[32];
     size_t hashLen = 0;
     psa_hash_compute(PSA_ALG_SHA_256, inputBuf, 6 + strlen(salt), hash, sizeof(hash), &hashLen);
-
     memcpy(key, hash, 16);
 }
 
 static void encryptSecret(const char* plaintext, char* outEncBuf, size_t maxLen) {
-    if (!plaintext || !outEncBuf || maxLen < 16) return;
+    if (!plaintext || !outEncBuf || maxLen < 40) return;
     size_t inLen = strlen(plaintext);
     if (inLen == 0) {
         strlcpy(outEncBuf, "", maxLen);
@@ -40,28 +75,37 @@ static void encryptSecret(const char* plaintext, char* outEncBuf, size_t maxLen)
     uint8_t key[16];
     deriveHardwareKey(key);
 
-    // PKCS#7 padding to 16 bytes
+    if (inLen > 63) inLen = 63;
     size_t padLen = 16 - (inLen % 16);
     size_t paddedLen = inLen + padLen;
-    if (paddedLen > 80) paddedLen = 80;
 
-    uint8_t inBuf[80];
+    uint8_t inBuf[64];
     memcpy(inBuf, plaintext, inLen);
     memset(inBuf + inLen, (uint8_t)padLen, padLen);
 
-    uint8_t cipherBuf[80];
+    uint8_t iv[16];
+    esp_fill_random(iv, sizeof(iv));
+    uint8_t ivCopy[16];
+    memcpy(ivCopy, iv, sizeof(iv));
+
+    uint8_t cipherBuf[64];
     esp_aes_context aes;
     esp_aes_init(&aes);
     esp_aes_setkey(&aes, key, 128);
-
-    for (size_t offset = 0; offset < paddedLen; offset += 16) {
-        esp_aes_crypt_ecb(&aes, ESP_AES_ENCRYPT, inBuf + offset, cipherBuf + offset);
-    }
+    esp_aes_crypt_cbc(&aes, ESP_AES_ENCRYPT, paddedLen, ivCopy, inBuf, cipherBuf);
     esp_aes_free(&aes);
 
-    // Format output as "enc:" + hex string
-    strlcpy(outEncBuf, "enc:", maxLen);
+    // Format output: "cbc:" + 32 hex IV + ":" + hex cipher
+    strlcpy(outEncBuf, "cbc:", maxLen);
     size_t curLen = 4;
+    for (size_t i = 0; i < 16 && (curLen + 2) < maxLen; i++) {
+        snprintf(outEncBuf + curLen, maxLen - curLen, "%02x", iv[i]);
+        curLen += 2;
+    }
+    if (curLen + 1 < maxLen) {
+        outEncBuf[curLen++] = ':';
+        outEncBuf[curLen] = '\0';
+    }
     for (size_t i = 0; i < paddedLen && (curLen + 2) < maxLen; i++) {
         snprintf(outEncBuf + curLen, maxLen - curLen, "%02x", cipherBuf[i]);
         curLen += 2;
@@ -71,51 +115,93 @@ static void encryptSecret(const char* plaintext, char* outEncBuf, size_t maxLen)
 static void decryptSecret(const char* storedStr, char* outPlainBuf, size_t maxLen) {
     if (!storedStr || !outPlainBuf || maxLen == 0) return;
 
-    if (strncmp(storedStr, "enc:", 4) != 0) {
-        // Plaintext legacy (e.g. from factory universal nvs.bin)
-        strlcpy(outPlainBuf, storedStr, maxLen);
+    // 1. Format Baru: AES-CBC ("cbc:<32_hex_iv>:<hex_cipher>")
+    if (strncmp(storedStr, "cbc:", 4) == 0) {
+        const char* ivHex = storedStr + 4;
+        const char* colon = strchr(ivHex, ':');
+        if (!colon || (colon - ivHex) != 32) {
+            strlcpy(outPlainBuf, "", maxLen);
+            return;
+        }
+        uint8_t iv[16];
+        for (size_t i = 0; i < 16; i++) {
+            char bStr[3] = { ivHex[i * 2], ivHex[i * 2 + 1], '\0' };
+            iv[i] = static_cast<uint8_t>(strtoul(bStr, nullptr, 16));
+        }
+        const char* cipherHex = colon + 1;
+        size_t hexLen = strlen(cipherHex);
+        if ((hexLen % 32) != 0 || hexLen == 0 || (hexLen / 2) > 64) {
+            strlcpy(outPlainBuf, "", maxLen);
+            return;
+        }
+        size_t cipherLen = hexLen / 2;
+        uint8_t cipherBuf[64] = {0};
+        for (size_t i = 0; i < cipherLen; i++) {
+            char bStr[3] = { cipherHex[i * 2], cipherHex[i * 2 + 1], '\0' };
+            cipherBuf[i] = static_cast<uint8_t>(strtoul(bStr, nullptr, 16));
+        }
+
+        uint8_t key[16];
+        deriveHardwareKey(key);
+        uint8_t plainBuf[64] = {0};
+
+        esp_aes_context aes;
+        esp_aes_init(&aes);
+        esp_aes_setkey(&aes, key, 128);
+        esp_aes_crypt_cbc(&aes, ESP_AES_DECRYPT, cipherLen, iv, cipherBuf, plainBuf);
+        esp_aes_free(&aes);
+
+        uint8_t pad = plainBuf[cipherLen - 1];
+        if (pad > 0 && pad <= 16 && pad <= cipherLen) {
+            size_t realLen = cipherLen - pad;
+            if (realLen >= maxLen) realLen = maxLen - 1;
+            memcpy(outPlainBuf, plainBuf, realLen);
+            outPlainBuf[realLen] = '\0';
+        } else {
+            strlcpy(outPlainBuf, "", maxLen);
+        }
         return;
     }
 
-    const char* hexStr = storedStr + 4;
-    size_t hexLen = strlen(hexStr);
-    if ((hexLen % 32) != 0 || hexLen == 0 || (hexLen / 2) > 80) {
-        // Format salah / korup
-        strlcpy(outPlainBuf, "", maxLen);
+    // 2. Format Lama: AES-ECB ("enc:<hex_cipher>")
+    if (strncmp(storedStr, "enc:", 4) == 0) {
+        const char* hexStr = storedStr + 4;
+        size_t hexLen = strlen(hexStr);
+        if ((hexLen % 32) != 0 || hexLen == 0 || (hexLen / 2) > 80) {
+            strlcpy(outPlainBuf, "", maxLen);
+            return;
+        }
+        size_t cipherLen = hexLen / 2;
+        uint8_t cipherBuf[80] = {0};
+        for (size_t i = 0; i < cipherLen; i++) {
+            char byteStr[3] = { hexStr[i * 2], hexStr[i * 2 + 1], '\0' };
+            cipherBuf[i] = static_cast<uint8_t>(strtoul(byteStr, nullptr, 16));
+        }
+        uint8_t key[16];
+        deriveLegacyHardwareKey(key);
+        uint8_t plainBuf[80] = {0};
+        esp_aes_context aes;
+        esp_aes_init(&aes);
+        esp_aes_setkey(&aes, key, 128);
+        for (size_t offset = 0; offset < cipherLen; offset += 16) {
+            esp_aes_crypt_ecb(&aes, ESP_AES_DECRYPT, cipherBuf + offset, plainBuf + offset);
+        }
+        esp_aes_free(&aes);
+
+        uint8_t pad = plainBuf[cipherLen - 1];
+        if (pad > 0 && pad <= 16 && pad <= cipherLen) {
+            size_t realLen = cipherLen - pad;
+            if (realLen >= maxLen) realLen = maxLen - 1;
+            memcpy(outPlainBuf, plainBuf, realLen);
+            outPlainBuf[realLen] = '\0';
+        } else {
+            strlcpy(outPlainBuf, "", maxLen);
+        }
         return;
     }
 
-    size_t cipherLen = hexLen / 2;
-    uint8_t cipherBuf[80] = {0};
-    for (size_t i = 0; i < cipherLen; i++) {
-        char byteStr[3] = { hexStr[i * 2], hexStr[i * 2 + 1], '\0' };
-        cipherBuf[i] = static_cast<uint8_t>(strtoul(byteStr, nullptr, 16));
-    }
-
-    uint8_t key[16];
-    deriveHardwareKey(key);
-
-    uint8_t plainBuf[80] = {0};
-    esp_aes_context aes;
-    esp_aes_init(&aes);
-    esp_aes_setkey(&aes, key, 128);
-
-    for (size_t offset = 0; offset < cipherLen; offset += 16) {
-        esp_aes_crypt_ecb(&aes, ESP_AES_DECRYPT, cipherBuf + offset, plainBuf + offset);
-    }
-    esp_aes_free(&aes);
-
-    // PKCS#7 unpad
-    uint8_t pad = plainBuf[cipherLen - 1];
-    if (pad > 0 && pad <= 16 && pad <= cipherLen) {
-        size_t realLen = cipherLen - pad;
-        if (realLen >= maxLen) realLen = maxLen - 1;
-        memcpy(outPlainBuf, plainBuf, realLen);
-        outPlainBuf[realLen] = '\0';
-    } else {
-        // Corrupt padding fallback
-        strlcpy(outPlainBuf, "", maxLen);
-    }
+    // 3. Plaintext Legacy (dari nvs.bin universal pabrik)
+    strlcpy(outPlainBuf, storedStr, maxLen);
 }
 
 #ifndef CONFIG_FIRMWARE_VERSION
@@ -351,12 +437,14 @@ void ConfigStore::initNvsConfiguration() {
             nvsCopyU32(hMaster, hDest, "port", 1884);
             nvsCopyStr(hMaster, hDest, "user", "");
             nvsCopyStr(hMaster, hDest, "pass", "");
+            nvsCopyU32(hMaster, hDest, "use_ssl", 0);
             nvs_close(hMaster);
         } else {
             nvs_set_str(hDest, "host", "socket.cubeacon.com");
             nvs_set_u32(hDest, "port", 1884);
             nvs_set_str(hDest, "user", "");
             nvs_set_str(hDest, "pass", "");
+            nvs_set_u32(hDest, "use_ssl", 0);
         }
         nvs_commit(hDest);
         nvs_close(hDest);
@@ -417,11 +505,11 @@ void ConfigStore::loadConfig() {
     if (nvs_open("cfg_auth", NVS_READWRITE, &h) == ESP_OK) {
         nvsGetStr(h, "adm_user", g_config.admin_user, sizeof(g_config.admin_user), "admin");
 
-        char rawAdmPass[128] = {0};
+        char rawAdmPass[192] = {0};
         nvsGetStr(h, "adm_pass", rawAdmPass, sizeof(rawAdmPass), "admin");
         decryptSecret(rawAdmPass, g_config.admin_pass, sizeof(g_config.admin_pass));
-        if (strncmp(rawAdmPass, "enc:", 4) != 0 && strlen(rawAdmPass) > 0) {
-            char encBuf[128];
+        if (strncmp(rawAdmPass, "cbc:", 4) != 0 && strlen(g_config.admin_pass) > 0) {
+            char encBuf[192];
             encryptSecret(g_config.admin_pass, encBuf, sizeof(encBuf));
             nvs_set_str(h, "adm_pass", encBuf);
             needAuthMigration = true;
@@ -429,11 +517,11 @@ void ConfigStore::loadConfig() {
 
         nvsGetStr(h, "tek_user", g_config.user_user, sizeof(g_config.user_user), "user");
 
-        char rawTekPass[128] = {0};
+        char rawTekPass[192] = {0};
         nvsGetStr(h, "tek_pass", rawTekPass, sizeof(rawTekPass), "user");
         decryptSecret(rawTekPass, g_config.user_pass, sizeof(g_config.user_pass));
-        if (strncmp(rawTekPass, "enc:", 4) != 0 && strlen(rawTekPass) > 0) {
-            char encBuf[128];
+        if (strncmp(rawTekPass, "cbc:", 4) != 0 && strlen(g_config.user_pass) > 0) {
+            char encBuf[192];
             encryptSecret(g_config.user_pass, encBuf, sizeof(encBuf));
             nvs_set_str(h, "tek_pass", encBuf);
             needAuthMigration = true;
@@ -441,7 +529,7 @@ void ConfigStore::loadConfig() {
 
         if (needAuthMigration) {
             nvs_commit(h);
-            ESP_LOGI(TAG, "Kredensial pabrik universal berhasil dimigrasi ke enkripsi hardware AES-128.");
+            ESP_LOGI(TAG, "Kredensial auth berhasil dimigrasi ke enkripsi hardware AES-CBC (256-bit entropy).");
         }
         nvs_close(h);
     } else {
@@ -473,12 +561,23 @@ void ConfigStore::loadConfig() {
         nvs_close(h);
     }
 
-    // cfg_mqtt
-    if (nvs_open("cfg_mqtt", NVS_READONLY, &h) == ESP_OK) {
+    // cfg_mqtt (NVS_READWRITE untuk auto-migrasi enkripsi mqtt_password)
+    if (nvs_open("cfg_mqtt", NVS_READWRITE, &h) == ESP_OK) {
         nvsGetStr(h, "host", g_config.mqtt_host, sizeof(g_config.mqtt_host), "socket.cubeacon.com");
         g_config.mqtt_port = (int)nvsGetU32(h, "port", 1884);
         nvsGetStr(h, "user", g_config.mqtt_user, sizeof(g_config.mqtt_user), "");
-        nvsGetStr(h, "pass", g_config.mqtt_password, sizeof(g_config.mqtt_password), "");
+        g_config.mqtt_use_ssl = (int)nvsGetU32(h, "use_ssl", 0);
+
+        char rawMqttPass[192] = {0};
+        nvsGetStr(h, "pass", rawMqttPass, sizeof(rawMqttPass), "");
+        decryptSecret(rawMqttPass, g_config.mqtt_password, sizeof(g_config.mqtt_password));
+        if (strncmp(rawMqttPass, "cbc:", 4) != 0 && strlen(g_config.mqtt_password) > 0) {
+            char encMqtt[192];
+            encryptSecret(g_config.mqtt_password, encMqtt, sizeof(encMqtt));
+            nvs_set_str(h, "pass", encMqtt);
+            nvs_commit(h);
+            ESP_LOGI(TAG, "Password MQTT berhasil dimigrasi ke format enkripsi AES-CBC.");
+        }
         nvs_close(h);
     }
 
@@ -500,10 +599,11 @@ void ConfigStore::loadConfig() {
         nvs_close(h);
     }
 
-    ESP_LOGI(TAG, "Konfigurasi berhasil dimuat: Model=%s, Mode=%s, Broker=%s:%d",
+    ESP_LOGI(TAG, "Konfigurasi berhasil dimuat: Model=%s, Mode=%s, Broker=%s:%d (SSL: %s)",
              g_config.device_model,
              (g_config.connection_mode == 1) ? "Ethernet" : "Wi-Fi",
-             g_config.mqtt_host, g_config.mqtt_port);
+             g_config.mqtt_host, g_config.mqtt_port,
+             g_config.mqtt_use_ssl ? "YA" : "TIDAK");
 }
 
 void ConfigStore::saveConfigAuth() {
@@ -511,13 +611,13 @@ void ConfigStore::saveConfigAuth() {
     if (nvs_open("cfg_auth", NVS_READWRITE, &h) == ESP_OK) {
         nvs_set_str(h, "adm_user", g_config.admin_user);
 
-        char encAdmPass[128];
+        char encAdmPass[192];
         encryptSecret(g_config.admin_pass, encAdmPass, sizeof(encAdmPass));
         nvs_set_str(h, "adm_pass", encAdmPass);
 
         nvs_set_str(h, "tek_user", g_config.user_user);
 
-        char encTekPass[128];
+        char encTekPass[192];
         encryptSecret(g_config.user_pass, encTekPass, sizeof(encTekPass));
         nvs_set_str(h, "tek_pass", encTekPass);
 
@@ -548,7 +648,12 @@ void ConfigStore::saveConfigAuth() {
         nvs_set_str(h, "host", g_config.mqtt_host);
         nvs_set_u32(h, "port", (uint32_t)g_config.mqtt_port);
         nvs_set_str(h, "user", g_config.mqtt_user);
-        nvs_set_str(h, "pass", g_config.mqtt_password);
+        nvs_set_u32(h, "use_ssl", (uint32_t)g_config.mqtt_use_ssl);
+
+        char encMqttPass[192];
+        encryptSecret(g_config.mqtt_password, encMqttPass, sizeof(encMqttPass));
+        nvs_set_str(h, "pass", encMqttPass);
+
         nvs_commit(h);
         nvs_close(h);
     }

@@ -189,12 +189,24 @@ Pemisahan arsitektur versioning gateway agar setiap layer dapat di-update secara
 - **Running Mode Badge (#badgeConnMode):**
   - Pada mode Ethernet aktif dan terhubung, badge bertransformasi menampilkan format: \Ethernet (100M Full)\ atau \Ethernet (10M Half)\.
   - Status kelas: \.badge-tech.conn\ (Hijau / Emerald) saat IP diperoleh, \.badge-tech.offline\ (Merah / Rose) saat kabel terputus.
+- **Dual-Interface Network Specs Grid Layout (Wi-Fi & Ethernet Indipenden):**
+  - **IP Address (Wi-Fi) Tile (`#valWifiIp`):**
+    - Warna: `#34d399` (Emerald 400), Font: Monospace.
+    - Menampilkan alamat IP koneksi Wi-Fi saat terhubung (`192.168.x.x`) atau `-` saat terputus.
+  - **MAC Address (Wi-Fi) Tile (`#valWifiMac`):**
+    - Warna: `#38bdf8` (Sky 400), Font: Monospace.
+    - Menampilkan alamat MAC fisik antarmuka nirkabel Wi-Fi dari eFuse ESP32.
+  - **IP Address (Ethernet) Tile (`#valEthIp`, Container `#tileEthIp`):**
+    - Warna: `#34d399` (Emerald 400) saat terhubung, Muted Gray `#94a3b8` saat kabel terputus.
+    - Otomatis adaptif: Menampilkan IP Router LAN (`192.168.1.x`), IP Direct PC (`192.168.4.1`), atau status `Kabel Terputus (Link Down)`.
+    - Auto-Hide: Kontainer tile otomatis disembunyikan (`display: none;`) jika hardware kontroler Ethernet W5500 tidak terdeteksi.
+  - **MAC Address (Ethernet) Tile (`#valEthMac`, Container `#tileEthMac`):**
+    - Warna: `#38bdf8` (Sky 400), Font: Monospace.
+    - Menampilkan alamat MAC perangkat keras Ethernet W5500.
+    - Auto-Hide: Kontainer tile disembunyikan bersamaan jika hardware Ethernet uninstalled.
 - **Ethernet Physical Link Tile (#labelSignalStrength, #valSignalStrength):**
-  - Menggantikan tampilan RSSI nirkabel dengan telemetri kabel fisik RJ-45: @ Mbps (Full Duplex)\ atau \Kabel Terputus (Link Down)\.
-  - Memberikan visibilitas langsung kepada teknisi IT/OT pabrik untuk mendeteksi kabel rusak atau *Duplex Mismatch* switch.
-- **Automated PHY Self-Healing Architecture:**
-  - Pemanfaatan gate transistor KO3401 P-MOSFET pada GPIO 15 untuk memutus daya 3.3V ke LAN8720 selama 200 ms jika kabel tercolok tapi IP gagal didapatkan selama 5 menit (300 detik).
-  - Berfungsi memulihkan chip dari kondisi *latch-up* akibat induksi motor / lonjakan listrik industri tanpa me-reset timer \discon_rst\.
+  - Menggantikan tampilan RSSI nirkabel dengan telemetri kabel fisik RJ-45: 100 Mbps (Full Duplex) atau Kabel Terputus (Link Down).
+  - Memberikan visibilitas langsung kepada teknisi IT/OT pabrik untuk mendeteksi kabel rusak atau Duplex Mismatch switch.
 
 ## 10. Industrial Staging & Pending Reboot Architecture
 - **Floating Pending Reboot Banner (.pending-reboot-banner):**
@@ -389,9 +401,20 @@ Pemisahan arsitektur versioning gateway agar setiap layer dapat di-update secara
     - Buffer: 4096-byte Hardware FIFO ring-buffer dengan FreeRTOS Event Queue.
     - Pinout: `RX: GPIO 16, TX: GPIO 17`.
     - Affinity: Terkunci khusus ke **Core 0** (PRO_CPU) untuk latensi sub-mikrodetik tanpa interferensi stack TCP/IP.
-  - **WS2812B NeoPixel Multi-LED Indicator**:
-    - Pin: `GPIO 13` (Daisy-chain LED 1 [SYS] dan LED 2 [COM]).
-    - Timing Engine: Optimized bitbang cycle-counted (< 60 µs total latch) dengan FreeRTOS task di Core 1.
+  - **WS2812B NeoPixel Multi-LED Indicator (2-Pixel Daisy-Chain on GPIO 13)**:
+    - **Timing Engine**: Optimized direct register bitbang cycle-counted (< 60 µs latch, IRAM-resident) dengan FreeRTOS task 50 FPS di Core 1.
+    - **Pixel 0: LED SYS (Status Operasional Sistem)**:
+      - *Identify Mode*: Biru Murni Strobe 4 Hz (125ms On / 125ms Off) — Prioritas 1
+      - *OTA Firmware Flash*: Oranye Tajam Strobe 10 Hz (50ms On / 50ms Off) — Prioritas 2
+      - *Config Mode (SoftAP / Direct PC LAN)*: **Biru Murni Kedip 1 Hz (500ms On / 500ms Off)** — Prioritas 3
+      - *Hardware Fault*: Merah Murni Solid — Prioritas 4
+      - *Booting / Init*: Kuning Hangat Kedip 2 Hz (250ms On / 250ms Off) — Prioritas 5
+      - *Normal Running*: Hijau Murni Solid — Prioritas 6
+    - **Pixel 1: LED NET / COM (Status Komunikasi Jaringan Murni)**:
+      - *Link Down (Kabel RJ45 lepas / Wi-Fi disconnected)*: Merah Murni Double Blink (100ms On, 100ms Off, 100ms On, 700ms Off) — Prioritas 1
+      - *Link Up, Menunggu IP DHCP*: Kuning Hangat Kedip 2 Hz (250ms On / 250ms Off) — Prioritas 2
+      - *IP Acquired, MQTT Offline*: Cyan (Biru Muda) Kedip 1 Hz (500ms On / 500ms Off) — Prioritas 3
+      - *Normal Operasional (IP & MQTT Online)*: **Hijau Murni Solid + Traffic Blip Padam 90ms** saat frame beacon terkirim — Prioritas 4
   - **Recovery / Factory Reset Button**:
     - Pin: `GPIO 34` (Active Low, 10k external pull-up).
     - Polling: Zero-boot synchronous evaluation (`< 5s` Batal, `5-10s` Mode AP Hotspot, `> 10s` Reset Pabrik).
@@ -938,5 +961,464 @@ Pemisahan arsitektur versioning gateway agar setiap layer dapat di-update secara
     - Untuk perintah berfrekuensi tinggi (`ping`), rolling FIFO 10 entri dikelola di RAM guna menghemat umur pakai EEPROM.
     - Untuk perintah kritis (`reboot`, `identify`), rolling FIFO 10 entri dipersistensikan ke halaman EEPROM AT24C256 di alamat `0x6400` (64 bytes dengan magic `0x53455131` dan checksum XOR), dengan fallback otomatis ke RAM jika IC EEPROM tidak terpasang.
   - **Delayed Reboot Task**: Eksekusi perintah `reboot` dialihkan ke task FreeRTOS terpisah dengan delay 1000 ms agar paket respon MQTT QoS 1 terkirim dan ter-flush sempurna ke broker sebelum sistem restart.
+
+## 36. Production-Grade Hardening, Zero-Corrupt Password Masking & System Integrity
+- **Latar Belakang & Ruang Lingkup**:
+  - Pengerasan level produksi industri mencakup mitigasi kerentanan keamanan web, pencegahan silent password corruption pada antarmuka pengguna, penguatan kriptografi NVS ke AES-128-CBC dengan per-device salt, serta optimasi stabilitas multi-core Xtensa.
+- **1. Zero-Corrupt UI Password Masking (`web_template.cpp` & `web_routes.cpp`)**:
+  - Seluruh field password sensitif (`admin_pass`, `user_pass`, `w_password`, `ap_password`, `mqtt_password`) di-*masking* dengan representasi titik peluru `••••••••` saat di-*render* ke form HTML/template.
+  - Endpoint REST API (`api_config_auth_handler`) menerapkan filter predikat `is_masked_or_empty(val)`: jika nilai yang dikirim browser berupa `••••••••`, `********`, atau string kosong, konfigurasi password yang ada di NVS tidak akan ditimpa atau dirusak.
+  - Validasi panjang minimal 8 karakter dan larangan karakter `:` diberlakukan untuk kredensial autentikasi.
+  - Pembatasan peran (Role-Based Access Control): akun teknisi dibatasi hanya dapat mengubah password teknisi dan tidak diizinkan mengubah kredensial administrator.
+- **2. Emergency Recovery Mode Hardening (`emergency_page.cpp`)**:
+  - Menghapus atribut default `value="admin"` pada input kata sandi administrator untuk mencegah eskalasi akses tanpa otorisasi.
+  - Membersihkan timer pemulihan (`clearInterval`) setelah hitung mundur reboot selesai guna mencegah memory/timer leak di peramban klien.
+  - Menghapus isian default `'admin'` pada dialog konfirmasi `prompt()` fungsi reboot darurat.
+- **3. Defense-in-Depth HTTP Content-Security-Policy & Path Traversal Guard**:
+  - Menambahkan header `Content-Security-Policy: default-src 'self' 'unsafe-inline' data: ws:;` pada setiap respon HTTP untuk memitigasi serangan Cross-Site Scripting (XSS).
+  - Melindungi handler aset berkas (`assets_wildcard_handler`) dari eksploitasi direktori traversal (`..` dan `//`).
+  - Mengamankan pemanggilan `fopen` untuk berkas statis dan gzip dengan mode biner `"rb"`.
+  - Memperluas buffer Set-Cookie HTTP (`cookie_hdr`) menjadi 192 bytes untuk menampung token sesi 64-karakter (256-bit entropy).
+- **4. Cryptographic Storage Hardening (`config_store.cpp`)**:
+  - Meningkatkan cipher enkripsi password NVS dari AES-128-ECB menjadi **AES-128-CBC** dengan Initialization Vector (IV) 16-byte acak per-penulisan (`esp_fill_random`).
+  - Menghasilkan dan memvalidasi salt unik per-unit di partisi NVS (`cfg_sys:k_salt`) sehingga dua gateway dengan MAC identik atau password identik menghasilkan ciphertext yang berbeda.
+  - Mendukung panjang kata sandi hingga 63 karakter tanpa risiko buffer truncation.
+  - Mempertahankan kompatibilitas penuh backward-compatibility: sistem secara otomatis mendeteksi format lama (`enc:` atau plaintext) dan memigrasikannya ke format terenkripsi CBC ber-prefiks `cbc:`.
+- **5. Session Entropy & Timing Attack Prevention (`session_mgr.cpp`)**:
+  - Ukuran token sesi diperluas menjadi 64 karakter heksadesimal (256-bit entropy).
+  - Mengimplementasikan perbandingan *constant-time* (`constant_time_eq`) pada seluruh tahap verifikasi, pembaharuan, dan pemusnahan token sesi untuk mencegah serangan *timing attack*.
+- **6. Multi-Core Concurrency & Deadlock Prevention**:
+  - Mengisolasi task reboot dan reset ke Core 1 (`xTaskCreatePinnedToCore(..., 1)`).
+  - Menyeragamkan penguncian buffer telemetri beacon (`s_beaconBufMutex`) untuk melindungi buffer live dan buffer drop tanpa fragmentasi mutex.
+  - Mengadopsi pola *Copy-Then-Send* pada WebSocket broadcast (`broadcast_ws_text`) untuk mencegah kondisi deadlock antara HTTP socket send dan session lock.
+  - Menyesuaikan prioritas `nRF_UART_Task` ke `configMAX_PRIORITIES - 4` untuk menjamin tidak terjadinya kelaparan proses (*starvation*) pada task jaringan dan sistem.
+- **7. OTA Integrity & Size Verification (`ota_service.cpp` & `web_routes.cpp`)**:
+  - Memverifikasi header biner OTA pada chunk pertama (minimal 112 byte) sebelum melakukan penulisan ke flash.
+  - Memvalidasi batas ukuran maksimum berkas OTA (maksimal 4 MB) menggunakan konversi aman `strtoul`.
+  - Melakukan verifikasi integritas sistem berkas pasca-flash dengan memeriksa keberadaan dan ukuran file krusial (`index.html` dan `app.js`).
+- **8. Intranet Authentication & Browser Password Manager Suppression (`web_routes.cpp` & `login.html`)**:
+  - **Cookie Policy (`SameSite=Lax`)**: Seluruh respon header `Set-Cookie` (`api_login_handler`, `api_logout_handler`, `api_auth_check_handler`, `api_touch_ap_handler`, `api_ota_upload_handler`) menggunakan atribut `SameSite=Lax`. Hal ini memastikan cookie sesi HTTP pada alamat IP intranet/lokal selalu disertakan oleh peramban berbasis Chromium (Edge, Chrome) pada navigasi top-level tanpa memicu kecurigaan atau isolasi cookie ketat.
+  - **DOM Form Credential Sanitization (`login.html`)**:
+    - Elemen form menggunakan `autocomplete="off"` dan `onsubmit="return false;"`, serta tombol submit diubah menjadi tombol mandiri `<button type="button" id="btnLogin">` guna mencegah penangkapan form submit standar oleh peramban.
+    - Input dilengkapi atribut eksplisit `autocomplete="username"` dan `autocomplete="current-password"` dengan `spellcheck="false"`.
+    - Dukungan keyboard `Enter` ditangani melalui event listener independen.
+    - Sesaat setelah respon otentikasi `200 OK` diterima dari ESP32, nilai elemen `#password` dan `#username` di DOM langsung dikosongkan (`value = ""`) sebelum `window.location.href = "/"` dieksekusi. Pola ini mencegah Windows Web Account Manager (WAM) dan Microsoft Wallet memicu sinkronisasi akun saat event `beforeunload`/`unload`, sehingga secara efektif mengeliminasi pop-up error Windows `0x8007052e`.
+- **9. Overview Spec Grid: Dynamic MAC Address & Realtime Signal Stability (`net_manager.cpp`, `web_routes.cpp`, `web_template.cpp`, & `index.html`)**:
+  - **Tile MAC Address Dinamis**: Menambahkan tile spesifikasi dengan label dinamis `%mac_label%` (`MAC Address (LAN)` saat koneksi Ethernet aktif vs `MAC Address (Wi-Fi)` saat koneksi Wi-Fi) dengan tipografi monospace cyan neon `#38bdf8` (`#valMacAddress`).
+  - **Abstraksi Hardware MAC (`NetworkManager::getActiveMac`)**: Memilih MAC interface W5500 via IOCTL driver saat Ethernet terpasang, atau eFuse Wi-Fi STA saat mode nirkabel, menjamin pembacaan konsisten tanpa overhead.
+  - **Realtime RSSI Polling Stability**: Endpoint `/api/v1/system/version` menyertakan key numerik `wifi_rssi` saat Wi-Fi terhubung, mencegah nilai Signal Strength di Overview berubah menjadi strip `-` pada siklus polling berkala (5 detik).
+- **10. Professional System Logging Taxonomy, Audit Trail & Hardware-Level Diagnostics (`net_log_service.*`, `EthernetW5500.cpp`, `mqtt_service.cpp`, & `web_routes.cpp`)**:
+  - **Zero-Speculative Logging Taxonomy**:
+    - Seluruh terminologi probabilistik (*"kemungkinan"*, *"mungkin"*, atau *"diduga"*) dieliminasi secara ketat dari seluruh subsistem logging.
+    - Setiap pesan log menyajikan fakta teknis deterministik berbasis status register hardware, event handler ESP-IDF, dan errno TCP/IP socket standar POSIX/lwIP.
+  - **Comprehensive Operational Audit Trail**:
+    - Penambahan event audit operasional pada `NetEvent` enum (bertipe `uint8_t` sehingga ukuran `EepromSlotData` tetap tepat 128 bytes dan kompatibel penuh dengan EEPROM fisik):
+      - `AUTH_UPDATE`: Pembaruan kredensial username/password administrator atau teknisi (`Kredensial Akun Diperbarui oleh Admin/Teknisi`).
+      - `CONFIG_UPDATE`: Perubahan konfigurasi sistem dari antarmuka Web UI (`Pengaturan Sistem Disimpan oleh Admin`).
+      - `CONFIG_DISCARD`: Pembatalan konfigurasi tertunda (*staged configuration*) oleh operator (`Perubahan Konfigurasi Jaringan Dibatalkan oleh Pengguna`).
+      - `LOG_CLEARED`: Pembersihan histori log sistem pada memori EEPROM (`Seluruh Riwayat Log Sistem Dibersihkan oleh Admin/Teknisi`).
+      - `CONFIG_RESET`: Eksekusi factory reset / inisialisasi ulang konfigurasi pabrik (`Konfigurasi Sistem Direset ke Standar Pabrik (Web Admin)`).
+  - **Deep-Dive Ethernet Diagnostics (Wiznet W5500)**:
+    - **Link Up Auto-Negotiation**: Menanyakan status register PHY via `esp_eth_ioctl(ETH_CMD_G_SPEED)` dan `esp_eth_ioctl(ETH_CMD_G_DUPLEX_MODE)`, mencatat kecepatan aktual (`10/100 Mbps`), mode transmisi (`Full/Half-Duplex`), serta alamat MAC fisik interface LAN.
+    - **Physical Link Down**: Mendeteksi pencabutan kabel RJ45 atau port switch nonaktif secara deterministik (`Kabel Fisik RJ45 Terputus / Switch Port Nonaktif (Link Down)`).
+    - **Hardware Interface Deactivation**: Pencatatan resmi saat mode switched ke Wi-Fi (`Interface Ethernet Dinonaktifkan (Peralihan ke Mode Wi-Fi)`).
+    - **IP Allocation Mode**: Mencatat mode perolehan IP (`DHCP` vs `Static`), subnet mask, dan gateway address (`IP (DHCP/Static): X.X.X.X | GW: Y.Y.Y.Y | Mask: Z.Z.Z.Z`).
+    - **Controller Init Guard**: Pencatatan deteksi hardware W5500 pada bus SPI beserta status kegagalan komunikasi jika chip tidak merespon SPI (`Inisialisasi Hardware W5500 SPI Controller Berhasil` vs `Hardware W5500 Tidak Terdeteksi / SPI Gagal`).
+  - **Definitive MQTT Error & Disconnect Cause Mapping**:
+    - **Errno Translator**: Menerjemahkan `sock_errno` dari transport layer lwIP ke terminologi baku:
+      - `ECONNRESET (104)`: `Koneksi Direset oleh Server / Broker (RST)`
+      - `ETIMEDOUT (110)`: `Koneksi TCP Timeout (Batas Waktu Terlampaui)`
+      - `EHOSTUNREACH (113)`: `Host Broker Tidak Dapat Dijangkau (Unreachable)`
+      - `ECONNREFUSED (111)`: `Koneksi Ditolak oleh Broker (Port Tertutup / Service Down)`
+      - `EPIPE (32)`: `Jalur Komunikasi TCP Terputus (Broken Pipe)`
+      - `ENOTCONN (128)`: `Socket Tidak Terhubung (Socket Not Connected)`
+      - `EHOSTDOWN (118)`: `Host Broker Tidak Aktif (Host Down)`
+    - **Clean Broker FIN / Keepalive Timeout**: Ketika socket ditutup tanpa errno error (`error_type == NONE`), secara deterministik dicatat sebagai `Sesi Dihentikan oleh Broker (TCP FIN / Keepalive Timeout)`.
+    - **Protocol-Level Return Codes**: Menerjemahkan kode error return MQTT connect:
+      - `1`: `Protokol Tidak Diterima (Unacceptable Protocol Version)`
+      - `2`: `Identifier Ditolak (Identifier Rejected)`
+      - `3`: `Server Broker Tidak Tersedia (Server Unavailable)`
+      - `4`: `Kredensial Tidak Valid (Bad Username or Password)`
+      - `5`: `Akses Ditolak / Tidak Memiliki Izin (Not Authorized)`
+    - **Keepalive Optimization**: Interval heartbeat keepalive MQTT dinaikkan dari 15 detik ke 30 detik untuk meningkatkan toleransi latensi jaringan seluler/WAN serta mengurangi pemutusan agresif.
+- **11. Beacon Drop Pipeline Hardening, Zero-Loss Telemetry Synchronization & Hardware Observability (`drop_log_service.*`, `beacon_pipeline.*`, `mqtt_service.cpp`, `main.cpp`, `bsp_uart.cpp`)**:
+  - **Zero-Loss TTL Pruning Pipeline**:
+    - Paket yang melebihi batas waktu hidup `data_ttl` saat ditarik oleh `mqttPublisherTask` dicatat ke sistem drop log sebelum dilewati (`Core::BeaconPipeline::recordDroppedBeacon(packet, DropReason::TTL_EXPIRED)`).
+    - Menghidupkan fungsi pembersihan antrean `Core::BeaconPipeline::pruneExpired()` secara berkala pada `supervisorTask` (`src/main.cpp`), menjamin paket kedaluwarsa dibersihkan dan dicatat bahkan saat koneksi MQTT sedang terputus.
+  - **Batch Buffer Flush Protection**:
+    - Mengeliminasi *silent drop* saat koneksi jaringan atau MQTT putus sesaat. Jika `batchCount > 0` saat koneksi terputus, memanggil `Core::BeaconPipeline::recordMqttFailed(batchCount)` terlebih dahulu sebelum mereset buffer batch ke nol.
+  - **Unified Packet-Count Drop Synchronization**:
+    - Menambahkan parameter `uint32_t count = 1` pada `DropLogService::record()`. Saat batch berisi $N$ paket gagal, counter akumulatif atomik `s_statTotalDropped` dan `s_statMqttFailed` bertambah sebesar $N$ paket (bukan 1 batch), menyinkronkan metrik antara WebSocket Live Monitor dan kartu KPI Drop Log REST API.
+  - **Consolidated Single Source of Truth (`getTotalDropped()`)**:
+    - Fungsi `BeaconPipeline::getTotalDropped()` mengagregasi seluruh 6 kategori drop (`TTL + RSSI + UUID + Major + Queue + MQTT`), menjamin kesesuaian nilai total header WebSocket dengan rincian drop summary.
+  - **Synchronized Log & Counter Clear**:
+    - Operasi penghapusan log drop (`POST /api/v1/system/drop-logs/clear`) mengosongkan tabel riwayat 50 data di RAM dan serentak mereset seluruh variabel atomik sesi (`s_statTotalDropped`, `s_statTtlExpired`, dll.) serta counter pipeline via `BeaconPipeline::resetDropCounters()`.
+  - **Edge-Case Hardening & Concurrency Protection**:
+    - **TTL Zero Guard**: `BeaconPipeline::pruneExpired()` memvalidasi `g_config.data_ttl <= 0` di awal fungsi guna mencegah pembuangan paket baru secara tidak sengaja saat TTL dinonaktifkan (`data_ttl = 0`).
+    - **Queue Contention & Race Prevention**: `supervisorTask` hanya memanggil `pruneExpired()` saat MQTT offline (`!MqttService::isConnected()`), mengeliminasi kontensi antrean dan *preemption race* antara `xQueuePeek` dan `xQueueReceive` dengan `mqttPublisherTask` (Prioritas 6).
+    - **Unconditional Atomic Stats Clear**: Reset seluruh variabel atomik `s_stat*` pada `DropLogService::clearLogs()` diposisikan di luar penguncian mutex `s_dropMutex`, menjamin reset metrik kartu KPI 100% instan tanpa risiko terhambat timeout mutex.
+- **12. Telemetri Total Reboot ESP32, Disconnect Counters Per-Interface & Persistensi AT24C256 EEPROM / RAM Fallback**:
+  - **Pemisahan Domain Metrik Mutlak**:
+    - **Total Reboot ESP32**: Didedikasikan 100% untuk menghitung siklus boot hardware chip ESP32 (`boot_count` kali), dilengkapi keterangan alasan reset hardware terakhir (`esp_reset_reason()`: Power-On Cold Boot, Software Reboot Manual, Task Watchdog Timer, Brownout, dll.).
+    - **Disconnect Counters Per-Interface**: Metrik pemutusan koneksi dipisahkan secara independen pada kartu masing-masing antarmuka:
+      - Wi-Fi Station: `IP: X.X.X.X • DC: <n> kali`
+      - Ethernet W5500: `IP: Y.Y.Y.Y • DC: <n> kali`
+      - MQTT Broker: `Port: 1883 • DC: <n> kali`
+  - **Alokasi EEPROM Mandiri Bebas Benturan (`0x6440`)**:
+    - Struktur data `SystemStatsStore` dialokasikan pada alamat `0x6440` (persis 64 byte, 1 halaman AT24C256).
+    - Mempertahankan integritas slot 200 log jaringan (`0x0000 - 0x63FF`) dan `MqttSeqStore` (`0x6400 - 0x643F`).
+    - Dilindungi checksum **CRC16-LE** untuk ketahanan terhadap pemadaman listrik tiba-tiba (*power-cut resilience*).
+    - Mekanisme *throttled commit* (maksimal tulis setiap 3 detik) untuk menjaga ketahanan siklus tulis EEPROM.
+    - Fallback otomatis ke variabel static RAM jika modul EEPROM I2C tidak terpasang (*Zero Flash Wear*).
+  - **Perbaikan Bug Ethernet W5500 Link Up**:
+    - Mengeliminasi kebocoran evaluasi `isLinkUp()` yang sebelumnya mengembalikan `true` saat Wi-Fi aktif.
+    - Menambahkan `NetworkManager::isEthernetLinkUp()` yang murni memeriksa status fisik chip SPI W5500 (`s_ethDriver && s_ethDriver->isConnected()`).
+    - Jika kabel RJ45 dicabut, kartu Ethernet menampilkan status **LINK DOWN** (badge merah) dan keterangan **Kabel Terputus** secara deterministik.
+  - **Penggantian KPI Drop Tab ke-4**:
+    - Mengganti kartu redundan *Buffer Riwayat / 50 Data* dengan **`GAGAL PUBLISH MQTT`** (`#kpiDropMqtt`, badge rose `Broker Fail`), terhubung langsung ke akumulasi `summary.mqtt_failed`.
+- **13. Komponen Navigasi Paging 10 Data per Halaman (10-Item Table Pagination)**:
+  - **Kapasitas Standar**: 10 baris per halaman (`PAGE_SIZE = 10`), diterapkan seragam pada kedua tabel di `/log` (*Log Jaringan & Sistem* dan *Log Drop Data Beacon*).
+  - **Anatomi UI Footer (`.log-pagination-wrap`)**:
+    - **Info Rentang**: `Menampilkan 1 - 10 dari 50 data` (dinamis mengikuti filter & pencarian).
+    - **Navigasi Tombol**: `[‹ Prev] [ 1 ] [ 2 ] [ 3 ] [ 4 ] [ 5 ] [ Next ›]`.
+  - **Gaya Desain Dark Cyber**:
+    - Tombol `.btn-page`: Background `rgba(255,255,255,0.05)`, border `1px solid rgba(255,255,255,0.1)`, teks slate `#94a3b8`, font monospace, min-width 34px.
+    - State Aktif: Background `#38bdf8`, teks gelap `#0f172a`, font-weight 700, cyan glowing shadow `0 0 10px rgba(56,189,248,0.4)`.
+    - State Hover: Background `rgba(56, 189, 248, 0.15)`, border `#38bdf8`, teks cerah.
+    - State Disabled: Opacity 0.35, kursor `not-allowed`.
+  - **Smart UX Auto-Reset**:
+    - Mengklik tab kategori segmen atau mengetik di kotak pencarian secara instan menghitung ulang total halaman dan mereset posisi navigasi ke **Halaman 1**.
+- **14. Kebijakan Pencatatan Drop Log: Isolasi Kondisi Online (MQTT Connected Only)**:
+  - **Prinsip Arsitektur**:
+    - Log Drop Data Beacon (`/log?tab=drop`) difokuskan murni untuk memantau performa pipeline dan integritas transmisi data saat sistem dalam kondisi operasional normal (**MQTT Connected**).
+    - Kegagalan transmisi selama fase inisialisasi awal (booting), proses negosiasi DHCP Wi-Fi/Ethernet, atau saat koneksi internet terputus dikategorikan sebagai anomali jaringan (*Network Event*) dan dicatat secara akurat di *Log Jaringan & Sistem* (Network Logs) serta counter *Disconnect*.
+  - **Mekanisme Eksekusi (Zero False-Drop Enforcement)**:
+    - `BeaconPipeline::recordDroppedBeacon()` dan `DropLogService::record()` dilindungi oleh evaluasi predikat: alasan drop pipeline normal (`TTL_EXPIRED`, `RSSI_OUT_OF_RANGE`, `UUID_MISMATCH`, `MAJOR_MISMATCH`, `QUEUE_OVERFLOW`) hanya dicatat saat MQTT Connected.
+    - **Pengecualian Khusus Gagal Publish MQTT (`DropReason::MQTT_FAIL`)**: Paket batch yang gagal dipublish ke broker MQTT (akibat socket error, outbox overflow, atau koneksi Wi-Fi/MQTT terputus saat batch siap kirim) **tetap selalu dicatat** ke Log Drop dan counter `GAGAL PUBLISH MQTT` meskipun sistem dalam kondisi disconnect.
+    - `BeaconPipeline::pruneExpired()` tetap melakukan pembersihan antrean saat offline agar RAM FreeRTOS tidak jenuh, namun pembersihan ini dilakukan secara *silent* tanpa mencemari Log Drop.
+    - `BeaconPipeline::flushQueue()` dieksekusi secara otomatis pada event `MQTT_EVENT_CONNECTED`. Paket beacon usang yang terakumulasi selama jeda koneksi langsung dikosongkan sebelum task publisher mulai bekerja, menjamin tidak ada lonjakan drop TTL palsu sesaat setelah gateway terhubung.
+
+## 37. Fitur Enkripsi MQTTS (MQTT over SSL/TLS) Dinamis & Factory NVS Synchronization
+- **Latar Belakang & Spesifikasi**:
+  - Menyediakan perlindungan privasi dan keamanan tingkat industri untuk transmisi telemetri beacon, status gateway, dan penerimaan perintah kendali melalui saluran terenkripsi MbedTLS (TLS 1.2 / 1.3).
+  - Pilihan protokol bersifat dinamis: pengguna dapat beralih antara **MQTT Plain (TCP)** dan **MQTTS (TLS/SSL)** langsung dari antarmuka Web Admin (`/auth_admin.html`) tanpa perlu kompilasi ulang firmware.
+- **1. Master NVS & Factory Default Synchronization (`nvs_config.csv` & `config_store.cpp`)**:
+  - **Tabel Partisi Master**: Menambahkan baris `use_ssl,data,u32,0` di bawah namespace `mqtt` pada berkas `nvs_config.csv` (standar default pabrik: Plain TCP `0`).
+  - **First-Boot Clone**: Fungsi `initNvsConfiguration()` menyalin `use_ssl` dari partisi master `mqtt` ke working namespace `cfg_mqtt` (`nvsCopyU32(hMaster, hDest, "use_ssl", 0);`).
+  - **Factory Reset Safety**: Pada eksekusi factory reset via tombol boot recovery atau Web UI, parameter `use_ssl` dikembalikan ke default `0`.
+- **2. Driver & Engine MQTTS ESP-IDF (`mqtt_service.cpp`)**:
+  - **Dinamika URI Scheme**: Menggunakan `mqtts://` saat `use_ssl == 1` dan `mqtt://` saat `use_ssl == 0`.
+  - **Transport & Verifikasi**: Menggunakan URI Scheme (`mqtt://` vs `mqtts://`) untuk menentukan transport tanpa mengisi `broker.address.transport` secara manual (mencegah `ESP_ERR_INVALID_ARG` akibat konflik skema URI di ESP-IDF). Saat SSL aktif, sistem menyematkan **`esp_crt_bundle_attach`** (kumpulan ~200 Mozilla Root CA resmi ESP-IDF untuk memverifikasi seluruh broker publik secara otomatis seperti PC/MQTT Explorer) serta mengirimkan ekstensi **TLS SNI (Server Name Indication)** secara presisi agar kompatibel penuh dengan arsitektur multi-tenant Cloud Serverless (misal EMQX Cloud Serverless). Pesan Last Will (LWT) tetap mempertahankan `retain = 1` sesuai kebutuhan state presensi gateway.
+  - **Task Stack Safety & Reconnect Sequence**: Alokasi `mqtt_cfg.task.stack_size` dinaikkan menjadi `8192` bytes guna menjamin kecukupan memori stack selama proses negosiasi kriptografi TLS Handshake. Fungsi `forceReconnect()` menangani `esp_mqtt_client_start()` secara adaptif pada koneksi jaringan pertama.
+- **3. Antarmuka Web & Smart Port Switcher (`auth_admin.html`, `web_template.cpp`, & `web_routes.cpp`)**:
+  - **Komponen Switch**: Mengadopsi `.toggle-card-row` dengan switch iOS `.ios-switch` pada Bento Card 4 (*Broker Telemetri MQTT Gateway*).
+  - **Smart Port Adjustment**: Script JavaScript secara otomatis mengganti nilai input port menjadi `8883` saat MQTTS diaktifkan (jika sebelumnya `1883` atau `1884`), dan mengembalikannya ke `1884` saat dinonaktifkan.
+  - **Integrasi REST API**: Endpoint `POST /api/v1/config/auth` mem-parsing parameter `mqtt_use_ssl` dan menyimpannya secara persisten ke NVS Flash.
+- **4. Telemetri & Visualisasi Status (`log.html` & `log.js`)**:
+  - Pada Card 3 (*MQTT Broker*), jika mode MQTTS aktif (`data.mqtt_ssl === true`), judul kartu berubah menjadi **MQTTS Broker** dan port menampilkan indikator gembok enkripsi: **`🔒 8883`**.
+
+## 38. Fitur Auto-Detection Direct LAN Peer-to-Peer ke PC & Fallback Micro-DHCP Server
+- **Latar Belakang & Spesifikasi**:
+  - Memungkinkan gateway terhubung langsung ke PC/laptop via kabel LAN (straight-through atau crossover) tanpa memerlukan router atau server DHCP eksternal.
+  - Perangkat otomatis mendeteksi ketiadaan server DHCP (timeout probe 11.5s - 13.5s dengan jitter berbasis MAC) dan secara cerdas mengaktifkan **Embedded Micro-DHCP Server** pada subnet terpadu **`192.168.4.1`**.
+  - Laptop teknisi yang berada pada setting default "Obtain an IP address automatically" otomatis menerima IP **`192.168.4.2`** dalam hitungan milidetik tanpa perlu setting IP manual di Windows/macOS/Linux.
+- **1. Visual Tokens & Komponen UI (`app.css` & `index.html`)**:
+  - **Badge Mode Direct LAN (`.badge-tech.direct`, `.badge-tech.mode-config`)**:
+    - Background: `rgba(59, 130, 246, 0.2)`
+    - Text: `#60a5fa` (Blue 400)
+    - Border: `1px solid rgba(59, 130, 246, 0.4)`
+    - Teks Label: `Ethernet (Direct PC 192.168.4.1)` untuk Master Node, atau `Ethernet (Peer Slave 192.168.4.X)` untuk Slave Node.
+- **2. Indikasi Fisik LED COM (`bsp_led.cpp`)**:
+  - Saat mode Direct LAN (Master maupun Slave) aktif, sistem memanggil `Bsp::LedManager::setConfigMode(true)`.
+  - Lampu **LED COM** berkedip **BIRU 1 Hz** (500ms ON, 500ms OFF) identik dengan mode konfigurasi Hotspot, memberikan kepastian visual bahwa gateway sedang dalam mode konfigurasi.
+- **3. Zero Internet Blackout Enforcement (RFC 2131)**:
+  - Micro-DHCP sengaja **meniadakan Option 3 (Router/Gateway)** dan **Option 6 (DNS)** pada paket penawaran BOOTP.
+  - Laptop teknisi hanya membuat rute on-link untuk `192.168.4.0/24`, sehingga koneksi internet Wi-Fi di laptop tetap aktif normal 100%.
+- **4. Multi-Device Hub & ARP Anti-Collision**:
+  - Mengadopsi ARP Probe (RFC 5227) sebelum menetapkan `192.168.4.1` dengan MAC-seeded timer jitter.
+  - Perangkat kedua di hub dummy otomatis menjadi Slave dengan IP unik `192.168.4.X` dan mematikan DHCP server untuk mencegah konflik.
+- **5. Discovery Lintas Subnet**:
+  - Protokol UDP Discovery Port `30303` (skrip `scripts/scan_gateway.py`) dan mDNS (`http://sg10-<id>.local`) aktif mengumumkan status gateway baik pada mode DHCP, Direct LAN, maupun IP Statis lama.
+- **6. Dukungan Dual-Interface (Wi-Fi Online + Direct LAN Maintenance Port)**:
+  - **Prinsip Arsitektur**:
+    - Port Ethernet W5500 selalu diinisialisasi dalam kondisi siaga (*Maintenance Ready*) baik saat gateway dikonfigurasi pada mode Ethernet maupun Mode Wi-Fi (`ConnectionMode::WIFI`).
+    - Kapan pun kabel LAN dicolokkan ke laptop teknisi saat gateway sedang beroperasi di Mode Wi-Fi, port Ethernet otomatis beralih ke mode Direct LAN (`192.168.4.1`) dengan Micro-DHCP aktif.
+  - **Proteksi Routing Internet & MQTT Cloud**:
+    - Default route internet (`0.0.0.0/0`) tetap dipertahankan 100% pada interface Wi-Fi Station (`wlanif`), karena Ethernet Direct LAN sengaja tidak menetapkan Default Gateway (`gw = 0.0.0.0`).
+    - **Proteksi DNS lwIP & Anti-Hijacking**: Mengatasi perilaku internal ESP-IDF lwIP di mana panggilan `esp_netif_set_ip_info()` pada interface Ethernet secara otomatis memanggil `dns_clear_servers(true)` yang menghapus seluruh DNS server secara global. Sistem secara proaktif mengunci `s_staNetif` sebagai default netif dan memulihkan DNS utama (`8.8.8.8`) serta backup (`1.1.1.1`) via `dns_setserver()`, sekaligus mengabaikan `IP_EVENT_ETH_GOT_IP` saat mode Wi-Fi aktif.
+    - Transmisi data telemetri beacon via MQTT ke cloud terus berjalan lancar tanpa terputus sama sekali saat teknisi melakukan konfigurasi.
+  - **Representasi UI Dashboard (`index.html`)**:
+    - Saat dual-interface aktif (Wi-Fi Online + Direct LAN tersambung), badge status koneksi menampilkan label cerdas: **`Wi-Fi + Direct LAN (192.168.4.1)`** dengan styling `.badge-tech.direct` (biru).
+    - Tile sinyal otomatis menampilkan **`Ethernet Link (Direct LAN)`** dengan kecepatan link (misal `100 Mbps (Full Duplex)`), dan label MAC beralih ke **`MAC Address (LAN)`**.
+  - **Restorasi Otomatis saat Kabel Dicabut**:
+    - Ketika teknisi mencabut kabel LAN, event `ETHERNET_EVENT_DISCONNECTED` seketika mematikan Micro-DHCP, mereset IP Ethernet ke `0.0.0.0`, mematikan mode konfigurasi LED COM (`setConfigMode(false)`), dan menyinkronkan kembali COM LED ke status online Wi-Fi (Solid Green) tanpa perlu reboot perangkat.
+## 39. Overview Bento Grid & Dual Interface System (2026 Cybernetic Dark)
+- **Latar Belakang & Spesifikasi**:
+  - Merekonstruksi antarmuka halaman utama Overview (`data/index.html`) mengadopsi struktur visual Bento Grid modern 12 kolom untuk desktop dan 1 kolom bertumpuk untuk mobile.
+  - Memberikan visualisasi terpisah yang jelas antara **Wi-Fi Interface** dan **Ethernet Interface** beserta parameter IP, MAC, status link, sinyal, dan telemetri MQTT.
+  - Mempertahankan integritas navigasi (Sidebar, Mobile Top Navbar, Mobile Bottom Navigation) dan banner keselamatan (`#pendingRebootBanner` dan `#apModeBanner`) tanpa menyentuh bagian di luar `<section class="content">`.
+  - Beroperasi 100% mandiri (*Zero CDN Dependency*) menggunakan Vanilla CSS murni dan Inline SVG, sehingga antarmuka tetap tampil sempurna di lingkungan industri tertutup tanpa akses internet.
+
+- **1. Slim Header Card (`.sg-header-card`)**:
+  - **Sisi Kiri**:
+    - Ikon Microchip CPU (`#60a5fa`) dalam kontainer rounded dengan latar belakang `rgba(59, 130, 246, 0.12)`.
+    - Judul: `SMART GUARD (%model%)` font tebal `700`, titik pemisah `•`, dan subtitle `Industrial Smart BLE Beacon Gateway Controller`.
+  - **Sisi Kanan (Status Badges)**:
+    - **Desktop (>= 640px)**: Tampil sejajar fleksibel dalam 1 baris.
+    - **Mobile (< 640px)**: Tersusun simetris dalam **Grid 2x2** (`grid-template-columns: 1fr 1fr; gap: 7px;`) dengan ukuran teks `11px` (0.72rem), menjamin nol overflow dan tidak saling tindih.
+    - 4 Komponen Badge:
+      1. **Uptime Live**: Ikon jam cyan + waktu aktif singkat (misal `14h 08j 42m`).
+      2. **Running Mode**: Dinamis (`mode-wifi`, `mode-eth`, `mode-smart`) dengan ikon dan teks status.
+      3. **MQTT Telemetri**: Ikon pulse + teks status (`Connected` / `Disconnected`).
+      4. **Gateway Online**: Dot hijau berdenyut 2s (`.sg-pulse-dot`) + teks `Gateway Online`.
+
+- **2. Panel Kiri: Identitas & Sistem Gateway (`.sg-panel-left`, Desktop 5 Kolom)**:
+  - Header dengan ikon Info cyan (`#22d3ee`).
+  - Key-Value List vertikal:
+    - `MODEL`: `%model%`
+    - `MANUFACTURE`: Ikon perisai + `IoT Gateway` (`#38bdf8`)
+    - `DEVICE ID (MDNS)`: Chip kode cyan `%device_id%` + tombol salin cepat (`.sg-copy-btn`)
+    - `SYSTEM UPTIME`: Ticker live real-time (`#detail-uptime-live`, misal `14 Hari 08:42:19`)
+  - Sub-Grid 3 Versi Sistem (Grid 3 Kolom):
+    - `DEVICE VER`: `%device_version%`
+    - `FIRMWARE`: `%firmware_version%` (aksen indigo)
+    - `UI VERSION`: `%ui_version%` (aksen indigo)
+
+- **3. Panel Kanan: Status & Konektivitas Jaringan (`.sg-panel-right`, Desktop 7 Kolom)**:
+  - Header kartu dengan ikon network emerald (`#34d399`), deskripsi mode, dan running mode badge pill.
+  - **Dual Interface Sub-Cards (`.sg-subcards-grid`)**:
+    - **Desktop/Tablet (>= 640px)**: 2 kolom berdampingan (*side-by-side*).
+    - **Mobile (< 640px)**: Otomatis bertumpuk 1 kolom secara vertikal untuk memberikan ruang penuh bagi alamat IP dan MAC address monospace.
+    - **Sub-Card Wi-Fi (`#card-wifi`)**:
+      - Header: Ikon Wi-Fi emerald, label role (`Primary Link (Connected)` / `Offline`), dan badge `Active`.
+      - Data: `IP (WI-FI)` dengan tombol salin, `MAC (WI-FI)` dengan tombol salin.
+      - Footer: `SIGNAL STRENGTH` dengan visualisator 4-bar sinyal (`.sg-signal-bars`) + nilai dBm tebal.
+    - **Sub-Card Ethernet (`#card-ethernet`)**:
+      - Header: Ikon RJ45 cable slate/blue, label role (`Kabel Terputus (Link Down)` / `Router LAN Terhubung` / `Direct LAN`), dan badge status (`Link Down` amber / `Active` emerald / `Direct PC` blue).
+      - Data: `IP (ETHERNET)` dengan tombol salin dinamis (tersembunyi saat link down), `MAC (ETHERNET)` dengan tombol salin.
+      - Footer: `MQTT TELEMETRI` / `LINK SPEED` dengan badge status.
+      - Auto-hide dinamis via style `%eth_tiles_style%` jika modul hardware W5500 tidak terdeteksi.
+
+- **4. Toast Notification & Clipboard API (`.sg-toast`)**:
+  - Mengambang elegan di atas mobile bottom bar: `bottom: calc(var(--bottom-nav-h, 64px) + 16px)` di mobile, dan `bottom: 24px; right: 24px` di desktop.
+  - Transisi slide-up halus dengan durasi tampil 2.4 detik.
+  - Fungsi `copyText(text)` cerdas menggunakan `navigator.clipboard.writeText` dengan fallback `document.execCommand('copy')`.
+
+## 40. Pencegahan FOUC (Flash of Unstyled Content) & Sinkronisasi Uptime Hardware Realtime
+- **Latar Belakang & Masalah Sebelumnya**:
+  - **FOUC (Flash of Unstyled Content)**: Blok tag `<style>` untuk komponen Overview SG-10 sebelumnya terletak di tengah elemen `<body>` (di dalam `<section class="content">`). Saat browser memuat halaman, browser merender elemen HTML sebelum membaca aturan CSS, sehingga memicu pergeseran tampilan mendadak (*layout shift* / FOUC). Selain itu, teks nilai default kartu (seperti `"14h 08j 42m"`, `"mode-wifi"`, `"Kabel Terputus"`) sempat ter-render sebelum ditimpa JavaScript ~100ms kemudian, menyebabkan lonjakan teks dan warna yang tampak berkedip.
+  - **Uptime Tidak Sesuai**: Endpoint `/api/v1/system/version` pada `src/web/web_routes.cpp` sebelumnya tidak menyertakan data waktu aktif hardware (`uptime_sec`), sehingga JavaScript dashboard Overview jatuh ke nilai fallback statis mockup `(14 * 86400) + ...` (14 hari) dan tidak pernah mencerminkan waktu boot aktual ESP32.
+- **1. Pemindahan Blok Gaya ke `<head>` (`data/index.html`)**:
+  - Seluruh blok `<style>` komponen SG-10 Overview dipindahkan ke dalam `<head>` tepat sebelum penutup `</head>`.
+  - Browser secara deterministik memblokir proses painting pertama hingga seluruh aturan CSS terurai, menjamin elemen HTML langsung ter-render dengan styling yang presisi sejak frame pertama.
+- **2. Server-Side Template Token Pre-Rendering (`src/web/web_template.cpp`)**:
+  - Server ESP-IDF C++ kini langsung mengisikan token status dan gaya ke dalam file HTML sebelum dikirimkan ke klien:
+    - `%uptime_sec%`: Integer detik dari `esp_timer_get_time() / 1000000ULL`.
+    - `%uptime_short%`: Teks waktu aktif format ringkas, contoh `0h 02j 15m`.
+    - `%uptime_detail%`: Teks waktu aktif detail, contoh `0 Hari 00:02:15`.
+    - `%header_mode_pill_class%`: Class pill status berjalan (`mode-smart`, `mode-eth`, `mode-wifi`).
+    - `%wifi_role_label%`, `%wifi_role_class%`, `%wifi_status_text%`, `%wifi_status_class%`, `%wifi_card_class%`, `%wifi_signal_spec%`: Menjamin kartu Wi-Fi menampilkan status dan RSSI nyata saat pertama kali dibuka.
+    - `%eth_role_label%`, `%eth_role_class%`, `%eth_status_text%`, `%eth_status_class%`, `%eth_card_class%`, `%eth_ip_display%`, `%eth_ip_class%`, `%eth_copy_style%`, `%eth_footer_label%`, `%eth_footer_value%`: Menjamin kartu Ethernet langsung menampilkan status link fisik (Direct LAN, Router LAN, atau Link Down) tanpa jeda.
+- **3. Sinkronisasi Uptime Hardware Akurat (`src/web/web_routes.cpp` & `data/index.html`)**:
+  - Endpoint C++ `/api/v1/system/version` menambahkan properti `"uptime_sec": (double)(esp_timer_get_time() / 1000000ULL)`.
+  - Inisialisasi JavaScript menggunakan `let uptimeSeconds = parseInt("%uptime_sec%") || 0;`, memastikan ticker detik dimulai tepat dari detik saat halaman dimuat.
+  - Panggilan `syncDashboardStatus()` dieksekusi seketika saat inisialisasi script dan berulang setiap interval 5 detik untuk memperbarui sinkronisasi `uptimeSeconds` dan status antarmuka jaringan.
+
+## 41. Eliminasi Redundansi Informasi & Standardisasi Physical Link pada Ethernet Sub-Card
+- **Latar Belakang & Identifikasi Redundansi**:
+  - **MQTT Telemetri pada Ethernet Card**: Sebelumnya footer kartu Ethernet menampilkan status MQTT Telemetri. Hal ini tidak tepat secara arsitektur model OSI karena MQTT adalah protokol Layer 7 (Aplikasi) yang melayani seluruh gateway, bukan atribut spesifik dari interface fisik Ethernet (Layer 1/2). Pada mode Wi-Fi di mana kabel LAN dicabut, menampilkan "MQTT TELEMETRI: Disconnected" pada Ethernet card menimbulkan kebingungan seolah transmisi data gateway terputus, padahal MQTT aktif berjalan lancar melalui interface Wi-Fi.
+  - **Running Mode Badge Ganda**: Di header utama (Slim Header Card) sudah terdapat badge live running mode (`Wi-Fi + Direct LAN` / `Ethernet` / `Wi-Fi`). Keberadaan badge pill kedua di header panel kanan (`#network-mode-badge`) bersifat redundan dan memakan ruang horizontal visual.
+- **1. Standarisasi Footer Ethernet Card (`data/index.html` & `src/web/web_template.cpp`)**:
+  - Label footer kartu Ethernet kini distandardisasi menjadi **`PHYSICAL LINK / SPEED`** secara simetris dengan footer kartu Wi-Fi (`SIGNAL STRENGTH`).
+  - Nilai footer menampilkan parameter tautan fisik nyata:
+    - **Direct LAN**: `<span class="sg-subcard-status-badge active">100M FD • Micro-DHCP</span>`
+    - **Link Up / Router LAN**: `<span class="sg-subcard-status-badge active">100 Mbps Full-Duplex</span>` (dinamis membaca kecepatan dan duplex hardware W5500)
+    - **Link Down (Kabel Terputus)**: `<span class="sg-subcard-status-badge amber">Disconnected (Link Down)</span>`
+  - Seluruh referensi MQTT dihilangkan sepenuhnya dari kartu Ethernet. Status MQTT tetap terpusat dan terpantau dengan jelas pada Slim Header Card di bagian atas.
+- **2. Pembersihan Header Panel Kanan (`data/index.html`)**:
+  - Badge ganda `#network-mode-badge` dihapus dari header panel kanan, menyisakan tata letak yang bersih dan terfokus: Ikon Jaringan, Judul "Status & Konektivitas Jaringan", dan deskripsi mode ringkas.
+  - Skrip sinkronisasi `syncDashboardStatus()` dibersihkan dari pembaruan elemen badge redundan tersebut.
+
+## 42. Penyederhanaan Slim Header Card & Integrasi Connection Mode & MQTT pada Card Status Konektivitas
+- **Latar Belakang & Rasionalisasi**:
+  - Seluruh status pill pada Slim Header Card atas (`#header-uptime-short`, `#header-mode-pill`, `#header-mqtt-pill`, `.online-pill`) dihilangkan untuk menyajikan identitas visual gateway yang bersih dan elegan (*uncluttered branding bar*).
+  - Informasi waktu aktif sistem (**System Uptime**) tetap terpantau akurat secara real-time pada panel kiri ("Identitas & Sistem Gateway").
+  - Status koneksi spesifik interface (Wi-Fi dan Ethernet) sudah terwakilkan secara mandiri pada masing-masing sub-card interface.
+  - Dua parameter tingkat jaringan gateway dialokasikan secara harmonis ke dalam header kartu **Status & Konektivitas Jaringan**:
+    1. **Connection Mode** (`WIFI`, `ETHERNET`, `SMART CONNECT`).
+    2. **MQTT Connection Status** (`Connected`, `Disconnected`).
+- **1. Struktur Visual Slim Header Card (`.sg-header-card`)**:
+  - Menyisakan ikon microchip, judul `SMART GUARD (%model%)`, bullet, dan sub-label `Industrial Smart BLE Beacon Gateway Controller`.
+  - Tampil bersih dan konsisten pada desktop maupun mobile tanpa risiko wrapping pill.
+- **2. Struktur Visual Badges Header Jaringan (`.sg-net-header-badges`)**:
+  - **Desktop (>= 640px)**:
+    - Terletak di sisi kanan header `sg-card-header` sejajar dengan judul panel.
+    - Badges:
+      - `MODE: WIFI` (`.mode-wifi`, latar hijau transparan, teks `#34d399`, dot indikator)
+      - `MODE: ETHERNET` (`.mode-eth`, latar biru transparan, teks `#60a5fa`, dot indikator)
+      - `MODE: SMART CONNECT` (`.mode-smart`, latar ungu transparan, teks `#c084fc`, dot indikator)
+      - `MQTT: Connected` (`.mqtt-online`, teks `#34d399`, ikon pulse) / `MQTT: Disconnected` (`.mqtt-offline`, teks `#fbbf24`, ikon pulse)
+  - **Mobile (< 640px)**:
+    - Header kartu `.sg-card-header` bertumpuk vertikal (`flex-direction: column; align-items: stretch;`).
+    - Badges tersusun rapi dalam **Grid 2 Kolom Simetris (50% - 50%)** (`grid-template-columns: 1fr 1fr; gap: 7px;`) dengan teks terpusat (`justify-content: center;`), menjamin nol overflow dan tidak saling bertubrukan.
+- **3. Pre-Rendering Server-Side C++ (`src/web/web_template.cpp`)**:
+  - Token baru untuk mencegah FOUC:
+    - `%conn_mode_text%`: Menghasilkan `"SMART CONNECT"`, `"ETHERNET"`, atau `"WIFI"`.
+    - `%conn_mode_class%`: Menghasilkan `"mode-smart"`, `"mode-eth"`, atau `"mode-wifi"`.
+    - `%conn_mqtt_class%`: Menghasilkan `"mqtt-online"` atau `"mqtt-offline"`.
+    - `%network_mode_desc%`: Deskripsi operasional real-time sesuai mode yang aktif.
+## 43. Tipografi Profesional & Penyelarasan Layout Berdasarkan Mockup Referensi Pengguna
+- **Latar Belakang & Filosofi Desain**:
+  - Merekonstruksi hierarki tipografi dari sebelumnya menggunakan huruf kapital kaku (ALL CAPS) menjadi **Title Case** berstandar enterprise yang lebih elegan, terbaca cepat, dan profesional.
+  - Memfokuskan header kartu jaringan pada **Single Connection Mode Badge** (`● MODE: WI-FI`, `● MODE: ETHERNET`, `● MODE: SMART CONNECT`), mengeliminasi elemen sekunder di header agar tampilan lebih lapang dan berfokus pada status arsitektur jaringan.
+
+## 44. Penyempurnaan 100% Visual Parity (Font Size, Family, Spacing, Padding, Card Sizing, & Colors) Berdasarkan Referensi Mockup Pengguna
+- **Latar Belakang & Evaluasi Presisi Visual**:
+  - Berdasarkan perbandingan piksel langsung dengan gambar referensi pengguna (`user_clipboard_mockup.png` / `media_1792573240281.png`), dilakukan perbaikan mendalam terhadap parameter ukuran font, warna teks, jarak padding antar-elemen, ukuran kontainer kartu, dan proporsi grid.
+- **1. Perluasan Kontainer & Proporsi Grid Bento (`.content` & `.sg-bento-grid`)**:
+  - **Kontainer Luas (`.content`)**: Ditingkatkan batas lebarnya dari pembatas sempit `1080px` menjadi `max-width: 1440px !important; width: 100% !important; padding: 24px 28px !important;`. Hal ini memberikan napas lega bagi kartu overview untuk mengisi layar secara proporsional layaknya dashboard telemetri industrial high-end.
+  - **Proporsi Grid Responsif**:
+    - Desktop (`min-width: 1080px`): `grid-template-columns: minmax(340px, 36%) 1fr; gap: 24px;`.
+    - Memberikan ruang horizontal ekstra (~750-800px) untuk panel kanan, sehingga kedua subcard (Wi-Fi dan Ethernet) masing-masing mendapatkan lebar ~360-400px.
+    - Mengeliminasi 100% masalah pemotongan teks (ellipsis `...`) pada alamat MAC (`CC:7B:5C:BB:B6:D4`), alamat IPv4, dan judul interface (`Ethernet Interface`).
+- **2. Penyelarasan Warna & Tipografi Teks (Typography & Color Tokens)**:
+  - **IPv4 Address Wi-Fi**: Ditampilkan dalam warna **Putih Murni (`#ffffff`)**, bukan hijau (`#34d399`). Menggunakan font `ui-monospace` tebal (`font-weight: 700; font-size: 0.94rem;`).
+  - **MAC Address (Wi-Fi & Ethernet)**: Ditampilkan dalam warna **Slate-200 / Putih Bersih (`#f1f5f9`)**, bukan cyan (`#38bdf8`). Font `ui-monospace` tebal (`font-weight: 700; font-size: 0.90rem;`).
+  - **Manufacture**: Teks `IoT Gateway` menggunakan warna **Putih Murni (`#ffffff`)** dengan ikon perisai cyan `#38bdf8` (`<svg stroke="#38bdf8">`), bukan seluruh teks berwarna biru/cyan.
+  - **Ethernet IPv4 Unassigned**: Teks `— (Unassigned)` dalam warna slate redup (`#64748b`, `font-size: 0.88rem; font-weight: 400;`). Tombol salin disembunyikan otomatis.
+  - **Physical Link**: Teks status `Kabel Terputus` tampil tebal dalam warna **Amber (`#f59e0b` / `#fbbf24`)** (`font-weight: 700; font-size: 0.94rem;`), sejajar bersih dengan baris IPv4 dan MAC tanpa kotak badge status.
+  - **Header Card & Subcard Title**:
+    - Panel headers (`h3`): `font-size: 1.05rem; font-weight: 700; color: #ffffff;`.
+    - Subcard titles (`h4`): `font-size: 0.98rem; font-weight: 700; color: #ffffff;`.
+    - Subcard roles: `font-size: 0.80rem; font-weight: 400; color: #8191a6;`.
+- **3. Bentuk Kapsul Mode Badge (`.sg-badge-pill`)**:
+  - Berubah dari kotak bersudut 8px menjadi **Kapsul Penuh (`border-radius: 9999px; padding: 7px 18px;`)**.
+  - Dot indikator hijau solid `●` (`#10b981`, `font-size: 0.78rem`).
+  - Teks: `MODE: WI-FI` (`font-size: 0.84rem; font-weight: 700; letter-spacing: 0.04em; color: #10b981;`).
+- **4. Eliminasi Garis Pembatas Header yang Kaku (Seamless Modern Cards)**:
+  - Dihilangkan garis `border-bottom` pada header panel (`.sg-card-header`), memberikan estetika dark mode yang mulus (*seamless floating content*).
+  - Garis `border-top` pada grid versi sistem (`.sg-version-grid`) dihilangkan, menggantinya dengan jarak spasi margin vertikal yang proporsional (`margin-top: 20px;`).
+  - Baris data dalam kartu (`.sg-kv-row` dan `.sg-subcard-row`) dipisahkan oleh garis sangat halus `border-bottom: 1px solid rgba(255, 255, 255, 0.04);` dengan padding `14px - 15px 0` yang lega.
+- **5. Adaptasi Responsif Mobile (< 640px)**:
+  - Padding konten luar diatur ke `16px 12px` dan padding kartu internal disesuaikan menjadi `16px 14px`, mencegah pemborosan ruang horizontal pada layar 375px.
+  - Title subcard (`h4`) dan status badge (`Active` / `Link Down`) memiliki ruang 50px+ ekstra, menjamin **nol tumpang-tindih (zero overlap)** dan nol pemotongan teks.
+  - Tiga kartu versi sistem (`DEVICE VER`, `FIRMWARE`, `UI VERSION`) tetap tersusun 3 kolom horizontal kompak dengan font `0.94rem`.
+
+## 45. Kartu Telemetri MQTT Broker Ramping (Slim Low-Profile Telemetry Card)
+- **Latar Belakang & Keseimbangan Visual (Vertical Bento Alignment)**:
+  - Pada layout Bento Overview sebelumnya, panel kiri memiliki ketinggian ~360px karena ditopang oleh 3 tile versi di bagian bawah (`DEVICE VER`, `FIRMWARE`, `UI VERSION`), sedangkan panel kanan hanya memiliki dua kartu interface (~275px), menyisakan ruang kosong vertikal (*empty delta*) sebesar ~85px.
+  - Untuk mengisi ruang tersebut secara harmonis dan memenuhi kebutuhan pemantauan uplink cloud, ditambahkan kartu telemetri MQTT broker ramping tepat di bawah `.sg-subcards-grid` pada panel kanan.
+- **1. Struktur Visual & Tata Letak Data (3-Column Responsive Grid)**:
+  - **Header Kartu Ramping (`.sg-mqtt-header`)**:
+    - Ikon Cyan Industrial (`.sg-subcard-icon.cyan`, 26x26px): Background `rgba(56, 189, 248, 0.12)`, border `rgba(56, 189, 248, 0.25)`, warna `#38bdf8`.
+    - Judul: `Telemetri MQTT` (`font-size: 0.90rem; font-weight: 700; color: #ffffff;`).
+    - Status Peran: `• %mqtt_role_label%` (`font-size: 0.76rem; color: #8191a6;`).
+    - Badge Status Realtime: Kapsul hijau emerald `● Connected` (`.sg-subcard-status-badge.active`) atau amber `● Disconnected` (`.sg-subcard-status-badge.amber`).
+  - **3 Kolom Data Sejajar Horizontal (`.sg-mqtt-data-grid`)**:
+    1. **Broker Destination**: Host URL / IP broker (`g_config.mqtt_host`, misal `mqtt.iotaru.id`) dalam font `ui-monospace` putih 700 (`0.90rem`) dengan tombol salin satu-klik (`copyText`).
+    2. **Port Koneksi**: Nomor port TCP (`g_config.mqtt_port`, misal `8883` atau `1883`) dalam font `ui-monospace` putih 700.
+    3. **Keamanan (TLS)**: Badge status enkripsi kapsul:
+       - TLS Aktif (`mqtt_use_ssl == 1`): Badge hijau dengan ikon gembok `[🔒 TLS Active]`.
+       - Plain TCP (`mqtt_use_ssl == 0`): Badge slate dengan ikon terbuka `[🔓 Plain TCP]`.
+- **2. Ketinggian Terkalibrasi (Slim Low-Profile Height ~80px)**:
+  - Padding kartu diatur kompak `13px 18px` dengan celah antar-kolom `16px`.
+  - Pada layar desktop, kartu memiliki tinggi total ~80px, membuat garis bawah panel kanan menutup sejajar rata dengan 3 tile versi di panel kiri.
+- **3. Adaptasi Responsif Mobile (< 640px)**:
+  - Pada layar ponsel, 3 kolom data otomatis bertransisi menjadi susunan baris fleksibel (`display: flex; align-items: center; justify-content: space-between; gap: 8px;`), label di sebelah kiri dan nilai/tombol salin di sebelah kanan.
+  - Subtitle role di header disembunyikan otomatis untuk memaksimalkan ruang judul dan badge status.
+- **4. Pre-Rendering C++ Server-Side (Zero FOUC)**:
+  - `%mqtt_broker_host%`: Host broker (atau `—` jika belum diatur).
+  - `%mqtt_broker_port%`: Nomor port string.
+  - `%mqtt_tls_badge%`: Tag HTML badge keamanan (TLS Active / Plain TCP).
+  - `%mqtt_conn_badge%`: Tag HTML badge koneksi (Connected / Disconnected).
+  - `%mqtt_card_class%`: Class border aktif `active-mqtt` (`border-color: rgba(56, 189, 248, 0.35);`).
+  - `%mqtt_role_label%`: Deskripsi status koneksi uplink.
+- **5. REST API & Sinkronisasi Polling 5 Detik**:
+  - Endpoint `GET /api/v1/system/version` menyertakan key `mqtt_host`, `mqtt_port`, `mqtt_ssl`, dan `mqtt_connected`.
+  - Fungsi JavaScript `syncDashboardStatus()` di `data/index.html` memperbarui status badge, broker host, port, dan kapsul TLS secara live tanpa reload halaman.
+
+## 46. Standarisasi Bahasa Inggris 100%, Huruf Kapital Konsisten, Pengisian Ruang Kosong Panel Identitas, Grid 2-Tier Mobile MQTT, dan Semantik Warna Hijau Aktif
+- **1. Standarisasi Bahasa Inggris 100% (Full English UI Consistency)**:
+  - Seluruh teks antarmuka diubah secara konsisten ke bahasa Inggris:
+    - Navbar & Header: `Gateway Overview`, `SMART GUARD (%model%)`, `Industrial Smart BLE Beacon Gateway Controller`, `Logout`.
+    - Safety Banners: `Network configuration changes saved to NVS. Reboot required to apply to hardware.`, `Reboot Now`, `Discard`, `Configuration Hotspot Active`, `Disable AP`.
+    - Panel Kiri: `Gateway Identity & System`, `Unit identification parameters and live uptime`, `Device Model`, `Manufacturer`, `Device ID (mDNS)`, `System Uptime` (`%u %s %02u:%02u:%02u`, `Day` / `Days`), `System RAM`, `Bandwidth`.
+    - Panel Kanan: `Network Status & Connectivity`, `Wi-Fi Interface`, `Ethernet Interface`, `MQTT Telemetry`, `Signal Strength Indicator`, `Physical Link`, `Cable Disconnected`, `Broker Host`, `Port`, `Security (TLS)`.
+    - Diagnostic Bento: `Realtime Diagnostic Test`, `High-speed nRF52840 beacon packet monitoring`, `Open Live Test Monitor`.
+    - Tooltips & Toasts: `Copy Device ID`, `Copy Wi-Fi IPv4`, `Copy Wi-Fi MAC`, `Copy Ethernet IPv4`, `Copy Ethernet MAC`, `Copy MQTT Broker Host`, `Copied to clipboard!`.
+- **2. Aturan Kapitalisasi Text (Title Case & Technical Acronyms)**:
+  - **Title Case**: Digunakan untuk seluruh Card Header, Subcard Title, Key-Value Labels, dan Tombol Aksi (`Gateway Identity & System`, `Network Status & Connectivity`, `System Uptime`, `System RAM`, `Bandwidth`, `Broker Host`, `Security (TLS)`, `Reboot Now`).
+  - **UPPERCASE (Semua Huruf Kapital)**: Dibatasi secara ketat hanya untuk akronim teknis dan status hardware (`DEVICE VER`, `FIRMWARE`, `UI VERSION`, `MODE: ETHERNET`, `MODE: WI-FI`, `SMART CONNECT`, `IPv4`, `MAC`, `mDNS`, `TLS`, `RAM`, `NVS`, `FD`, `Mbps`).
+- **3. Pengisian Ruang Kosong Vertikal Panel Kiri (System RAM & Bandwidth)**:
+  - Untuk mengisi ruang kosong vertikal pada Panel Kiri secara proporsional dan menjaga kesetaraan ketinggian dengan Panel Kanan yang memiliki kartu MQTT:
+    - **`System RAM`**: Label padat ringkas dengan bullet hijau: `<span style="color:#10b981;">●</span> 184 KB Free`. Sumber data live: `esp_get_free_heap_size() / 1024`.
+    - **`Bandwidth`**: Nilai numerik throughput real-time: `14.2 KB/s`. Sumber data live: `Network::MqttService::getBandwidthKBps()`.
+  - Kedua baris data ini memperbarui secara instan via pre-render template server (`%free_heap_kb%`, `%net_bandwidth%`) dan sinkronisasi real-time via `/api/v1/system/version`.
+- **4. Tampilan Mobile 2-Tier Grid untuk Host Broker MQTT Ramping**:
+  - Pada layar mobile (< 680px), host broker yang panjang (misalnya endpoint AWS IoT `a1b2c3d4e5f6-ats.iot.ap-southeast-1.amazonaws.com`) sebelumnya berpotensi terpotong.
+  - Diperbarui menjadi **2-Tier Grid**:
+    - **Tier 1 (Baris Penuh / `grid-column: 1 / -1; width: 100%;`)**: Menampilkan label `Broker Host` di bagian atas dan nilai URL broker di bawahnya dengan `word-break: break-all; white-space: normal; line-height: 1.35;` serta tombol copy di sampingnya. URL panjang secara mulus melipat ke 2 baris dan 100% terlihat jelas tanpa terpotong (*zero truncation*).
+    - **Tier 2 (Grid 2 Kolom 50/50)**: Menampilkan kolom `Port` di sisi kiri dan `Security (TLS)` di sisi kanan.
+  - Pada desktop (`min-width: 680px`), grid secara otomatis kembali ke 3 kolom sejajar horizontal (`1.6fr 0.9fr 1.2fr`).
+- **5. Semantik Warna Outline & Ikon (Unified Green Active & Gray Inactive)**:
+  - **Status Aktif / Online**:
+    - Outline kartu antarmuka (`.active-online`, `.active-wifi`, `.active-eth`, `.active-mqtt`): Menggunakan outline hijau `border-color: rgba(16, 185, 129, 0.4);`.
+    - Ikon antarmuka: Menggunakan warna hijau emerald (`.sg-subcard-icon.emerald`, `#10b981`, background `rgba(16, 185, 129, 0.12)`). Menghilangkan warna biru pada Ethernet dan cyan pada MQTT saat aktif.
+  - **Status Tidak Aktif / Offline / Disconnected**:
+    - Outline kartu: Menggunakan abu-abu gelap netral (`#1a2333`).
+    - Ikon antarmuka: Menggunakan warna abu-abu netral (`.sg-subcard-icon.slate`, `#8191a6`, background `rgba(30, 41, 59, 0.6)`).
+- **6. Penyesuaian Ketinggian Kartu Versi (Elevated & Balanced Version Tiles)**:
+  - **Elevasi Tiga Kartu Versi**: Tiga kartu versi (`DEVICE VER`, `FIRMWARE`, `UI VERSION`) dinaikkan posisinya dari bagian bawah panel kiri untuk mengeliminasi kekosongan asimetris.
+  - **Penyelarasan Spasi**:
+    - Padding baris key-value (`.sg-kv-row`) disesuaikan menjadi `12px 0` yang proporsional.
+    - Grid kartu versi (`.sg-version-grid`) diberikan `margin-top: auto; margin-bottom: 6px;` dengan gap `10px`.
+    - Padding internal tile (`.sg-version-tile`) dibuat lebih ramping (`10px 6px`) dengan ukuran nilai `1.02rem`.
+## 47. Kalibrasi Akurasi Metrik Bandwidth Jaringan (Rolling 1000ms Window & Downlink Accounting)
+- **1. Masalah Sampling Asinkron (Under-reporting vs Over-reporting)**:
+  - Sebelumnya, fungsi perhitungan bandwidth memanggil `exchange(0)` langsung saat dipanggil.
+  - Halaman Live Test (`/test`) membaca via WebSocket setiap 250 ms (0.25 detik), sehingga angka terpecah 4x lebih kecil (~0.33 KB).
+  - Halaman Overview (`/`) membaca via polling REST setiap 5 detik, sehingga angka terakumulasi multi-detik (~3.5 KB).
+- **2. Arsitektur Perhitungan Independen (Rolling 1000ms Sampling Window)**:
+  - Task publisher (`mqttPublisherTask`) sekarang menjalankan sampler internal independen setiap interval waktu nyata $\Delta t \ge 1000\text{ ms}$:
+    $$\text{Bandwidth (KB/s)} = \frac{\Delta \text{Bytes Total}}{1024 \times (\Delta t / 1000)}$$
+  - Nilai tersimpan di `std::atomic<float> s_statBandwidthKBps`.
+  - Fungsi `getBandwidthKBps()` bersifat *read-only* murni tanpa me-reset counter (`load(memory_order_relaxed)`).
+  - **Hasil**: Baik Halaman Test (250ms), Overview (5s), maupun Serial Log menampilkan metrik `KB/s` yang sinkron, identik, dan akurat per detik tanpa saling bentrok.
+- **3. Integrasi Traffic Downlink Broker (Wire-Level Physical Accuracy)**:
+  - Pencatatan byte kabel fisik (`recordWireBytes`) kini memperhitungkan **Uplink (TX)** dan **Downlink (RX)**:
+    - **Downlink PUBACK**: Setiap paket QoS 1 yang di-ack oleh broker dicatat pada `MQTT_EVENT_PUBLISHED` sebesar 4 byte MQTT + 40 byte TCP/IP + Frame Layer 2 (18B Ethernet / 36B Wi-Fi).
+    - **Downlink Inbound Command**: Perintah masuk dari broker pada `MQTT_EVENT_DATA` dicatat mencakup panjang topik, data payload, TCP/IP, dan header Layer 2.
+    - **Downlink SUBACK**: Respon konfirmasi langganan topik pada `MQTT_EVENT_SUBSCRIBED` dicatat sebesar 5 byte MQTT + TCP/IP + Layer 2.
+    - **Uplink Command Response**: Respon balik gateway terhadap perintah broker (`s_topicRes`) dicatat secara presisi di kabel jaringan.
+
+## 48. Eliminasi Ruang Kosong Bawah (Bottom Scroll Void) & Penyelarasan Posisi Footer
+- **1. Akar Masalah Penumpukan Jarak Bawah (Double/Triple Padding Stack)**:
+  - Sebelumnya, `.main-panel` di `app.css` memiliki `padding-bottom: var(--bottom-nav-h);` (64px) yang berlaku tanpa batas di semua ukuran layar (termasuk desktop). Karena `<footer>` berada di dalam `.main-panel`, tercipta rongga kosong 64px persis di bawah garis batas footer.
+  - Selain itu, `.content` di `index.html` menyematkan `padding-bottom: calc(var(--bottom-nav-h, 64px) + 28px) !important;` (92px) yang menyebabkan jarak raksasa antara bento card terakhir dan footer.
+  - Akibatnya, saat pengguna scroll hingga footer, halaman masih dapat di-scroll turun lebih jauh ke area kosong (*scroll void*).
+- **2. Penyelarasan Tata Letak Footer Bebas Rongga Kosong**:
+  - **`.main-panel` (`app.css`)**: Dihapus nilai `padding-bottom`-nya (`padding-bottom: 0`) sehingga kontainer utama tidak lagi menambahkan ruang kosong di bawah footer.
+  - **`footer` (`app.css`)**:
+    - Desktop (`> 860px`): Menggunakan padding standar `padding: 20px;` dengan `margin-top: auto;` sehingga footer pas menempel rapi di dasar halaman dan scroll berhenti tepat di bawah teks hak cipta.
+    - Mobile (`<= 860px`): Menggunakan `padding-bottom: calc(var(--bottom-nav-h) + 16px);` sehingga teks hak cipta berada 16px tepat di atas bottom navigation bar mengambang dan tidak tertutup navbar.
+  - **`.content` (`index.html`)**: Diubah menjadi `padding: 24px 28px 28px 28px !important;` untuk menyeimbangkan jarak vertikal kartu dengan garis pemisah footer.
+
+## 49. Perbaikan Buffer Template Engine & Integritas Parsing SVG Inline
+- **1. Akar Masalah Browser Error `attribute d: Expected moveto path command`**:
+  - Buffer lokal placeholder di fungsi `render_template()` (`src/web/web_template.cpp`) awalnya berukuran `char val[256]`.
+  - Placeholder status kartu MQTT `%mqtt_tls_badge%` menghasilkan markup HTML badge dengan inline SVG lengkap sepanjang 308 karakter (mode TLS Active) atau 303 karakter (mode Plain TCP).
+  - Ketika `snprintf(out_buf, max_len, ...)` dijalankan dengan `max_len = 256`, string terpotong paksa tepat pada karakter ke-255, persis setelah tag pembuka `<path `.
+  - Akibatnya, browser menerima potongan HTML tak lengkap `<span ...><rect .../><path \n </div>`. Parser SVG HTML5 pada peramban (Chrome/Edge) mencoba memulihkan tag `<path>` dan menemukan `</div>`, memicu galat konsol browser:
+    `Error: <path> attribute d: Expected moveto path command ('M' or 'm'), "… </div\u003E\n …"`.
+- **2. Solusi & Mitigasi**:
+  - **Ekspansi Buffer Template**: Buffer lokal `char val[256]` di `src/web/web_template.cpp` ditingkatkan menjadi `char val[512]`. Hal ini memberikan kapasitas hingga 511 karakter untuk semua placeholder ber-SVG inline, badge status dinamis, dan token HTML tanpa risiko pemotongan string, dengan tetap sangat aman pada stack task web server (kapasitas stack 8192 byte).
+  - **Standardisasi Format SVG Path**: Atribut path SVG pada Plain TCP mode diselaraskan dengan spasi pemisah standar (`d="M7 11V7a5 5 0 0 1 9.9 -1"`) baik di backend template C++ (`web_template.cpp`) maupun frontend live synchronization (`data/index.html`) guna menjamin integritas rendering vektor di seluruh platform browser.
+
+## 50. Perampingan Halaman Overview (Eliminasi Kartu Redundan 'Realtime Diagnostic Test')
+- **1. Rasional Pembersihan UI**:
+  - Kartu promosi bawah `Realtime Diagnostic Test` (beserta tombol pintas *Open Live Test Monitor*) dihilangkan dari tata letak Overview (`index.html`).
+  - Fitur diagnostik transmisi dan pemantauan live packet nRF52840 telah dapat diakses langsung secara permanen melalui item menu sidebar utama (`Live Test Monitor` pada `/test`) dan bottom navigation sheet pada mobile.
+  - Penghapusan kartu sekunder ini menghilangkan redundansi tombol ganda, menyatukan ritme visual Grid Bento utama (panel identitas di kiri dan panel jaringan/telemetri MQTT di kanan), serta menghasilkan tampilan dasbor yang bersih dan presisi tanpa scrolling berlebih.
+
 
 

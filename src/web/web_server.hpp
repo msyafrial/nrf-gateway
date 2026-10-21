@@ -11,6 +11,15 @@ void stop();
 bool is_filesystem_ready();
 httpd_handle_t get_handle();
 
+// Filesystem OTA Synchronization & Concurrency Guards
+void mark_filesystem_unmounted();
+bool remountStorage();
+bool acquire_file_read();
+void release_file_read();
+int get_active_file_reads();
+void set_maintenance_mode(bool enable);
+bool is_in_maintenance();
+
 // Broadcast a message to all active authenticated WebSocket clients
 void broadcast_ws_text(const char *payload);
 

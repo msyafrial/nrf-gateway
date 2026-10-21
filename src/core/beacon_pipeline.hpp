@@ -20,7 +20,7 @@ public:
     static void push(const BeaconPacket& packet);
     static void recordLiveBeacon(const BeaconPacket& packet);
     static void pruneExpired();
-    static bool buildBinaryPayload(const BeaconPacket& packet, uint8_t* outBuf, size_t& outLen);
+    static void flushQueue();
     
     // Snapshot Live Beacons untuk WebSocket (Thread-Safe)
     static size_t copyLiveBeacons(LiveBeaconItem* outItems, size_t maxItems);
@@ -58,6 +58,7 @@ public:
     static uint32_t getDropMajorCount();
     static uint32_t getDropQueueCount();
     static uint32_t getDropMqttCount();
+    static void     resetDropCounters();
     
     // Handle queue untuk task consumer (MQTT publisher di Core 1)
     static QueueHandle_t getQueue();

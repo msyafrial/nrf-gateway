@@ -21,6 +21,7 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <atomic>
 
 static const char *TAG = "WebRoutes";
 
@@ -139,12 +140,15 @@ static bool get_form_param(const char *body, const char *key, char *out_val, siz
 }
 
 static const char* get_content_type(const char *filename) {
-    if (strstr(filename, ".html")) return "text/html";
-    if (strstr(filename, ".css")) return "text/css";
-    if (strstr(filename, ".js")) return "application/javascript";
-    if (strstr(filename, ".json")) return "application/json";
-    if (strstr(filename, ".png")) return "image/png";
-    if (strstr(filename, ".ico")) return "image/x-icon";
+    const char *ext = strrchr(filename, '.');
+    if (!ext) return "text/plain";
+    if (strcasecmp(ext, ".html") == 0) return "text/html";
+    if (strcasecmp(ext, ".css") == 0) return "text/css";
+    if (strcasecmp(ext, ".js") == 0) return "application/javascript";
+    if (strcasecmp(ext, ".json") == 0) return "application/json";
+    if (strcasecmp(ext, ".png") == 0) return "image/png";
+    if (strcasecmp(ext, ".ico") == 0) return "image/x-icon";
+    if (strcasecmp(ext, ".svg") == 0) return "image/svg+xml";
     return "text/plain";
 }
 
@@ -155,12 +159,27 @@ static inline void set_security_headers(httpd_req_t *req) {
     httpd_resp_set_hdr(req, "X-Content-Type-Options", "nosniff");
     httpd_resp_set_hdr(req, "X-Frame-Options", "DENY");
     httpd_resp_set_hdr(req, "Referrer-Policy", "no-referrer");
+    httpd_resp_set_hdr(req, "Content-Security-Policy", "default-src 'self' 'unsafe-inline' data: ws:;");
 }
 
 // -------------------------------------------------------------
 // Static File Streamer (With automatic GZIP detection)
 // -------------------------------------------------------------
 static esp_err_t stream_static_file(httpd_req_t *req, const char *base_path) {
+    struct FileReadGuard {
+        bool acquired;
+        FileReadGuard() : acquired(Server::acquire_file_read()) {}
+        ~FileReadGuard() {
+            if (acquired) Server::release_file_read();
+        }
+    } file_guard;
+
+    if (!file_guard.acquired) {
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_send(req, "Sistem sedang dalam proses pemeliharaan/update.", HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
     char gz_path[600];
     snprintf(gz_path, sizeof(gz_path), "%s.gz", base_path);
 
@@ -178,10 +197,10 @@ static esp_err_t stream_static_file(httpd_req_t *req, const char *base_path) {
     struct stat st;
 
     if (client_accepts_gzip && stat(gz_path, &st) == 0) {
-        f = fopen(gz_path, "r");
+        f = fopen(gz_path, "rb");
         is_gzip = true;
     } else if (stat(base_path, &st) == 0) {
-        f = fopen(base_path, "r");
+        f = fopen(base_path, "rb");
         is_gzip = false;
     }
 
@@ -370,6 +389,10 @@ static esp_err_t firmware_handler(httpd_req_t *req) {
 }
 
 static esp_err_t assets_wildcard_handler(httpd_req_t *req) {
+    if (strstr(req->uri, "..") != nullptr || strstr(req->uri, "//") != nullptr) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid path");
+        return ESP_FAIL;
+    }
     char filepath[600];
     snprintf(filepath, sizeof(filepath), "/storage%s", req->uri);
     char *q = strchr(filepath, '?');
@@ -390,6 +413,10 @@ static esp_err_t api_login_handler(httpd_req_t *req) {
     }
 
     char body[512] = {0};
+    if (req->content_len >= sizeof(body)) {
+        httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "Payload too large");
+        return ESP_FAIL;
+    }
     int r = httpd_req_recv(req, body, sizeof(body) - 1);
     if (r <= 0) {
         httpd_resp_set_status(req, "400 Bad Request");
@@ -410,8 +437,8 @@ static esp_err_t api_login_handler(httpd_req_t *req) {
 
     Session::AuthResult auth_res = Session::authenticate(req, u, p, role, token, sizeof(token));
     if (auth_res == Session::AuthResult::SUCCESS) {
-        char cookie_hdr[128];
-        snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=3600", token);
+        char cookie_hdr[192];
+        snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600", token);
         httpd_resp_set_hdr(req, "Set-Cookie", cookie_hdr);
         httpd_resp_set_type(req, "application/json");
 
@@ -444,7 +471,7 @@ static esp_err_t api_logout_handler(httpd_req_t *req) {
     if (token[0] != '\0') {
         Session::invalidate(token);
     }
-    httpd_resp_set_hdr(req, "Set-Cookie", "token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+    httpd_resp_set_hdr(req, "Set-Cookie", "token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -459,8 +486,8 @@ static esp_err_t api_auth_check_handler(httpd_req_t *req) {
         httpd_resp_send(req, "{\"authenticated\":false}", HTTPD_RESP_USE_STRLEN);
     } else {
         if (token[0] != '\0') {
-            char cookie_hdr[128];
-            snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=3600", token);
+            char cookie_hdr[192];
+            snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600", token);
             httpd_resp_set_hdr(req, "Set-Cookie", cookie_hdr);
         }
         httpd_resp_send(req, "{\"authenticated\":true}", HTTPD_RESP_USE_STRLEN);
@@ -471,6 +498,14 @@ static esp_err_t api_auth_check_handler(httpd_req_t *req) {
 // -------------------------------------------------------------
 // Route Handlers: Configuration & Network REST APIs
 // -------------------------------------------------------------
+// Helper untuk validasi password tidak masked dan tidak kosong
+static inline bool is_masked_or_empty(const char* val) {
+    if (!val || val[0] == '\0') return true;
+    if (strcmp(val, "••••••••") == 0) return true;
+    if (strcmp(val, "********") == 0) return true;
+    return false;
+}
+
 static esp_err_t api_config_auth_handler(httpd_req_t *req) {
     UserRole role = Session::validate(req);
     if (role == UserRole::NONE) {
@@ -490,25 +525,73 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
 
     if (role == UserRole::ADMIN) {
         char val[64];
-        if (get_form_param(body, "admin_user", val, sizeof(val))) strlcpy(g_config.admin_user, val, sizeof(g_config.admin_user));
-        if (get_form_param(body, "admin_pass", val, sizeof(val))) strlcpy(g_config.admin_pass, val, sizeof(g_config.admin_pass));
+        if (get_form_param(body, "admin_user", val, sizeof(val))) {
+            if (strlen(val) >= 4 && strchr(val, ':') == nullptr) {
+                strlcpy(g_config.admin_user, val, sizeof(g_config.admin_user));
+            }
+        }
+        if (get_form_param(body, "admin_pass", val, sizeof(val))) {
+            if (!is_masked_or_empty(val)) {
+                if (strlen(val) < 8 || strchr(val, ':') != nullptr) {
+                    httpd_resp_set_status(req, "400 Bad Request");
+                    httpd_resp_send(req, "Password Admin minimal 8 karakter dan tidak boleh mengandung karakter ':'", HTTPD_RESP_USE_STRLEN);
+                    return ESP_OK;
+                }
+                strlcpy(g_config.admin_pass, val, sizeof(g_config.admin_pass));
+            }
+        }
         if (get_form_param(body, "mqtt_host", val, sizeof(val))) strlcpy(g_config.mqtt_host, val, sizeof(g_config.mqtt_host));
         if (get_form_param(body, "mqtt_port", val, sizeof(val))) g_config.mqtt_port = atoi(val);
         if (get_form_param(body, "mqtt_user", val, sizeof(val))) strlcpy(g_config.mqtt_user, val, sizeof(g_config.mqtt_user));
-        if (get_form_param(body, "mqtt_password", val, sizeof(val))) strlcpy(g_config.mqtt_password, val, sizeof(g_config.mqtt_password));
-        if (get_form_param(body, "ap_password", val, sizeof(val)) && strlen(val) >= 8) {
-            strlcpy(g_config.ap_password, val, sizeof(g_config.ap_password));
+        if (get_form_param(body, "mqtt_use_ssl", val, sizeof(val))) g_config.mqtt_use_ssl = atoi(val);
+        if (get_form_param(body, "mqtt_password", val, sizeof(val))) {
+            if (!is_masked_or_empty(val)) {
+                strlcpy(g_config.mqtt_password, val, sizeof(g_config.mqtt_password));
+            }
+        }
+        if (get_form_param(body, "ap_password", val, sizeof(val))) {
+            if (!is_masked_or_empty(val)) {
+                if (strlen(val) >= 8) {
+                    strlcpy(g_config.ap_password, val, sizeof(g_config.ap_password));
+                }
+            }
+        }
+        if (get_form_param(body, "user_user", val, sizeof(val))) strlcpy(g_config.user_user, val, sizeof(g_config.user_user));
+        if (get_form_param(body, "user_pass", val, sizeof(val))) {
+            if (!is_masked_or_empty(val)) {
+                if (strlen(val) < 8 || strchr(val, ':') != nullptr) {
+                    httpd_resp_set_status(req, "400 Bad Request");
+                    httpd_resp_send(req, "Password Teknisi minimal 8 karakter dan tidak boleh mengandung karakter ':'", HTTPD_RESP_USE_STRLEN);
+                    return ESP_OK;
+                }
+                strlcpy(g_config.user_pass, val, sizeof(g_config.user_pass));
+            }
+        }
+    } else {
+        // Role TEKNISI: hanya boleh mengubah user_pass diri sendiri
+        char val[64];
+        if (get_form_param(body, "user_pass", val, sizeof(val))) {
+            if (!is_masked_or_empty(val)) {
+                if (strlen(val) < 8 || strchr(val, ':') != nullptr) {
+                    httpd_resp_set_status(req, "400 Bad Request");
+                    httpd_resp_send(req, "Password Teknisi minimal 8 karakter dan tidak boleh mengandung karakter ':'", HTTPD_RESP_USE_STRLEN);
+                    return ESP_OK;
+                }
+                strlcpy(g_config.user_pass, val, sizeof(g_config.user_pass));
+            }
         }
     }
 
     char val[64];
-    if (get_form_param(body, "user_user", val, sizeof(val))) strlcpy(g_config.user_user, val, sizeof(g_config.user_user));
-    if (get_form_param(body, "user_pass", val, sizeof(val))) strlcpy(g_config.user_pass, val, sizeof(g_config.user_pass));
     if (get_form_param(body, "connection_mode", val, sizeof(val))) {
         g_config.connection_mode = atoi(val);
     }
     if (get_form_param(body, "w_ssid", val, sizeof(val))) strlcpy(g_config.w_ssid, val, sizeof(g_config.w_ssid));
-    if (get_form_param(body, "w_password", val, sizeof(val))) strlcpy(g_config.w_password, val, sizeof(g_config.w_password));
+    if (get_form_param(body, "w_password", val, sizeof(val))) {
+        if (!is_masked_or_empty(val)) {
+            strlcpy(g_config.w_password, val, sizeof(g_config.w_password));
+        }
+    }
     if (get_form_param(body, "w_dhcp", val, sizeof(val))) g_config.w_dhcp = atoi(val);
     if (get_form_param(body, "w_ip", val, sizeof(val))) strlcpy(g_config.w_ip, val, sizeof(g_config.w_ip));
     if (get_form_param(body, "w_gateway", val, sizeof(val))) strlcpy(g_config.w_gateway, val, sizeof(g_config.w_gateway));
@@ -526,6 +609,11 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
     Core::ConfigStore::saveConfigAuth();
     s_auth_reboot_required = true;
 
+    char detAuth[80];
+    snprintf(detAuth, sizeof(detAuth), "Kredensial Akun Diperbarui oleh %s",
+             role == UserRole::ADMIN ? "Admin" : "Teknisi");
+    Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::AUTH_UPDATE, detAuth);
+
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, "Konfigurasi disimpan ke NVS. Reboot diperlukan untuk mengaktifkan perubahan.", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -540,6 +628,9 @@ static esp_err_t api_network_discard_handler(httpd_req_t *req) {
 
     Network::NetworkManager::rollbackPendingNetworkConfig();
     s_auth_reboot_required = false;
+
+    Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::CONFIG_DISCARD,
+                                "Perubahan Konfigurasi Jaringan Dibatalkan oleh Pengguna");
 
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "status", "ok");
@@ -596,6 +687,9 @@ static esp_err_t api_config_settings_handler(httpd_req_t *req) {
     Core::ConfigStore::saveConfigSettings();
     Network::MqttService::updateTopicNames();
 
+    Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::CONFIG_UPDATE,
+                                "Pengaturan Sistem Disimpan oleh Admin");
+
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, "Pengaturan gateway berhasil diperbarui.", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -617,7 +711,15 @@ static esp_err_t api_system_version_handler(httpd_req_t *req) {
     Core::ConfigStore::getModuleId(mod_id, sizeof(mod_id));
     cJSON_AddStringToObject(root, "ap_ssid", mod_id);
 
+    uint64_t uptime_sec = esp_timer_get_time() / 1000000ULL;
+    cJSON_AddNumberToObject(root, "uptime_sec", (double)uptime_sec);
+    cJSON_AddNumberToObject(root, "free_heap_kb", (double)(esp_get_free_heap_size() / 1024));
+    cJSON_AddNumberToObject(root, "net_bandwidth", Network::MqttService::getBandwidthKBps());
+
     cJSON_AddBoolToObject(root, "mqtt_connected", Network::MqttService::isConnected());
+    cJSON_AddStringToObject(root, "mqtt_host", g_config.mqtt_host[0] != '\0' ? g_config.mqtt_host : "—");
+    cJSON_AddNumberToObject(root, "mqtt_port", g_config.mqtt_port);
+    cJSON_AddBoolToObject(root, "mqtt_ssl", g_config.mqtt_use_ssl == 1);
     cJSON_AddBoolToObject(root, "net_connected", Network::NetworkManager::isConnected());
 
     const char *net_mode = (g_config.connection_mode == 1) ? "Ethernet" : "Wi-Fi";
@@ -630,17 +732,47 @@ static esp_err_t api_system_version_handler(httpd_req_t *req) {
     Network::NetworkManager::getActiveIp(ip_str, sizeof(ip_str));
     cJSON_AddStringToObject(root, "ip_address", ip_str);
 
+    char mac_str[32];
+    Network::NetworkManager::getActiveMac(mac_str, sizeof(mac_str));
+    cJSON_AddStringToObject(root, "mac_address", mac_str);
+
+    char wifi_ip[32];
+    Network::NetworkManager::getWifiIp(wifi_ip, sizeof(wifi_ip));
+    cJSON_AddStringToObject(root, "wifi_ip", wifi_ip);
+
+    char wifi_mac[32];
+    Network::NetworkManager::getWifiMac(wifi_mac, sizeof(wifi_mac));
+    cJSON_AddStringToObject(root, "wifi_mac", wifi_mac);
+
+    bool eth_hw = Network::NetworkManager::isEthernetHardwareDetected();
+    cJSON_AddBoolToObject(root, "eth_hw_detected", eth_hw);
+
+    char eth_ip[32];
+    Network::NetworkManager::getEthernetIp(eth_ip, sizeof(eth_ip));
+    cJSON_AddStringToObject(root, "eth_ip", eth_ip);
+
+    char eth_mac[32];
+    Network::NetworkManager::getEthernetMac(eth_mac, sizeof(eth_mac));
+    cJSON_AddStringToObject(root, "eth_mac", eth_mac);
+
+    if (g_config.connection_mode == 0 && Network::NetworkManager::isConnected()) {
+        wifi_ap_record_t ap_info;
+        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+            cJSON_AddNumberToObject(root, "wifi_rssi", ap_info.rssi);
+        }
+    }
+
     cJSON_AddNumberToObject(root, "mqtt_published", Core::BeaconPipeline::getTotalMqttPublished());
     cJSON_AddNumberToObject(root, "mqtt_failed", Core::BeaconPipeline::getTotalMqttFailed());
     cJSON_AddStringToObject(root, "mqtt_last_error", Network::MqttService::getLastError());
 
-    if (g_config.connection_mode == 1) {
-        auto *drv = Network::NetworkManager::getEthernetDriver();
-        if (drv) {
-            cJSON_AddBoolToObject(root, "eth_link_up", drv->isConnected());
-            cJSON_AddNumberToObject(root, "eth_speed", drv->linkSpeed());
-            cJSON_AddStringToObject(root, "eth_duplex", drv->isFullDuplex() ? "Full" : "Half");
-        }
+    auto *drv = Network::NetworkManager::getEthernetDriver();
+    if (drv) {
+        cJSON_AddBoolToObject(root, "eth_link_up", drv->isConnected());
+        cJSON_AddNumberToObject(root, "eth_speed", drv->linkSpeed());
+        cJSON_AddStringToObject(root, "eth_duplex", drv->isFullDuplex() ? "Full" : "Half");
+        cJSON_AddBoolToObject(root, "eth_direct_mode", Network::NetworkManager::isEthernetDirectPcMode());
+        cJSON_AddBoolToObject(root, "eth_slave_mode", Network::NetworkManager::isEthernetPeerSlaveMode());
     }
 
     char *out = cJSON_PrintUnformatted(root);
@@ -675,8 +807,8 @@ static esp_err_t api_touch_ap_handler(httpd_req_t *req) {
     char token[Session::TOKEN_LEN + 1] = {0};
     UserRole role = Session::validate(req, token, sizeof(token));
     if (role != UserRole::NONE && token[0] != '\0') {
-        char cookie_hdr[128];
-        snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=3600", token);
+        char cookie_hdr[192];
+        snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600", token);
         httpd_resp_set_hdr(req, "Set-Cookie", cookie_hdr);
     }
 
@@ -716,7 +848,8 @@ static esp_err_t api_net_logs_handler(httpd_req_t *req) {
 
     bool netConn = Network::NetworkManager::isConnected();
     bool ethActive = Network::NetworkManager::isEthernetActive();
-    bool ethLink = Network::NetworkManager::isLinkUp();
+    bool ethHw = Network::NetworkManager::isEthernetHardwareDetected();
+    bool ethLink = Network::NetworkManager::isEthernetLinkUp();
     bool wifiConn = netConn && !ethActive;
     bool ethConn = netConn && ethActive;
     bool mqttConn = Network::MqttService::isConnected();
@@ -724,13 +857,30 @@ static esp_err_t api_net_logs_handler(httpd_req_t *req) {
     cJSON_AddStringToObject(root, "wifi_status", wifiConn ? "connected" : "disconnected");
     cJSON_AddStringToObject(root, "wifi_ssid", g_config.w_ssid[0] ? g_config.w_ssid : "-");
     cJSON_AddStringToObject(root, "wifi_ip", wifiConn ? activeIp : "-");
+    cJSON_AddNumberToObject(root, "wifi_disconnects", Network::NetLogService::getWifiDisconnectCount());
 
-    cJSON_AddStringToObject(root, "eth_status", ethConn ? "connected" : (ethLink ? "link_up" : "link_down"));
+    const char* ethStatusStr = "link_down";
+    if (!ethHw) {
+        ethStatusStr = "uninstalled";
+    } else if (ethConn) {
+        ethStatusStr = "connected";
+    } else if (ethLink) {
+        ethStatusStr = "link_up";
+    }
+
+    cJSON_AddStringToObject(root, "eth_status", ethStatusStr);
     cJSON_AddStringToObject(root, "eth_ip", ethConn ? activeIp : "-");
+    cJSON_AddNumberToObject(root, "eth_disconnects", Network::NetLogService::getEthDisconnectCount());
 
     cJSON_AddStringToObject(root, "mqtt_status", mqttConn ? "online" : "offline");
     cJSON_AddStringToObject(root, "mqtt_host", g_config.mqtt_host[0] ? g_config.mqtt_host : "-");
     cJSON_AddNumberToObject(root, "mqtt_port", g_config.mqtt_port);
+    cJSON_AddBoolToObject(root, "mqtt_ssl", g_config.mqtt_use_ssl == 1);
+    cJSON_AddNumberToObject(root, "mqtt_disconnects", Network::NetLogService::getMqttDisconnectCount());
+
+    // Telemetri Stabilitas ESP32 & Reboot
+    cJSON_AddNumberToObject(root, "boot_count", Network::NetLogService::getBootCount());
+    cJSON_AddStringToObject(root, "reset_reason", Network::NetLogService::getLastResetReasonString());
 
     // Metadata Media Penyimpanan Log & Proteksi Flash
     cJSON_AddStringToObject(root, "storage_mode", Network::NetLogService::getStorageModeString());
@@ -777,6 +927,11 @@ static esp_err_t api_net_logs_clear_handler(httpd_req_t *req) {
     }
 
     Network::NetLogService::clearLogs();
+    char detClr[80];
+    snprintf(detClr, sizeof(detClr), "Seluruh Riwayat Log Sistem Dibersihkan oleh %s",
+             role == UserRole::ADMIN ? "Admin" : "Teknisi");
+    Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::LOG_CLEARED, detClr);
+
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"status\":\"ok\",\"message\":\"Riwayat net log berhasil dihapus.\"}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -816,6 +971,12 @@ static esp_err_t api_net_logs_export_handler(httpd_req_t *req) {
 }
 
 static esp_err_t api_drop_logs_handler(httpd_req_t *req) {
+    if (Session::validate(req) == UserRole::NONE) {
+        httpd_resp_set_status(req, "401 Unauthorized");
+        httpd_resp_send(req, "Sesi Anda telah berakhir.", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
     cJSON *root = cJSON_CreateObject();
     if (!root) {
         httpd_resp_send_500(req);
@@ -876,6 +1037,7 @@ static esp_err_t api_drop_logs_clear_handler(httpd_req_t *req) {
     }
 
     Core::DropLogService::clearLogs();
+    Core::BeaconPipeline::resetDropCounters();
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"status\":\"ok\",\"message\":\"Riwayat log drop data berhasil dihapus.\"}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -924,11 +1086,11 @@ static esp_err_t api_reboot_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, "Perangkat sedang me-reboot...", HTTPD_RESP_USE_STRLEN);
 
-    xTaskCreate([](void *) {
+    xTaskCreatePinnedToCore([](void *) {
         vTaskDelay(pdMS_TO_TICKS(1000));
         esp_restart();
         vTaskDelete(NULL);
-    }, "reboot_task", 2048, NULL, 5, NULL);
+    }, "reboot_task", 2048, NULL, 5, NULL, 1);
 
     return ESP_OK;
 }
@@ -940,14 +1102,17 @@ static esp_err_t api_reset_handler(httpd_req_t *req) {
         return ESP_OK;
     }
     Core::ConfigStore::resetConfigToFactory();
+    Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::CONFIG_RESET,
+                                "Konfigurasi Sistem Direset ke Standar Pabrik (Web Admin)");
+
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, "Konfigurasi NVS berhasil di-reset ke default. Sistem me-reboot...", HTTPD_RESP_USE_STRLEN);
 
-    xTaskCreate([](void *) {
+    xTaskCreatePinnedToCore([](void *) {
         vTaskDelay(pdMS_TO_TICKS(1200));
         esp_restart();
         vTaskDelete(NULL);
-    }, "reset_task", 2048, NULL, 5, NULL);
+    }, "reset_task", 2048, NULL, 5, NULL, 1);
 
     return ESP_OK;
 }
@@ -975,13 +1140,18 @@ static esp_err_t api_debug_nrf_handler(httpd_req_t *req) {
 // -------------------------------------------------------------
 // Route Handlers: Wi-Fi Scanner REST APIs
 // -------------------------------------------------------------
-static bool s_scan_in_progress = false;
-static uint32_t s_scan_start_millis = 0;
+static std::atomic<bool> s_scan_in_progress{false};
+static std::atomic<uint32_t> s_scan_start_millis{0};
 
 static esp_err_t api_wifi_scan_stop_handler(httpd_req_t *req) {
-    if (s_scan_in_progress) {
+    if (Session::validate(req) == UserRole::NONE) {
+        httpd_resp_set_status(req, "401 Unauthorized");
+        httpd_resp_send(req, "{\"error\":\"Unauthorized\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+    if (s_scan_in_progress.load()) {
         esp_wifi_scan_stop();
-        s_scan_in_progress = false;
+        s_scan_in_progress.store(false);
         Network::NetworkManager::resetWifiScanDone();
     }
     httpd_resp_set_type(req, "application/json");
@@ -1025,21 +1195,21 @@ static esp_err_t api_wifi_scan_handler(httpd_req_t *req) {
     uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
 
     // Watchdog: jika scan stuck lebih dari 8 detik, batalkan dan mulai baru
-    if (s_scan_in_progress && (now - s_scan_start_millis > 8000)) {
+    if (s_scan_in_progress.load() && (now - s_scan_start_millis.load() > 8000)) {
         ESP_LOGW(TAG, "Wi-Fi scan timeout (>8 detik), mereset state scanner.");
         esp_wifi_scan_stop();
-        s_scan_in_progress = false;
+        s_scan_in_progress.store(false);
         Network::NetworkManager::resetWifiScanDone();
     }
 
-    if (forceRefresh && s_scan_in_progress) {
+    if (forceRefresh && s_scan_in_progress.load()) {
         esp_wifi_scan_stop();
-        s_scan_in_progress = false;
+        s_scan_in_progress.store(false);
         Network::NetworkManager::resetWifiScanDone();
     }
 
     // 4. Jika belum ada scan yang berjalan, mulai scan baru
-    if (!s_scan_in_progress) {
+    if (!s_scan_in_progress.load()) {
         // Pastikan Wi-Fi Station tidak dalam status connecting jika mode Ethernet aktif
         if (Network::NetworkManager::isEthernetActive() || 
             Network::NetworkManager::getActiveConnectionMode() != ConnectionMode::WIFI) {
@@ -1063,8 +1233,8 @@ static esp_err_t api_wifi_scan_handler(httpd_req_t *req) {
         }
 
         if (err == ESP_OK) {
-            s_scan_in_progress = true;
-            s_scan_start_millis = now;
+            s_scan_in_progress.store(true);
+            s_scan_start_millis.store(now);
             httpd_resp_set_type(req, "application/json");
             httpd_resp_send(req, "{\"status\":\"scanning\"}", HTTPD_RESP_USE_STRLEN);
             return ESP_OK;
@@ -1085,7 +1255,7 @@ static esp_err_t api_wifi_scan_handler(httpd_req_t *req) {
     }
 
     // Pemindaian seluruh channel 1-13 telah selesai 100%!
-    s_scan_in_progress = false;
+    s_scan_in_progress.store(false);
     Network::NetworkManager::resetWifiScanDone();
 
     uint16_t ap_count = 0;
@@ -1175,8 +1345,18 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
         }
         char size_val[32];
         if (httpd_query_key_value(query, "size", size_val, sizeof(size_val)) == ESP_OK) {
-            total_size = static_cast<size_t>(atoi(size_val));
+            char *endptr = nullptr;
+            unsigned long parsed = strtoul(size_val, &endptr, 10);
+            if (endptr != size_val && parsed > 0) {
+                total_size = static_cast<size_t>(parsed);
+            }
         }
+    }
+
+    if (total_size == 0 || total_size > (4UL * 1024UL * 1024UL)) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_send(req, "Ukuran file OTA tidak valid atau melebihi batas 4MB.", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
     }
 
     char err_buf[128] = {0};
@@ -1230,15 +1410,15 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
     }
 
     Server::broadcast_ws_text("{\"type\":\"ota_progress\",\"percent\":100,\"status\":\"done\"}");
-    httpd_resp_set_hdr(req, "Set-Cookie", "token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+    httpd_resp_set_hdr(req, "Set-Cookie", "token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, "Update Berhasil! Sistem me-reboot...", HTTPD_RESP_USE_STRLEN);
 
-    xTaskCreate([](void *) {
+    xTaskCreatePinnedToCore([](void *) {
         vTaskDelay(pdMS_TO_TICKS(1500));
         esp_restart();
         vTaskDelete(NULL);
-    }, "ota_reboot", 2048, NULL, 5, NULL);
+    }, "ota_reboot", 2048, NULL, 5, NULL, 1);
 
     return ESP_OK;
 }

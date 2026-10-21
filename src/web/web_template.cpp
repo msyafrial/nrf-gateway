@@ -1,11 +1,13 @@
 #include "web_template.hpp"
 #include "emergency_page.hpp"
+#include "web_server.hpp"
 #include "app_config.hpp"
 #include "config_store.hpp"
 #include "net_manager.hpp"
 #include "mqtt_service.hpp"
 #include "IEthernetDriver.hpp"
 #include <esp_wifi.h>
+#include <esp_timer.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -97,11 +99,36 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
         snprintf(out_buf, max_len, "%s", s_ui_version);
     } else if (key == "ip_address") {
         Network::NetworkManager::getActiveIp(out_buf, max_len);
+    } else if (key == "mac_address") {
+        Network::NetworkManager::getActiveMac(out_buf, max_len);
+    } else if (key == "wifi_ip") {
+        Network::NetworkManager::getWifiIp(out_buf, max_len);
+    } else if (key == "wifi_mac") {
+        Network::NetworkManager::getWifiMac(out_buf, max_len);
+    } else if (key == "eth_ip") {
+        Network::NetworkManager::getEthernetIp(out_buf, max_len);
+    } else if (key == "eth_mac") {
+        Network::NetworkManager::getEthernetMac(out_buf, max_len);
+    } else if (key == "eth_tiles_style") {
+        bool eth_hw = Network::NetworkManager::isEthernetHardwareDetected();
+        snprintf(out_buf, max_len, "%s", eth_hw ? "" : "display:none;");
+    } else if (key == "mac_label") {
+        snprintf(out_buf, max_len, (g_config.connection_mode == 1 || Network::NetworkManager::isEthernetDirectPcMode()) ? "MAC Address (LAN)" : "MAC Address (Wi-Fi)");
     } else if (key == "connection_mode") {
         snprintf(out_buf, max_len, "%d", g_config.connection_mode);
     } else if (key == "net_status") {
         bool is_conn = Network::NetworkManager::isConnected();
-        if (g_config.connection_mode == 1) {
+        if (Network::NetworkManager::isEthernetDirectPcMode()) {
+            if (g_config.connection_mode == 0 && is_conn) {
+                snprintf(out_buf, max_len, "Wi-Fi + Direct LAN (192.168.4.1)");
+            } else {
+                snprintf(out_buf, max_len, "Ethernet (Direct PC 192.168.4.1)");
+            }
+        } else if (Network::NetworkManager::isEthernetPeerSlaveMode()) {
+            char ipBuf[32];
+            Network::NetworkManager::getActiveIp(ipBuf, sizeof(ipBuf));
+            snprintf(out_buf, max_len, "Ethernet (Peer Slave %s)", ipBuf);
+        } else if (g_config.connection_mode == 1) {
             auto *drv = Network::NetworkManager::getEthernetDriver();
             if (is_conn && drv) {
                 snprintf(out_buf, max_len, "Ethernet (%uM %s)",
@@ -114,7 +141,11 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
             snprintf(out_buf, max_len, "Wi-Fi (%s)", is_conn ? "Connected" : "Disconnected");
         }
     } else if (key == "net_badge_class") {
-        snprintf(out_buf, max_len, "%s", Network::NetworkManager::isConnected() ? "conn" : "offline");
+        if (Network::NetworkManager::isEthernetDirectPcMode() || Network::NetworkManager::isEthernetPeerSlaveMode()) {
+            snprintf(out_buf, max_len, "direct");
+        } else {
+            snprintf(out_buf, max_len, "%s", Network::NetworkManager::isConnected() ? "conn" : "offline");
+        }
     } else if (key == "signal_spec") {
         if (g_config.connection_mode == 1) {
             auto *drv = Network::NetworkManager::getEthernetDriver();
@@ -123,7 +154,7 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
                          static_cast<unsigned>(drv->linkSpeed()),
                          drv->isFullDuplex() ? "Full" : "Half");
             } else {
-                snprintf(out_buf, max_len, "Kabel Terputus (Link Down)");
+                snprintf(out_buf, max_len, "Cable Disconnected (Link Down)");
             }
         } else {
             if (Network::NetworkManager::isConnected()) {
@@ -137,24 +168,233 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
                 snprintf(out_buf, max_len, "-");
             }
         }
+    } else if (key == "uptime_sec") {
+        uint64_t uptime_sec = esp_timer_get_time() / 1000000ULL;
+        snprintf(out_buf, max_len, "%llu", (unsigned long long)uptime_sec);
+    } else if (key == "uptime_short") {
+        uint64_t s = esp_timer_get_time() / 1000000ULL;
+        unsigned days = s / 86400;
+        unsigned hours = (s % 86400) / 3600;
+        unsigned mins = (s % 3600) / 60;
+        snprintf(out_buf, max_len, "%ud %02uh %02um", days, hours, mins);
+    } else if (key == "uptime_detail") {
+        uint64_t s = esp_timer_get_time() / 1000000ULL;
+        unsigned days = s / 86400;
+        unsigned hours = (s % 86400) / 3600;
+        unsigned mins = (s % 3600) / 60;
+        unsigned secs = s % 60;
+        snprintf(out_buf, max_len, "%u %s %02u:%02u:%02u", days, days == 1 ? "Day" : "Days", hours, mins, secs);
+    } else if (key == "free_heap_kb") {
+        snprintf(out_buf, max_len, "%lu", (unsigned long)(esp_get_free_heap_size() / 1024));
+    } else if (key == "net_bandwidth") {
+        snprintf(out_buf, max_len, "%.1f", Network::MqttService::getBandwidthKBps());
+    } else if (key == "header_mode_pill_class") {
+        if (Network::NetworkManager::isEthernetDirectPcMode() || Network::NetworkManager::isEthernetPeerSlaveMode()) {
+            snprintf(out_buf, max_len, "mode-smart");
+        } else if (g_config.connection_mode == 1) {
+            snprintf(out_buf, max_len, "mode-eth");
+        } else {
+            snprintf(out_buf, max_len, "mode-wifi");
+        }
+    } else if (key == "network_mode_desc") {
+        if (Network::NetworkManager::isEthernetDirectPcMode() || Network::NetworkManager::isEthernetPeerSlaveMode()) {
+            snprintf(out_buf, max_len, "Direct LAN Active — Technician direct access via IP 192.168.4.1");
+        } else if (g_config.connection_mode == 1) {
+            snprintf(out_buf, max_len, Network::NetworkManager::isConnected() ? "Ethernet Mode (LAN) — Physical cable active as primary uplink" : "Ethernet Mode (LAN) — Waiting for physical cable link");
+        } else {
+            snprintf(out_buf, max_len, Network::NetworkManager::isConnected() ? "Wi-Fi Standalone Mode — Wireless link active as primary uplink" : "Wi-Fi Standalone Mode — Waiting for Wi-Fi connection");
+        }
+    } else if (key == "conn_mode_text") {
+        if (Network::NetworkManager::isEthernetDirectPcMode() || Network::NetworkManager::isEthernetPeerSlaveMode()) {
+            snprintf(out_buf, max_len, "SMART CONNECT");
+        } else if (g_config.connection_mode == 1) {
+            snprintf(out_buf, max_len, "ETHERNET");
+        } else {
+            snprintf(out_buf, max_len, "WI-FI");
+        }
+    } else if (key == "conn_mode_class") {
+        if (Network::NetworkManager::isEthernetDirectPcMode() || Network::NetworkManager::isEthernetPeerSlaveMode()) {
+            snprintf(out_buf, max_len, "mode-smart");
+        } else if (g_config.connection_mode == 1) {
+            snprintf(out_buf, max_len, "mode-eth");
+        } else {
+            snprintf(out_buf, max_len, "mode-wifi");
+        }
+    } else if (key == "conn_mqtt_class") {
+        snprintf(out_buf, max_len, Network::MqttService::isConnected() ? "mqtt-online" : "mqtt-offline");
+    } else if (key == "wifi_signal_spec") {
+        if (Network::NetworkManager::isConnected() && g_config.connection_mode == 0) {
+            wifi_ap_record_t info;
+            if (esp_wifi_sta_get_ap_info(&info) == ESP_OK) {
+                snprintf(out_buf, max_len, "%d dBm", info.rssi);
+            } else {
+                snprintf(out_buf, max_len, "-");
+            }
+        } else if (g_config.connection_mode == 1) {
+            snprintf(out_buf, max_len, "N/A (Radio Off)");
+        } else {
+            snprintf(out_buf, max_len, "-");
+        }
+    } else if (key == "wifi_role_label") {
+        if (g_config.connection_mode == 1) {
+            snprintf(out_buf, max_len, "Radio Inactive (LAN Mode)");
+        } else if (Network::NetworkManager::isConnected()) {
+            snprintf(out_buf, max_len, "Primary Link (WLAN)");
+        } else {
+            snprintf(out_buf, max_len, "Wi-Fi Disconnected");
+        }
+    } else if (key == "wifi_role_class") {
+        if (g_config.connection_mode == 1) {
+            snprintf(out_buf, max_len, "slate");
+        } else if (Network::NetworkManager::isConnected()) {
+            snprintf(out_buf, max_len, "emerald");
+        } else {
+            snprintf(out_buf, max_len, "amber");
+        }
+    } else if (key == "wifi_status_text") {
+        if (g_config.connection_mode == 1) {
+            snprintf(out_buf, max_len, "Disabled");
+        } else if (Network::NetworkManager::isConnected()) {
+            snprintf(out_buf, max_len, "Active");
+        } else {
+            snprintf(out_buf, max_len, "Offline");
+        }
+    } else if (key == "wifi_status_class") {
+        if (g_config.connection_mode == 1) {
+            snprintf(out_buf, max_len, "slate");
+        } else if (Network::NetworkManager::isConnected()) {
+            snprintf(out_buf, max_len, "active");
+        } else {
+            snprintf(out_buf, max_len, "amber");
+        }
+    } else if (key == "wifi_card_class") {
+        snprintf(out_buf, max_len, (g_config.connection_mode != 1 && Network::NetworkManager::isConnected()) ? "active-online" : "");
+    } else if (key == "eth_role_label") {
+        auto *drv = Network::NetworkManager::getEthernetDriver();
+        bool link_up = drv && drv->isConnected();
+        if (Network::NetworkManager::isEthernetDirectPcMode()) {
+            snprintf(out_buf, max_len, "Direct LAN / Maintenance Port");
+        } else if (link_up) {
+            snprintf(out_buf, max_len, "Router LAN Connected");
+        } else {
+            snprintf(out_buf, max_len, "Secondary / LAN Port");
+        }
+    } else if (key == "eth_role_class") {
+        auto *drv = Network::NetworkManager::getEthernetDriver();
+        bool link_up = drv && drv->isConnected();
+        if (Network::NetworkManager::isEthernetDirectPcMode() || link_up) {
+            snprintf(out_buf, max_len, "emerald");
+        } else {
+            snprintf(out_buf, max_len, "slate");
+        }
+    } else if (key == "eth_status_text") {
+        auto *drv = Network::NetworkManager::getEthernetDriver();
+        bool link_up = drv && drv->isConnected();
+        if (Network::NetworkManager::isEthernetDirectPcMode()) {
+            snprintf(out_buf, max_len, "Direct PC");
+        } else if (link_up) {
+            snprintf(out_buf, max_len, "Active");
+        } else {
+            snprintf(out_buf, max_len, "Link Down");
+        }
+    } else if (key == "eth_status_class") {
+        auto *drv = Network::NetworkManager::getEthernetDriver();
+        bool link_up = drv && drv->isConnected();
+        if (Network::NetworkManager::isEthernetDirectPcMode() || link_up) {
+            snprintf(out_buf, max_len, "active");
+        } else {
+            snprintf(out_buf, max_len, "amber");
+        }
+    } else if (key == "eth_card_class") {
+        auto *drv = Network::NetworkManager::getEthernetDriver();
+        bool link_up = drv && drv->isConnected();
+        if (Network::NetworkManager::isEthernetDirectPcMode() || link_up) {
+            snprintf(out_buf, max_len, "active-online");
+        } else {
+            snprintf(out_buf, max_len, "link-down");
+        }
+    } else if (key == "eth_ip_display") {
+        char eth_ip_buf[32];
+        Network::NetworkManager::getEthernetIp(eth_ip_buf, sizeof(eth_ip_buf));
+        auto *drv = Network::NetworkManager::getEthernetDriver();
+        bool link_up = drv && drv->isConnected();
+        if (Network::NetworkManager::isEthernetDirectPcMode()) {
+            snprintf(out_buf, max_len, "192.168.4.1");
+        } else if (link_up && eth_ip_buf[0] != '\0') {
+            snprintf(out_buf, max_len, "%s", eth_ip_buf);
+        } else {
+            snprintf(out_buf, max_len, "— (Unassigned)");
+        }
+    } else if (key == "eth_ip_class") {
+        auto *drv = Network::NetworkManager::getEthernetDriver();
+        bool link_up = drv && drv->isConnected();
+        if (Network::NetworkManager::isEthernetDirectPcMode() || link_up) {
+            snprintf(out_buf, max_len, "emerald");
+        } else {
+            snprintf(out_buf, max_len, "unassigned");
+        }
+    } else if (key == "eth_copy_style") {
+        auto *drv = Network::NetworkManager::getEthernetDriver();
+        bool link_up = drv && drv->isConnected();
+        snprintf(out_buf, max_len, (Network::NetworkManager::isEthernetDirectPcMode() || link_up) ? "display:inline-flex;" : "display:none;");
+    } else if (key == "eth_footer_label") {
+        snprintf(out_buf, max_len, "Physical Link");
+    } else if (key == "eth_footer_value") {
+        auto *drv = Network::NetworkManager::getEthernetDriver();
+        bool link_up = drv && drv->isConnected();
+        if (Network::NetworkManager::isEthernetDirectPcMode()) {
+            snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge active\">100M FD • Micro-DHCP</span>");
+        } else if (link_up) {
+            snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge active\">%u Mbps %s-Duplex</span>",
+                     static_cast<unsigned>(drv->linkSpeed()),
+                     drv->isFullDuplex() ? "Full" : "Half");
+        } else {
+            snprintf(out_buf, max_len, "<span class=\"sg-subcard-link-text amber\">Cable Disconnected</span>");
+        }
     } else if (key == "mqtt_status") {
         snprintf(out_buf, max_len, "%s", Network::MqttService::isConnected() ? "Connected" : "Disconnected");
     } else if (key == "mqtt_badge_class") {
         snprintf(out_buf, max_len, "%s", Network::MqttService::isConnected() ? "mqtt-online" : "mqtt-offline");
+    } else if (key == "mqtt_broker_host") {
+        if (g_config.mqtt_host[0] != '\0') {
+            html_escape(g_config.mqtt_host, out_buf, max_len);
+        } else {
+            snprintf(out_buf, max_len, "—");
+        }
+    } else if (key == "mqtt_broker_port") {
+        snprintf(out_buf, max_len, "%d", g_config.mqtt_port);
+    } else if (key == "mqtt_tls_badge") {
+        if (g_config.mqtt_use_ssl == 1) {
+            snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge active\"><svg width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" style=\"vertical-align:-1px;margin-right:3px;\"><rect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\" ry=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 10 0v4\"/></svg>TLS Active</span>");
+        } else {
+            snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge slate\"><svg width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" style=\"vertical-align:-1px;margin-right:3px;\"><rect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\" ry=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 9.9 -1\"/></svg>Plain TCP</span>");
+        }
+    } else if (key == "mqtt_conn_badge") {
+        if (Network::MqttService::isConnected()) {
+            snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge active\">● Connected</span>");
+        } else {
+            snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge amber\">● Disconnected</span>");
+        }
+    } else if (key == "mqtt_card_class") {
+        snprintf(out_buf, max_len, Network::MqttService::isConnected() ? "active-online" : "");
+    } else if (key == "mqtt_icon_class") {
+        snprintf(out_buf, max_len, Network::MqttService::isConnected() ? "emerald" : "slate");
+    } else if (key == "mqtt_role_label") {
+        snprintf(out_buf, max_len, Network::MqttService::isConnected() ? "Broker Connected — Beacon Uplink Active" : "Waiting for IoT Broker Connection");
     } else if (key == "user") {
         snprintf(out_buf, max_len, "Administrator");
     } else if (key == "admin_user") {
         html_escape(g_config.admin_user, out_buf, max_len);
     } else if (key == "admin_pass") {
-        html_escape(g_config.admin_pass, out_buf, max_len);
+        snprintf(out_buf, max_len, "••••••••");
     } else if (key == "user_user") {
         html_escape(g_config.user_user, out_buf, max_len);
     } else if (key == "user_pass") {
-        html_escape(g_config.user_pass, out_buf, max_len);
+        snprintf(out_buf, max_len, "••••••••");
     } else if (key == "w_ssid") {
         html_escape(g_config.w_ssid, out_buf, max_len);
     } else if (key == "w_password") {
-        html_escape(g_config.w_password, out_buf, max_len);
+        snprintf(out_buf, max_len, "••••••••");
     } else if (key == "w_ip") {
         html_escape(g_config.w_ip, out_buf, max_len);
     } else if (key == "w_gateway") {
@@ -176,7 +416,7 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
     } else if (key == "eth_dns2") {
         html_escape(g_config.eth_dns2, out_buf, max_len);
     } else if (key == "ap_password") {
-        html_escape(g_config.ap_password, out_buf, max_len);
+        snprintf(out_buf, max_len, "••••••••");
     } else if (key == "mqtt_host") {
         html_escape(g_config.mqtt_host, out_buf, max_len);
     } else if (key == "mqtt_port") {
@@ -188,7 +428,11 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
     } else if (key == "mqtt_user") {
         html_escape(g_config.mqtt_user, out_buf, max_len);
     } else if (key == "mqtt_password") {
-        html_escape(g_config.mqtt_password, out_buf, max_len);
+        snprintf(out_buf, max_len, "••••••••");
+    } else if (key == "mqtt_use_ssl") {
+        snprintf(out_buf, max_len, "%s", g_config.mqtt_use_ssl ? "1" : "0");
+    } else if (key == "mqtt_ssl_checked") {
+        snprintf(out_buf, max_len, "%s", g_config.mqtt_use_ssl ? "checked" : "");
     } else if (key == "filter_uuid_en") {
         snprintf(out_buf, max_len, "%s", g_config.filter_uuid_en ? "1" : "0");
     } else if (key == "filter_uuid_checked") {
@@ -296,7 +540,11 @@ esp_err_t stream_emergency_page(httpd_req_t *req) {
     char ip_str[32] = {0};
     Network::NetworkManager::getActiveIp(ip_str, sizeof(ip_str));
 
-    const char *model = (g_config.device_model[0] != '\0') ? g_config.device_model : "EMPTY";
+    char escaped_model[64] = {0};
+    html_escape((g_config.device_model[0] != '\0') ? g_config.device_model : "EMPTY", escaped_model, sizeof(escaped_model));
+    char escaped_dev_id[64] = {0};
+    html_escape(g_deviceId, escaped_dev_id, sizeof(escaped_dev_id));
+
     const char *net_mode = (g_config.connection_mode == 1) ? "Ethernet" : "Wi-Fi";
     const char *mqtt_stat = Network::MqttService::isConnected() ? "Terhubung (Online)" : "Terputus (Offline)";
 
@@ -334,9 +582,9 @@ esp_err_t stream_emergency_page(httpd_req_t *req) {
                 key[klen] = '\0';
 
                 if (strcmp(key, "DEVICE_MODEL") == 0) {
-                    append_str(model);
+                    append_str(escaped_model);
                 } else if (strcmp(key, "DEVICE_ID") == 0) {
-                    append_str(g_deviceId);
+                    append_str(escaped_dev_id);
                 } else if (strcmp(key, "FIRMWARE_VERSION") == 0) {
                     append_str(FIRMWARE_VERSION);
                 } else if (strcmp(key, "IP_ADDRESS") == 0) {
@@ -366,6 +614,18 @@ esp_err_t stream_emergency_page(httpd_req_t *req) {
 }
 
 esp_err_t stream_template_file(httpd_req_t *req, const char *filepath) {
+    struct FileReadGuard {
+        bool acquired;
+        FileReadGuard() : acquired(Server::acquire_file_read()) {}
+        ~FileReadGuard() {
+            if (acquired) Server::release_file_read();
+        }
+    } file_guard;
+
+    if (!file_guard.acquired) {
+        return stream_emergency_page(req);
+    }
+
     FILE *f = fopen(filepath, "r");
     if (!f) {
         return stream_emergency_page(req);
@@ -404,6 +664,7 @@ esp_err_t stream_template_file(httpd_req_t *req, const char *filepath) {
 
     char lookahead[64] = {0};
     size_t lookahead_len = 0;
+    size_t flush_count = 0;
 
     while (true) {
         size_t bytes_read = fread(in_buf, 1, sizeof(in_buf), f);
@@ -414,7 +675,7 @@ esp_err_t stream_template_file(httpd_req_t *req, const char *filepath) {
             if (lookahead_len > 0) {
                 if (c == '%') {
                     lookahead[lookahead_len] = '\0';
-                    char val[256];
+                    char val[512];
                     if (get_placeholder_value(std::string_view(lookahead + 1), val, sizeof(val))) {
                         append_val(val);
                     } else {
@@ -448,7 +709,9 @@ esp_err_t stream_template_file(httpd_req_t *req, const char *filepath) {
                     fclose(f);
                     return err;
                 }
-                vTaskDelay(pdMS_TO_TICKS(1)); // Cooperative yield agar MQTT & task lain di Core 1 tidak tertekan
+                if ((++flush_count % 4) == 0) {
+                    vTaskDelay(pdMS_TO_TICKS(1)); // Cooperative yield agar MQTT & task lain di Core 1 tidak tertekan
+                }
             }
         }
     }

@@ -1,4 +1,5 @@
 #include "drop_log_service.hpp"
+#include "mqtt_service.hpp"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -81,20 +82,24 @@ const char* DropLogService::reasonToStatusClass(DropReason reason) {
     }
 }
 
-void DropLogService::record(const char* code, const char* tag, int8_t rssi, DropReason reason) {
+void DropLogService::record(const char* code, const char* tag, int8_t rssi, DropReason reason, uint32_t count) {
+    if (reason != DropReason::MQTT_FAIL && !Network::MqttService::isConnected()) {
+        return;
+    }
     if (!s_initialized) {
         init();
     }
+    if (count == 0) count = 1;
 
     // Perbarui counter akumulasi statistik secara atomic tanpa data-race
-    s_statTotalDropped.fetch_add(1, std::memory_order_relaxed);
+    s_statTotalDropped.fetch_add(count, std::memory_order_relaxed);
     switch (reason) {
-        case DropReason::TTL_EXPIRED:       s_statTtlExpired.fetch_add(1, std::memory_order_relaxed); break;
-        case DropReason::RSSI_OUT_OF_RANGE: s_statRssiMin.fetch_add(1, std::memory_order_relaxed); break;
-        case DropReason::UUID_MISMATCH:     s_statUuidMismatch.fetch_add(1, std::memory_order_relaxed); break;
-        case DropReason::MAJOR_MISMATCH:    s_statMajorMismatch.fetch_add(1, std::memory_order_relaxed); break;
-        case DropReason::QUEUE_OVERFLOW:    s_statQueueOverflow.fetch_add(1, std::memory_order_relaxed); break;
-        case DropReason::MQTT_FAIL:         s_statMqttFailed.fetch_add(1, std::memory_order_relaxed); break;
+        case DropReason::TTL_EXPIRED:       s_statTtlExpired.fetch_add(count, std::memory_order_relaxed); break;
+        case DropReason::RSSI_OUT_OF_RANGE: s_statRssiMin.fetch_add(count, std::memory_order_relaxed); break;
+        case DropReason::UUID_MISMATCH:     s_statUuidMismatch.fetch_add(count, std::memory_order_relaxed); break;
+        case DropReason::MAJOR_MISMATCH:    s_statMajorMismatch.fetch_add(count, std::memory_order_relaxed); break;
+        case DropReason::QUEUE_OVERFLOW:    s_statQueueOverflow.fetch_add(count, std::memory_order_relaxed); break;
+        case DropReason::MQTT_FAIL:         s_statMqttFailed.fetch_add(count, std::memory_order_relaxed); break;
     }
 
     // Mutex take non-blocking (maksimal 2 ms) agar tidak menghambat Core 0 UART ingestion
@@ -124,11 +129,11 @@ void DropLogService::record(const char* code, const char* tag, int8_t rssi, Drop
     }
 }
 
-void DropLogService::record(const BeaconPacket& p, DropReason reason) {
+void DropLogService::record(const BeaconPacket& p, DropReason reason, uint32_t count) {
     const char* code = (p.type == BeaconType::IBEACON_EXT) ? "ibeacon_ext" : "iBeacon";
     char tagBuf[24];
     snprintf(tagBuf, sizeof(tagBuf), "%05u-%05u", p.major, p.minor);
-    record(code, tagBuf, p.rssi, reason);
+    record(code, tagBuf, p.rssi, reason, count);
 }
 
 size_t DropLogService::getLogs(DropLogEntry* outEntries, size_t maxCount) {
@@ -153,6 +158,16 @@ size_t DropLogService::getLogCount() {
 }
 
 void DropLogService::clearLogs() {
+    // 1. Reset seluruh counter akumulasi statistik atomik secara instan dan tanpa jeda
+    s_statTotalDropped.store(0, std::memory_order_relaxed);
+    s_statTtlExpired.store(0, std::memory_order_relaxed);
+    s_statRssiMin.store(0, std::memory_order_relaxed);
+    s_statUuidMismatch.store(0, std::memory_order_relaxed);
+    s_statMajorMismatch.store(0, std::memory_order_relaxed);
+    s_statQueueOverflow.store(0, std::memory_order_relaxed);
+    s_statMqttFailed.store(0, std::memory_order_relaxed);
+
+    // 2. Kosongkan riwayat array log jika mutex tersedia
     if (s_dropMutex != nullptr && xSemaphoreTake(s_dropMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         s_dropCount = 0;
         xSemaphoreGive(s_dropMutex);
