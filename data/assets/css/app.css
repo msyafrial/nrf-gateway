@@ -3742,3 +3742,43 @@ footer {
   background: #38bdf8;
   box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
 }
+
+/* NTP Server Probe Feedback & Micro Animations */
+.ntp-result-feedback {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  transition: all 0.2s ease;
+  animation: fadeIn 0.2s ease-in;
+}
+.ntp-result-feedback.success {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
+}
+.ntp-result-feedback.error {
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  color: #fb7185;
+}
+.uuid-badge.testing {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+.spinner-inline {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(56, 189, 248, 0.3);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: ntpSpinAnim 0.75s linear infinite;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+@keyframes ntpSpinAnim {
+  to { transform: rotate(360deg); }
+}

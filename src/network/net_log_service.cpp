@@ -117,6 +117,7 @@ const char* NetLogService::eventToString(NetEvent evt) {
         case NetEvent::CLIENT_JOIN:    return "CLIENT JOIN";
         case NetEvent::CLIENT_LEAVE:   return "CLIENT LEAVE";
         case NetEvent::BOOT:           return "SYSTEM BOOT";
+        case NetEvent::REBOOT:         return "SYSTEM REBOOT";
         case NetEvent::CONFIG_UPDATE:  return "CONFIG UPDATE";
         case NetEvent::CONFIG_RESET:   return "FACTORY RESET";
         case NetEvent::CONFIG_DISCARD: return "CONFIG DISCARD";
@@ -145,6 +146,7 @@ const char* NetLogService::eventToStatusClass(NetEvent evt) {
         case NetEvent::STOPPED:
         case NetEvent::CONFIG_DISCARD:
         case NetEvent::LOG_CLEARED:
+        case NetEvent::REBOOT:
             return "warning";
         default:
             return "neutral";
@@ -178,6 +180,10 @@ void NetLogService::init() {
     xSemaphoreTake(s_logMutex, portMAX_DELAY);
     if (!s_initialized) {
         s_initialized = true;
+
+        // Pastikan zona waktu WIB (UTC+7) aktif sebelum entri log pertama diformat
+        setenv("TZ", "WIB-7", 1);
+        tzset();
 
         if (Bsp::At24c256::isDetected()) {
             loadFromEeprom();

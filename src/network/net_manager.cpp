@@ -582,16 +582,27 @@ void NetworkManager::initWifiStation() {
 }
 
 void NetworkManager::initSntp() {
-    ESP_LOGI(TAG, "Menginisialisasi SNTP (WIB GMT+7, pool.ntp.org)...");
+    const char* primaryServer = (g_config.ntp_server[0] != '\0') ? g_config.ntp_server : "pool.ntp.org";
+    ESP_LOGI(TAG, "Menginisialisasi SNTP (WIB GMT+7, server: %s)...", primaryServer);
 
     setenv("TZ", "WIB-7", 1);
     tzset();
 
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_setservername(0, primaryServer);
     esp_sntp_setservername(1, "time.nist.gov");
     esp_sntp_setservername(2, "time.google.com");
     sntp_set_time_sync_notification_cb(sntpSyncCallback);
+    esp_sntp_init();
+}
+
+void NetworkManager::updateSntpServer(const char* server) {
+    const char* targetServer = (server && server[0] != '\0') ? server : "pool.ntp.org";
+    ESP_LOGI(TAG, "Memperbarui konfigurasi NTP server ke: %s", targetServer);
+    if (esp_sntp_enabled()) {
+        esp_sntp_stop();
+    }
+    esp_sntp_setservername(0, targetServer);
     esp_sntp_init();
 }
 
@@ -871,7 +882,10 @@ void NetworkManager::checkDisconWatchdog() {
     if (elapsedSec >= maxSec) {
         ESP_LOGE(TAG, "Watchdog Diskoneksi Terpicu! Terputus > %d menit. Melakukan Restart Sistem...",
                  g_config.discon_rst);
-        vTaskDelay(pdMS_TO_TICKS(100));
+        char wdDetail[80];
+        snprintf(wdDetail, sizeof(wdDetail), "Watchdog diskoneksi terpicu (> %d menit)", g_config.discon_rst);
+        NetLogService::log(NetCategory::SYSTEM, NetEvent::REBOOT, wdDetail);
+        vTaskDelay(pdMS_TO_TICKS(150));
         esp_restart();
     }
 }
@@ -912,6 +926,9 @@ void NetworkManager::checkDailyRestart() {
                 s_dailyRestartExecutedToday = true;
                 ESP_LOGI(TAG, "Jadwal restart harian (%02d:%02d) tercapai. Melakukan restart terencana...",
                          targetH, targetM);
+                char schDetail[80];
+                snprintf(schDetail, sizeof(schDetail), "Jadwal restart harian (%02d:%02d) dieksekusi", targetH, targetM);
+                NetLogService::log(NetCategory::SYSTEM, NetEvent::REBOOT, schDetail);
                 vTaskDelay(pdMS_TO_TICKS(200));
                 esp_restart();
             }

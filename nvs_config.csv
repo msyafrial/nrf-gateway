@@ -27,6 +27,8 @@ port,data,u32,1884
 user,data,string,eyroMQTT
 pass,data,string,eyroMQTT1234
 use_ssl,data,u32,0
+qos,data,u32,1
+keepalive,data,u32,30
 gateway,namespace,,
 dev_model,data,string,SG-10
 dev_ver,data,string,v1.0.0
@@ -40,3 +42,4 @@ batch_flush,data,u32,150
 data_ttl,data,u32,1000
 restart_sch,data,string,03:00
 discon_rst,data,u32,30
+ntp_server,data,string,pool.ntp.org

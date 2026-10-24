@@ -35,6 +35,12 @@
             </a>
           </li>
           <li>
+            <a href="/docs">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>Integration Docs</span>
+            </a>
+          </li>
+          <li>
             <a href="/log">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
               <span>System Logs</span>
@@ -595,6 +601,24 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                   </button>
                 </div>
               </div>
+
+              <div class="item">
+                <label for="mqtt_qos">Tingkat Pengiriman Data (QoS)</label>
+                <select id="mqtt_qos" name="mqtt_qos">
+                  <option value="1" %mqtt_qos_1_selected%>QoS 1 — Delivery Guaranteed (Default)</option>
+                  <option value="0" %mqtt_qos_0_selected%>QoS 0 — Fire &amp; Forget (Hemat Kuota)</option>
+                </select>
+                <span style="font-size:0.75rem; color:#94a3b8; margin-top:2px; display:block;">QoS 1: Terkonfirmasi PUBACK broker. QoS 0: Kirim instan tanpa jeda.</span>
+              </div>
+
+              <div class="item">
+                <label for="mqtt_keepalive">MQTT Keep Alive</label>
+                <div class="unit-box">
+                  <input type="number" id="mqtt_keepalive" name="mqtt_keepalive" value="%mqtt_keepalive%" min="5" max="300" placeholder="30" required>
+                  <span class="unit-text">Detik</span>
+                </div>
+                <span style="font-size:0.75rem; color:#94a3b8; margin-top:2px; display:block;">Interval detak ping soket TCP (5 &ndash; 300 detik. Default: 30s).</span>
+              </div>
             </div>
           </div>
 
@@ -643,7 +667,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
     </nav>
   </div>
 
-  <script src="assets/js/app.js"></script>
+  <script src="assets/js/app.js?v=%firmware_version%"></script>
   <script>
     document.getElementById("year").textContent = new Date().getFullYear();
 

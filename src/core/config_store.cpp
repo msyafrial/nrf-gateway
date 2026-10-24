@@ -438,6 +438,8 @@ void ConfigStore::initNvsConfiguration() {
             nvsCopyStr(hMaster, hDest, "user", "");
             nvsCopyStr(hMaster, hDest, "pass", "");
             nvsCopyU32(hMaster, hDest, "use_ssl", 0);
+            nvsCopyU32(hMaster, hDest, "qos", 1);
+            nvsCopyU32(hMaster, hDest, "keepalive", 30);
             nvs_close(hMaster);
         } else {
             nvs_set_str(hDest, "host", "socket.cubeacon.com");
@@ -445,6 +447,8 @@ void ConfigStore::initNvsConfiguration() {
             nvs_set_str(hDest, "user", "");
             nvs_set_str(hDest, "pass", "");
             nvs_set_u32(hDest, "use_ssl", 0);
+            nvs_set_u32(hDest, "qos", 1);
+            nvs_set_u32(hDest, "keepalive", 30);
         }
         nvs_commit(hDest);
         nvs_close(hDest);
@@ -468,6 +472,7 @@ void ConfigStore::initNvsConfiguration() {
             nvsCopyU32(hMaster, hDest, "data_ttl", 1000);
             nvsCopyStr(hMaster, hDest, "restart_sch", "03:00");
             nvsCopyU32(hMaster, hDest, "discon_rst", 30);
+            nvsCopyStr(hMaster, hDest, "ntp_server", "pool.ntp.org");
             nvs_close(hMaster);
         } else {
             nvs_set_str(hDest, "dev_model", CONFIG_DEVICE_MODEL);
@@ -482,6 +487,7 @@ void ConfigStore::initNvsConfiguration() {
             nvs_set_u32(hDest, "data_ttl", 1000);
             nvs_set_str(hDest, "restart_sch", "03:00");
             nvs_set_u32(hDest, "discon_rst", 30);
+            nvs_set_str(hDest, "ntp_server", "pool.ntp.org");
         }
         nvs_commit(hDest);
         nvs_close(hDest);
@@ -567,6 +573,8 @@ void ConfigStore::loadConfig() {
         g_config.mqtt_port = (int)nvsGetU32(h, "port", 1884);
         nvsGetStr(h, "user", g_config.mqtt_user, sizeof(g_config.mqtt_user), "");
         g_config.mqtt_use_ssl = (int)nvsGetU32(h, "use_ssl", 0);
+        g_config.mqtt_qos = (int)nvsGetU32(h, "qos", 1);
+        g_config.mqtt_keepalive = (int)nvsGetU32(h, "keepalive", 30);
 
         char rawMqttPass[192] = {0};
         nvsGetStr(h, "pass", rawMqttPass, sizeof(rawMqttPass), "");
@@ -596,14 +604,16 @@ void ConfigStore::loadConfig() {
         g_config.data_ttl = (int)nvsGetU32(h, "data_ttl", 1000);
         nvsGetStr(h, "restart_sch", g_config.restart_schedule, sizeof(g_config.restart_schedule), "03:00");
         g_config.discon_rst = (int)nvsGetU32(h, "discon_rst", 30);
+        nvsGetStr(h, "ntp_server", g_config.ntp_server, sizeof(g_config.ntp_server), "pool.ntp.org");
         nvs_close(h);
     }
 
-    ESP_LOGI(TAG, "Konfigurasi berhasil dimuat: Model=%s, Mode=%s, Broker=%s:%d (SSL: %s)",
+    ESP_LOGI(TAG, "Konfigurasi berhasil dimuat: Model=%s, Mode=%s, Broker=%s:%d (SSL: %s, QoS: %d, KeepAlive: %ds)",
              g_config.device_model,
              (g_config.connection_mode == 1) ? "Ethernet" : "Wi-Fi",
              g_config.mqtt_host, g_config.mqtt_port,
-             g_config.mqtt_use_ssl ? "YA" : "TIDAK");
+             g_config.mqtt_use_ssl ? "YA" : "TIDAK",
+             g_config.mqtt_qos, g_config.mqtt_keepalive);
 }
 
 void ConfigStore::saveConfigAuth() {
@@ -649,6 +659,8 @@ void ConfigStore::saveConfigAuth() {
         nvs_set_u32(h, "port", (uint32_t)g_config.mqtt_port);
         nvs_set_str(h, "user", g_config.mqtt_user);
         nvs_set_u32(h, "use_ssl", (uint32_t)g_config.mqtt_use_ssl);
+        nvs_set_u32(h, "qos", (uint32_t)g_config.mqtt_qos);
+        nvs_set_u32(h, "keepalive", (uint32_t)g_config.mqtt_keepalive);
 
         char encMqttPass[192];
         encryptSecret(g_config.mqtt_password, encMqttPass, sizeof(encMqttPass));
@@ -673,6 +685,7 @@ void ConfigStore::saveConfigSettings() {
         nvs_set_u32(h, "data_ttl", g_config.data_ttl);
         nvs_set_str(h, "restart_sch", g_config.restart_schedule);
         nvs_set_u32(h, "discon_rst", g_config.discon_rst);
+        nvs_set_str(h, "ntp_server", g_config.ntp_server);
         nvs_commit(h);
         nvs_close(h);
     }

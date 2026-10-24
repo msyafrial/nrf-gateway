@@ -408,6 +408,14 @@ document.addEventListener("DOMContentLoaded", function () {
       syncRestartToggle(false);
       checkDirty();
 
+      if (ntpTestBadge) {
+        ntpTestBadge.className = "uuid-badge neutral";
+        ntpTestBadge.textContent = "Siap diuji";
+      }
+      if (ntpResultBox) {
+        ntpResultBox.style.display = "none";
+      }
+
       if (typeof Swal !== "undefined") {
         Swal.fire({
           toast: true,
@@ -418,6 +426,115 @@ document.addEventListener("DOMContentLoaded", function () {
           timer: 1500
         });
       }
+    });
+  }
+
+  // 6. NTP Server Probe Tester
+  const btnTestNtp = document.getElementById("btnTestNtp");
+  const ntpServerInput = document.getElementById("ntp_server");
+  const ntpTestBadge = document.getElementById("ntpTestBadge");
+  const ntpResultBox = document.getElementById("ntpResultBox");
+
+  if (btnTestNtp && ntpServerInput) {
+    btnTestNtp.addEventListener("click", function () {
+      let targetServer = (ntpServerInput.value || "").trim();
+      if (!targetServer) {
+        targetServer = "pool.ntp.org";
+        ntpServerInput.value = targetServer;
+      }
+
+      btnTestNtp.disabled = true;
+      const originalHtml = btnTestNtp.innerHTML;
+      btnTestNtp.innerHTML = '<span class="spinner-inline"></span><span>Menguji...</span>';
+
+      if (ntpTestBadge) {
+        ntpTestBadge.className = "uuid-badge testing";
+        ntpTestBadge.textContent = "Menguji...";
+      }
+      if (ntpResultBox) {
+        ntpResultBox.style.display = "none";
+      }
+
+      fetch("/api/v1/system/test-ntp", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "server=" + encodeURIComponent(targetServer)
+      })
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        btnTestNtp.disabled = false;
+        btnTestNtp.innerHTML = originalHtml;
+
+        if (data.success) {
+          if (ntpTestBadge) {
+            ntpTestBadge.className = "uuid-badge valid";
+            ntpTestBadge.textContent = (data.rtt_ms !== undefined ? data.rtt_ms + " ms" : "OK");
+          }
+          if (ntpResultBox) {
+            ntpResultBox.className = "ntp-result-feedback success";
+            ntpResultBox.innerHTML =
+              '<strong>✓ Terhubung</strong> &bull; IP: <code>' + (data.ip || '-') + '</code> &bull; RTT: <code>' + data.rtt_ms + ' ms</code><br>' +
+              '<span style="font-size:0.78rem;opacity:0.9;">Waktu Server: ' + (data.server_time || '-') + '</span>';
+            ntpResultBox.style.display = "block";
+          }
+          if (typeof Swal !== "undefined") {
+            Swal.fire({
+              toast: true,
+              position: "top-end",
+              icon: "success",
+              title: "NTP Aktif (" + data.rtt_ms + " ms)",
+              showConfirmButton: false,
+              timer: 2500
+            });
+          }
+        } else {
+          if (ntpTestBadge) {
+            ntpTestBadge.className = "uuid-badge invalid";
+            ntpTestBadge.textContent = "Gagal";
+          }
+          if (ntpResultBox) {
+            ntpResultBox.className = "ntp-result-feedback error";
+            ntpResultBox.innerHTML = '<strong>✗ Uji Gagal:</strong> ' + (data.message || "Server tidak merespons");
+            ntpResultBox.style.display = "block";
+          }
+          if (typeof Swal !== "undefined") {
+            Swal.fire({
+              toast: true,
+              position: "top-end",
+              icon: "error",
+              title: data.message || "Uji NTP Gagal",
+              showConfirmButton: false,
+              timer: 3500
+            });
+          }
+        }
+      })
+      .catch(function (err) {
+        btnTestNtp.disabled = false;
+        btnTestNtp.innerHTML = originalHtml;
+        if (ntpTestBadge) {
+          ntpTestBadge.className = "uuid-badge invalid";
+          ntpTestBadge.textContent = "Error";
+        }
+        if (ntpResultBox) {
+          ntpResultBox.className = "ntp-result-feedback error";
+          ntpResultBox.innerHTML = '<strong>✗ Terjadi Kesalahan:</strong> ' + (err.message || "Koneksi gateway terputus");
+          ntpResultBox.style.display = "block";
+        }
+        if (typeof Swal !== "undefined") {
+          Swal.fire({
+            toast: true,
+            position: "top-end",
+            icon: "error",
+            title: "Gagal memproses pengujian",
+            showConfirmButton: false,
+            timer: 2500
+          });
+        }
+      });
     });
   }
 

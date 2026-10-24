@@ -28,7 +28,7 @@ struct SessionEntry {
 };
 
 void init();
-UserRole validate(httpd_req_t *req, char *out_token = nullptr, size_t max_len = 0);
+UserRole validate(httpd_req_t *req, char *out_token = nullptr, size_t max_len = 0, bool update_sliding = true);
 AuthResult authenticate(httpd_req_t *req, const char *user, const char *pass, UserRole &out_role, char *out_token, size_t max_len);
 void invalidate(const char *token);
 void touch(const char *token);

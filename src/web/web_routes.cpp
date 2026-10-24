@@ -18,6 +18,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <sys/stat.h>
+#include <lwip/sockets.h>
+#include <lwip/netdb.h>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -265,6 +267,26 @@ static esp_err_t login_handler(httpd_req_t *req) {
     if (!Server::is_filesystem_ready()) {
         return Template::stream_emergency_page(req);
     }
+
+    char query[32] = {0};
+    bool is_expired = false;
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        if (strstr(query, "expired=1") != nullptr || strstr(query, "expired") != nullptr) {
+            is_expired = true;
+        }
+    }
+
+    if (is_expired) {
+        // Jika diarahkan karena sesi expired / idle timeout, hanguskan token sesi lama dan hapus cookie
+        char token[Session::TOKEN_LEN + 1] = {0};
+        Session::validate(req, token, sizeof(token), false);
+        if (token[0] != '\0') {
+            Session::invalidate(token);
+        }
+        httpd_resp_set_hdr(req, "Set-Cookie", "token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+        return Template::stream_template_file(req, "/storage/login.html");
+    }
+
     UserRole role = Session::validate(req);
     if (role != UserRole::NONE) {
         httpd_resp_set_status(req, "302 Found");
@@ -272,7 +294,7 @@ static esp_err_t login_handler(httpd_req_t *req) {
         httpd_resp_send(req, nullptr, 0);
         return ESP_OK;
     }
-    return stream_static_file(req, "/storage/login.html");
+    return Template::stream_template_file(req, "/storage/login.html");
 }
 
 static esp_err_t version_json_handler(httpd_req_t *req) {
@@ -388,6 +410,26 @@ static esp_err_t firmware_handler(httpd_req_t *req) {
     return Template::stream_template_file(req, "/storage/firmware.html");
 }
 
+static esp_err_t docs_handler(httpd_req_t *req) {
+    if (!Server::is_filesystem_ready()) {
+        return Template::stream_emergency_page(req);
+    }
+    UserRole role = Session::validate(req);
+    if (role == UserRole::NONE) {
+        httpd_resp_set_status(req, "302 Found");
+        httpd_resp_set_hdr(req, "Location", "/login.html");
+        httpd_resp_send(req, nullptr, 0);
+        return ESP_OK;
+    }
+    if (role != UserRole::ADMIN) {
+        httpd_resp_set_status(req, "302 Found");
+        httpd_resp_set_hdr(req, "Location", "/auth_teknisi.html");
+        httpd_resp_send(req, nullptr, 0);
+        return ESP_OK;
+    }
+    return Template::stream_template_file(req, "/storage/docs.html");
+}
+
 static esp_err_t assets_wildcard_handler(httpd_req_t *req) {
     if (strstr(req->uri, "..") != nullptr || strstr(req->uri, "//") != nullptr) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid path");
@@ -479,13 +521,20 @@ static esp_err_t api_logout_handler(httpd_req_t *req) {
 
 static esp_err_t api_auth_check_handler(httpd_req_t *req) {
     char token[Session::TOKEN_LEN + 1] = {0};
-    UserRole role = Session::validate(req, token, sizeof(token));
+    bool update_sliding = false;
+    char query[32] = {0};
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        if (strstr(query, "active=1") != nullptr) {
+            update_sliding = true;
+        }
+    }
+    UserRole role = Session::validate(req, token, sizeof(token), update_sliding);
     httpd_resp_set_type(req, "application/json");
     if (role == UserRole::NONE) {
         httpd_resp_set_status(req, "401 Unauthorized");
         httpd_resp_send(req, "{\"authenticated\":false}", HTTPD_RESP_USE_STRLEN);
     } else {
-        if (token[0] != '\0') {
+        if (update_sliding && token[0] != '\0') {
             char cookie_hdr[192];
             snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600", token);
             httpd_resp_set_hdr(req, "Set-Cookie", cookie_hdr);
@@ -544,6 +593,16 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
         if (get_form_param(body, "mqtt_port", val, sizeof(val))) g_config.mqtt_port = atoi(val);
         if (get_form_param(body, "mqtt_user", val, sizeof(val))) strlcpy(g_config.mqtt_user, val, sizeof(g_config.mqtt_user));
         if (get_form_param(body, "mqtt_use_ssl", val, sizeof(val))) g_config.mqtt_use_ssl = atoi(val);
+        if (get_form_param(body, "mqtt_qos", val, sizeof(val))) {
+            int q = atoi(val);
+            g_config.mqtt_qos = (q == 0) ? 0 : 1;
+        }
+        if (get_form_param(body, "mqtt_keepalive", val, sizeof(val))) {
+            int k = atoi(val);
+            if (k < 5) k = 5;
+            if (k > 65535) k = 65535;
+            g_config.mqtt_keepalive = k;
+        }
         if (get_form_param(body, "mqtt_password", val, sizeof(val))) {
             if (!is_masked_or_empty(val)) {
                 strlcpy(g_config.mqtt_password, val, sizeof(g_config.mqtt_password));
@@ -683,6 +742,21 @@ static esp_err_t api_config_settings_handler(httpd_req_t *req) {
     if (get_form_param(body, "data_ttl", val, sizeof(val))) g_config.data_ttl = atoi(val);
     if (get_form_param(body, "restart_schedule", val, sizeof(val))) strlcpy(g_config.restart_schedule, val, sizeof(g_config.restart_schedule));
     if (get_form_param(body, "discon_rst", val, sizeof(val))) g_config.discon_rst = atoi(val);
+    if (get_form_param(body, "ntp_server", val, sizeof(val))) {
+        char cleanVal[sizeof(g_config.ntp_server)] = {0};
+        size_t cIdx = 0;
+        for (size_t i = 0; val[i] != '\0' && cIdx + 1 < sizeof(cleanVal); i++) {
+            if (val[i] > 32 && val[i] <= 126) {
+                cleanVal[cIdx++] = val[i];
+            }
+        }
+        if (cleanVal[0] == '\0') {
+            strlcpy(g_config.ntp_server, "pool.ntp.org", sizeof(g_config.ntp_server));
+        } else {
+            strlcpy(g_config.ntp_server, cleanVal, sizeof(g_config.ntp_server));
+        }
+        Network::NetworkManager::updateSntpServer(g_config.ntp_server);
+    }
 
     Core::ConfigStore::saveConfigSettings();
     Network::MqttService::updateTopicNames();
@@ -699,6 +773,12 @@ static esp_err_t api_config_settings_handler(httpd_req_t *req) {
 // Route Handlers: System Telemetry & Control REST APIs
 // -------------------------------------------------------------
 static esp_err_t api_system_version_handler(httpd_req_t *req) {
+    if (Session::validate(req, nullptr, 0, false) == UserRole::NONE) {
+        httpd_resp_set_status(req, "401 Unauthorized");
+        httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"Unauthorized\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "device_model", g_config.device_model[0] != '\0' ? g_config.device_model : "EMPTY");
     cJSON_AddStringToObject(root, "device_version", g_config.device_version);
@@ -720,7 +800,11 @@ static esp_err_t api_system_version_handler(httpd_req_t *req) {
     cJSON_AddStringToObject(root, "mqtt_host", g_config.mqtt_host[0] != '\0' ? g_config.mqtt_host : "—");
     cJSON_AddNumberToObject(root, "mqtt_port", g_config.mqtt_port);
     cJSON_AddBoolToObject(root, "mqtt_ssl", g_config.mqtt_use_ssl == 1);
+    cJSON_AddNumberToObject(root, "mqtt_qos", g_config.mqtt_qos);
+    cJSON_AddNumberToObject(root, "mqtt_keepalive", (g_config.mqtt_keepalive >= 5 && g_config.mqtt_keepalive <= 65535) ? g_config.mqtt_keepalive : 30);
     cJSON_AddBoolToObject(root, "net_connected", Network::NetworkManager::isConnected());
+    cJSON_AddBoolToObject(root, "ntp_synced", Network::NetworkManager::isNtpSynced());
+    cJSON_AddStringToObject(root, "ntp_server", g_config.ntp_server[0] != '\0' ? g_config.ntp_server : "pool.ntp.org");
 
     const char *net_mode = (g_config.connection_mode == 1) ? "Ethernet" : "Wi-Fi";
     cJSON_AddStringToObject(root, "net_mode", net_mode);
@@ -787,6 +871,22 @@ static esp_err_t api_system_version_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
+static esp_err_t api_system_ap_status_handler(httpd_req_t *req) {
+    char mod_id[32] = {0};
+    Core::ConfigStore::getModuleId(mod_id, sizeof(mod_id));
+    char buf[128];
+    int len = snprintf(buf, sizeof(buf),
+        "{\"ap_active\":%s,\"ap_ssid\":\"%s\",\"ap_remain_sec\":%u,\"reboot_required\":%s}",
+        Network::NetworkManager::isApActive() ? "true" : "false",
+        mod_id,
+        static_cast<unsigned>(Network::NetworkManager::getApRemainingSeconds()),
+        s_auth_reboot_required ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    httpd_resp_send(req, buf, len);
+    return ESP_OK;
+}
+
 static esp_err_t api_stop_ap_handler(httpd_req_t *req) {
     if (Session::validate(req) == UserRole::NONE) {
         httpd_resp_set_status(req, "401 Unauthorized");
@@ -805,7 +905,7 @@ static esp_err_t api_touch_ap_handler(httpd_req_t *req) {
     }
 
     char token[Session::TOKEN_LEN + 1] = {0};
-    UserRole role = Session::validate(req, token, sizeof(token));
+    UserRole role = Session::validate(req, token, sizeof(token), false);
     if (role != UserRole::NONE && token[0] != '\0') {
         char cookie_hdr[192];
         snprintf(cookie_hdr, sizeof(cookie_hdr), "token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600", token);
@@ -833,7 +933,7 @@ static esp_err_t api_touch_ap_handler(httpd_req_t *req) {
 // Route Handlers: Network Event Logs REST APIs
 // -------------------------------------------------------------
 static esp_err_t api_net_logs_handler(httpd_req_t *req) {
-    UserRole role = Session::validate(req);
+    UserRole role = Session::validate(req, nullptr, 0, false);
     if (role == UserRole::NONE) {
         httpd_resp_set_status(req, "401 Unauthorized");
         httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"Unauthorized\"}", HTTPD_RESP_USE_STRLEN);
@@ -971,7 +1071,7 @@ static esp_err_t api_net_logs_export_handler(httpd_req_t *req) {
 }
 
 static esp_err_t api_drop_logs_handler(httpd_req_t *req) {
-    if (Session::validate(req) == UserRole::NONE) {
+    if (Session::validate(req, nullptr, 0, false) == UserRole::NONE) {
         httpd_resp_set_status(req, "401 Unauthorized");
         httpd_resp_send(req, "Sesi Anda telah berakhir.", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
@@ -1078,11 +1178,18 @@ static esp_err_t api_drop_logs_export_handler(httpd_req_t *req) {
 }
 
 static esp_err_t api_reboot_handler(httpd_req_t *req) {
-    if (Session::validate(req) == UserRole::NONE) {
+    UserRole role = Session::validate(req);
+    if (role == UserRole::NONE) {
         httpd_resp_set_status(req, "401 Unauthorized");
         httpd_resp_send(req, "Sesi Anda telah berakhir.", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
+
+    char rbtDetail[80];
+    snprintf(rbtDetail, sizeof(rbtDetail), "Reboot manual gateway diminta oleh %s",
+             role == UserRole::ADMIN ? "Admin" : "Teknisi");
+    Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::REBOOT, rbtDetail);
+
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, "Perangkat sedang me-reboot...", HTTPD_RESP_USE_STRLEN);
 
@@ -1414,12 +1521,203 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_send(req, "Update Berhasil! Sistem me-reboot...", HTTPD_RESP_USE_STRLEN);
 
+    Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::REBOOT,
+                                "Update firmware via OTA selesai, me-reboot gateway");
+
     xTaskCreatePinnedToCore([](void *) {
         vTaskDelay(pdMS_TO_TICKS(1500));
         esp_restart();
         vTaskDelete(NULL);
     }, "ota_reboot", 2048, NULL, 5, NULL, 1);
 
+    return ESP_OK;
+}
+
+// -------------------------------------------------------------
+// Route Handler: Real-Time NTP Server Probe API (UDP Port 123)
+// -------------------------------------------------------------
+static esp_err_t api_test_ntp_handler(httpd_req_t *req) {
+    if (Session::validate(req, nullptr, 0, false) == UserRole::NONE) {
+        httpd_resp_set_status(req, "401 Unauthorized");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, "{\"status\":\"error\",\"success\":false,\"message\":\"Unauthorized\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
+    char serverTarget[64] = {0};
+
+    // 1. Coba baca dari query string jika ada
+    char query[128] = {0};
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        get_form_param(query, "server", serverTarget, sizeof(serverTarget));
+    }
+
+    // 2. Jika kosong dan ada request body, baca dari body
+    if (serverTarget[0] == '\0' && req->content_len > 0) {
+        char body[256] = {0};
+        int to_read = req->content_len < (int)sizeof(body) - 1 ? req->content_len : (int)sizeof(body) - 1;
+        int r = httpd_req_recv(req, body, to_read);
+        if (r > 0) {
+            body[r] = '\0';
+            cJSON *json = cJSON_Parse(body);
+            if (json) {
+                cJSON *srvItem = cJSON_GetObjectItem(json, "server");
+                if (srvItem && cJSON_IsString(srvItem) && srvItem->valuestring) {
+                    strlcpy(serverTarget, srvItem->valuestring, sizeof(serverTarget));
+                }
+                cJSON_Delete(json);
+            }
+            if (serverTarget[0] == '\0') {
+                get_form_param(body, "server", serverTarget, sizeof(serverTarget));
+            }
+        }
+    }
+
+    // 3. Fallback ke konfigurasi yang tersimpan
+    if (serverTarget[0] == '\0') {
+        strlcpy(serverTarget, g_config.ntp_server[0] ? g_config.ntp_server : "pool.ntp.org", sizeof(serverTarget));
+    }
+
+    // Sanitasi whitespace
+    char cleanServer[sizeof(serverTarget)] = {0};
+    size_t sIdx = 0;
+    for (size_t i = 0; serverTarget[i] != '\0' && sIdx + 1 < sizeof(cleanServer); i++) {
+        if (serverTarget[i] > 32 && serverTarget[i] <= 126) {
+            cleanServer[sIdx++] = serverTarget[i];
+        }
+    }
+    if (cleanServer[0] == '\0') {
+        strlcpy(cleanServer, "pool.ntp.org", sizeof(cleanServer));
+    }
+
+    ESP_LOGI(TAG, "Pengujian NTP probe ke server: '%s'...", cleanServer);
+
+    // 4. DNS Resolution
+    struct addrinfo hints = {};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    struct addrinfo *res = nullptr;
+
+    int gai_err = getaddrinfo(cleanServer, "123", &hints, &res);
+    if (gai_err != 0 || !res) {
+        ESP_LOGW(TAG, "DNS lookup gagal untuk NTP '%s' (err=%d)", cleanServer, gai_err);
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddBoolToObject(root, "success", false);
+        cJSON_AddStringToObject(root, "server", cleanServer);
+        cJSON_AddStringToObject(root, "message", "DNS lookup gagal: Host tidak ditemukan");
+        char *resp_str = cJSON_PrintUnformatted(root);
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
+        free(resp_str);
+        cJSON_Delete(root);
+        return ESP_OK;
+    }
+
+    char ipStr[INET_ADDRSTRLEN] = "";
+    inet_ntoa_r(((struct sockaddr_in *)res->ai_addr)->sin_addr, ipStr, sizeof(ipStr));
+
+    int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (sock < 0) {
+        freeaddrinfo(res);
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddBoolToObject(root, "success", false);
+        cJSON_AddStringToObject(root, "server", cleanServer);
+        cJSON_AddStringToObject(root, "message", "Gagal inisialisasi socket UDP");
+        char *resp_str = cJSON_PrintUnformatted(root);
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
+        free(resp_str);
+        cJSON_Delete(root);
+        return ESP_OK;
+    }
+
+    // Set timeout receive & send 3 detik
+    struct timeval tv;
+    tv.tv_sec = 3;
+    tv.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+    // Standar RFC 5905 NTPv4 Request: 48 bytes, LI=0, VN=4, Mode=3 -> 0x23
+    uint8_t ntpPacket[48] = {0};
+    ntpPacket[0] = 0x23;
+
+    int64_t startUs = esp_timer_get_time();
+    ssize_t sent = sendto(sock, ntpPacket, sizeof(ntpPacket), 0, res->ai_addr, res->ai_addrlen);
+    freeaddrinfo(res);
+
+    if (sent < (ssize_t)sizeof(ntpPacket)) {
+        close(sock);
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddBoolToObject(root, "success", false);
+        cJSON_AddStringToObject(root, "server", cleanServer);
+        cJSON_AddStringToObject(root, "ip", ipStr);
+        cJSON_AddStringToObject(root, "message", "Gagal mengirim paket UDP probe");
+        char *resp_str = cJSON_PrintUnformatted(root);
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
+        free(resp_str);
+        cJSON_Delete(root);
+        return ESP_OK;
+    }
+
+    struct sockaddr_in fromAddr = {};
+    socklen_t fromLen = sizeof(fromAddr);
+    ssize_t recvd = recvfrom(sock, ntpPacket, sizeof(ntpPacket), 0, (struct sockaddr *)&fromAddr, &fromLen);
+    int64_t elapsedMs = (esp_timer_get_time() - startUs) / 1000;
+    close(sock);
+
+    if (recvd < 48) {
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddBoolToObject(root, "success", false);
+        cJSON_AddStringToObject(root, "server", cleanServer);
+        cJSON_AddStringToObject(root, "ip", ipStr);
+        cJSON_AddStringToObject(root, "message", "Server tidak merespons (Timeout 3s / Port UDP 123 diblokir)");
+        char *resp_str = cJSON_PrintUnformatted(root);
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
+        free(resp_str);
+        cJSON_Delete(root);
+        return ESP_OK;
+    }
+
+    uint8_t stratum = ntpPacket[1];
+    uint32_t sec1900 = ((uint32_t)ntpPacket[40] << 24) |
+                       ((uint32_t)ntpPacket[41] << 16) |
+                       ((uint32_t)ntpPacket[42] << 8)  |
+                       ((uint32_t)ntpPacket[43]);
+
+    const uint32_t NTP_OFFSET_1970 = 2208988800UL;
+    char timeStr[64] = "—";
+    if (sec1900 > NTP_OFFSET_1970) {
+        time_t unixTime = (time_t)(sec1900 - NTP_OFFSET_1970);
+        struct tm tmWib;
+        localtime_r(&unixTime, &tmWib);
+        strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S WIB", &tmWib);
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "status", "ok");
+    cJSON_AddBoolToObject(root, "success", true);
+    cJSON_AddStringToObject(root, "server", cleanServer);
+    cJSON_AddStringToObject(root, "ip", ipStr);
+    cJSON_AddNumberToObject(root, "rtt_ms", (double)elapsedMs);
+    cJSON_AddNumberToObject(root, "stratum", stratum);
+    cJSON_AddStringToObject(root, "server_time", timeStr);
+
+    char msg[128];
+    snprintf(msg, sizeof(msg), "Server NTP aktif (Latensi: %lld ms | Stratum %d)", (long long)elapsedMs, stratum);
+    cJSON_AddStringToObject(root, "message", msg);
+
+    char *resp_str = cJSON_PrintUnformatted(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
+    free(resp_str);
+    cJSON_Delete(root);
     return ESP_OK;
 }
 
@@ -1474,6 +1772,8 @@ esp_err_t register_all(httpd_handle_t server) {
     register_uri(server, "/settings.html", HTTP_GET, settings_handler);
     register_uri(server, "/firmware", HTTP_GET, firmware_handler);
     register_uri(server, "/firmware.html", HTTP_GET, firmware_handler);
+    register_uri(server, "/docs", HTTP_GET, docs_handler);
+    register_uri(server, "/docs.html", HTTP_GET, docs_handler);
     register_uri(server, "/version.json", HTTP_GET, version_json_handler);
 
     // Authentication REST
@@ -1487,6 +1787,7 @@ esp_err_t register_all(httpd_handle_t server) {
     register_uri(server, "/api/v1/config/settings", HTTP_POST, api_config_settings_handler);
 
     // System REST
+    register_uri(server, "/api/v1/system/ap-status", HTTP_GET, api_system_ap_status_handler);
     register_uri(server, "/api/v1/system/version", HTTP_GET, api_system_version_handler);
     register_uri(server, "/api/v1/system/net-logs", HTTP_GET, api_net_logs_handler);
     register_uri(server, "/api/v1/system/net-logs/clear", HTTP_POST, api_net_logs_clear_handler);
@@ -1499,6 +1800,8 @@ esp_err_t register_all(httpd_handle_t server) {
     register_uri(server, "/api/v1/system/config-ap/touch", HTTP_GET, api_touch_ap_handler);
     register_uri(server, "/api/v1/system/reboot", HTTP_POST, api_reboot_handler);
     register_uri(server, "/api/v1/system/reset", HTTP_POST, api_reset_handler);
+    register_uri(server, "/api/v1/system/test-ntp", HTTP_POST, api_test_ntp_handler);
+    register_uri(server, "/api/v1/system/test-ntp", HTTP_GET, api_test_ntp_handler);
     register_uri(server, "/api/v1/debug/nrf", HTTP_GET, api_debug_nrf_handler);
     register_uri(server, "/api/v1/wifi/scan", HTTP_GET, api_wifi_scan_handler);
     register_uri(server, "/api/v1/wifi/scan-stop", HTTP_POST, api_wifi_scan_stop_handler);

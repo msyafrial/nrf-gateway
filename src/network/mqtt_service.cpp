@@ -443,8 +443,10 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
 
         case MQTT_EVENT_PUBLISHED:
             // Broker berhasil menerima data dan mengirimkan PUBACK (QoS 1 Ack downlink feedback)
-            ESP_LOGD(TAG, "PUBACK diterima dari broker untuk MsgID=%d", event->msg_id);
-            recordWireBytes(calculatePubackWireBytes());
+            if (g_config.mqtt_qos == 1) {
+                ESP_LOGD(TAG, "PUBACK diterima dari broker untuk MsgID=%d", event->msg_id);
+                recordWireBytes(calculatePubackWireBytes());
+            }
             break;
 
         case MQTT_EVENT_SUBSCRIBED:
@@ -538,6 +540,8 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
                         char resBuf[128];
                         snprintf(resBuf, sizeof(resBuf), "{\"res\":\"ok\",\"code\":0,\"cmd\":\"reboot\",\"seq\":%u}", (unsigned int)seqVal);
                         pubResponse(resBuf);
+                        NetLogService::log(NetCategory::SYSTEM, NetEvent::REBOOT,
+                                           "Reboot gateway diinstruksikan via MQTT Remote Command");
                         // Jalankan reboot di task terpisah dengan jeda 1000ms agar MQTT response ter-flush tuntas
                         xTaskCreatePinnedToCore([](void*) {
                             vTaskDelay(pdMS_TO_TICKS(1000));
@@ -634,11 +638,12 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                 if ((batchLen + binLen > MQTT_BATCH_BUFFER_SIZE) ||
                     (batchCount >= (size_t)g_config.batch_max)) {
                     if (s_mqttConnected) {
+                        int qos = (g_config.mqtt_qos == 0) ? 0 : 1;
                         int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicData,
                                                             (const char*)s_batchBuffer,
-                                                            batchLen, 1, 0);
+                                                            batchLen, qos, 0);
                         if (msgId >= 0) {
-                            recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, 1));
+                            recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
                             Bsp::LedManager::triggerTrafficBlip();
                             Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
                             s_statLastBatchPktCount = batchCount;
@@ -668,11 +673,12 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
         if (batchCount > 0) {
             if ((now - lastFlushTime) >= (uint32_t)g_config.batch_flush) {
                 if (s_mqttConnected) {
+                    int qos = (g_config.mqtt_qos == 0) ? 0 : 1;
                     int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicData,
                                                         (const char*)s_batchBuffer,
-                                                        batchLen, 1, 0);
+                                                        batchLen, qos, 0);
                     if (msgId >= 0) {
-                        recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, 1));
+                        recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
                         Bsp::LedManager::triggerTrafficBlip();
                         Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
                         s_statLastBatchPktCount = batchCount;
@@ -733,7 +739,7 @@ void MqttService::init() {
         mqtt_cfg.session.last_will.msg_len = 20;
         mqtt_cfg.session.last_will.qos = 1;
         mqtt_cfg.session.last_will.retain = 1;
-        mqtt_cfg.session.keepalive = 30;
+        mqtt_cfg.session.keepalive = (g_config.mqtt_keepalive >= 5 && g_config.mqtt_keepalive <= 65535) ? g_config.mqtt_keepalive : 30;
         mqtt_cfg.network.reconnect_timeout_ms = 3000;
         mqtt_cfg.network.timeout_ms = 5000;
         mqtt_cfg.buffer.size = 4096;

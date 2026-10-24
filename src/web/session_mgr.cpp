@@ -158,7 +158,7 @@ void reset_failed_attempts(httpd_req_t *req) {
     }
 }
 
-UserRole validate(httpd_req_t *req, char *out_token, size_t max_len) {
+UserRole validate(httpd_req_t *req, char *out_token, size_t max_len, bool update_sliding) {
     if (!req) return UserRole::NONE;
 
     char token[TOKEN_LEN + 1] = {0};
@@ -225,8 +225,10 @@ UserRole validate(httpd_req_t *req, char *out_token, size_t max_len) {
                     s_sessions[i].client_ip = 0;
                     result = UserRole::NONE;
                 } else {
-                    // Sliding reset: perbarui waktu aktivitas
-                    s_sessions[i].last_activity_ms = now;
+                    if (update_sliding) {
+                        // Sliding reset: perbarui waktu aktivitas
+                        s_sessions[i].last_activity_ms = now;
+                    }
                     result = s_sessions[i].role;
                 }
                 break;

@@ -87,6 +87,8 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
         html_escape(g_config.device_model[0] != '\0' ? g_config.device_model : "EMPTY", out_buf, max_len);
     } else if (key == "ap_ssid") {
         Core::ConfigStore::getModuleId(out_buf, max_len);
+    } else if (key == "ap_banner_active") {
+        snprintf(out_buf, max_len, "%s", Network::NetworkManager::isApActive() ? "1" : "0");
     } else if (key == "device_id") {
         Core::ConfigStore::getDeviceId(out_buf, max_len);
     } else if (key == "mdns_hostname") {
@@ -369,6 +371,12 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
         } else {
             snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge slate\"><svg width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" style=\"vertical-align:-1px;margin-right:3px;\"><rect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\" ry=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 9.9 -1\"/></svg>Plain TCP</span>");
         }
+    } else if (key == "mqtt_qos_badge") {
+        if (g_config.mqtt_qos == 0) {
+            snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge amber\">QoS 0</span>");
+        } else {
+            snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge active\">QoS 1</span>");
+        }
     } else if (key == "mqtt_conn_badge") {
         if (Network::MqttService::isConnected()) {
             snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge active\">● Connected</span>");
@@ -433,6 +441,14 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
         snprintf(out_buf, max_len, "%s", g_config.mqtt_use_ssl ? "1" : "0");
     } else if (key == "mqtt_ssl_checked") {
         snprintf(out_buf, max_len, "%s", g_config.mqtt_use_ssl ? "checked" : "");
+    } else if (key == "mqtt_qos") {
+        snprintf(out_buf, max_len, "%d", g_config.mqtt_qos);
+    } else if (key == "mqtt_qos_0_selected") {
+        snprintf(out_buf, max_len, "%s", (g_config.mqtt_qos == 0) ? "selected" : "");
+    } else if (key == "mqtt_qos_1_selected") {
+        snprintf(out_buf, max_len, "%s", (g_config.mqtt_qos != 0) ? "selected" : "");
+    } else if (key == "mqtt_keepalive") {
+        snprintf(out_buf, max_len, "%d", (g_config.mqtt_keepalive >= 5 && g_config.mqtt_keepalive <= 65535) ? g_config.mqtt_keepalive : 30);
     } else if (key == "filter_uuid_en") {
         snprintf(out_buf, max_len, "%s", g_config.filter_uuid_en ? "1" : "0");
     } else if (key == "filter_uuid_checked") {
@@ -522,6 +538,8 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
         snprintf(out_buf, max_len, "%s", strlen(g_config.restart_schedule) >= 5 ? "" : "dimmed");
     } else if (key == "discon_rst") {
         snprintf(out_buf, max_len, "%d", g_config.discon_rst);
+    } else if (key == "ntp_server") {
+        html_escape(g_config.ntp_server, out_buf, max_len);
     } else {
         return false;
     }

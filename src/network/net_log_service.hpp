@@ -24,6 +24,7 @@ enum class NetEvent : uint8_t {
     CLIENT_JOIN,
     CLIENT_LEAVE,
     BOOT,
+    REBOOT,
     CONFIG_UPDATE,
     CONFIG_RESET,
     CONFIG_DISCARD,

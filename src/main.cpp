@@ -66,6 +66,10 @@ extern "C" void app_main(void) {
     ESP_LOGI(TAG, ">>> IOTARU SG-10 ESP32 Gateway (Native ESP-IDF) <<<");
     ESP_LOGI(TAG, "==================================================");
 
+    // Set zona waktu WIB (UTC+7) di awal eksekusi sistem
+    setenv("TZ", "WIB-7", 1);
+    tzset();
+
     // 0. Early Network Driver Protection & LED WS2812B Hardware Init
     Network::NetworkManager::earlyInit(&s_ethW5500);
     Bsp::LedManager::init(Pins::LED_WS2812);

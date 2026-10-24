@@ -79,14 +79,15 @@ Untuk visualisasi real-time berlatensi ultra-rendah pada halaman [test.html](fil
 | :--- | :---: | :---: | :--- |
 | `/api/v1/auth/login` | `POST` | Publik | Autentikasi user. Body: `{"username":"admin","password":"..."}`. |
 | `/api/v1/auth/logout` | `POST` | Sesi Aktif | Mengakhiri sesi aktif dan menghapus token sesi. |
-| `/api/v1/auth/check` | `GET` | Publik | Memvalidasi status sesi aktif. Mengembalikan `{"authenticated":true,"role":"admin"}`. |
+| `/api/v1/auth/check` | `GET` | Publik | Memvalidasi status sesi aktif. Mengembalikan `{"authenticated":true}`. Mendukung query `?active=1` untuk sliding session keepalive saat pengguna aktif. |
 | `/api/v1/auth/change-password` | `POST` | Admin | Mengubah password admin/teknisi. Body: `{"target":"admin","new_pass":"..."}`. |
 
 ### B. Status & Sistem
 | Endpoint | Method | Akses | Deskripsi & Payload |
 | :--- | :---: | :---: | :--- |
+| `/api/v1/system/ap-status` | `GET` | Publik | Status hotspot konfigurasi darurat (`ap_active`, `ap_ssid`, `ap_remain_sec`, `reboot_required`). Ultra-ringan (0 heap). |
+| `/api/v1/system/version` | `GET` | Sesi Aktif | Mengembalikan versioning 3-tingkat dan telemetri lengkap sistem (Uptime, Heap, Bandwidth, IP, MAC, MQTT status). Terproteksi 401. |
 | `/api/v1/system/status` | `GET` | Sesi Aktif | Status konektivitas, IP, MQTT broker, uptime, dan sisa RAM. |
-| `/api/v1/system/version` | `GET` | Publik | Mengembalikan versioning 3-tingkat: `device_version`, `firmware_version`, dan `ui_version`. |
 | `/api/v1/system/reboot` | `POST` | Admin | Memerintahkan restart bersih ESP32. |
 | `/api/v1/system/factory-reset`| `POST` | Admin | Mengembalikan konfigurasi gateway ke pengaturan pabrik. |
 

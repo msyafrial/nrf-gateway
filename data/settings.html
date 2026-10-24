@@ -35,6 +35,12 @@
             </a>
           </li>
           <li>
+            <a href="/docs">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>Integration Docs</span>
+            </a>
+          </li>
+          <li>
             <a href="/log">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
               <span>System Logs</span>
@@ -383,7 +389,41 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
             </div>
           </div>
 
-          <!-- BENTO CARD 3: Jadwal Reboot & Watchdog -->
+          <!-- BENTO CARD 3: Server Waktu (NTP) & Sinkronisasi -->
+          <div class="bento-card">
+            <div class="bento-header">
+              <div class="bento-icon amber">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
+              </div>
+              <div class="bento-title">Server Waktu (NTP)</div>
+            </div>
+
+            <div class="bento-grid single">
+              <div class="item full">
+                <div class="label-row">
+                  <label for="ntp_server">Alamat NTP Server</label>
+                  <span class="uuid-badge neutral" id="ntpTestBadge">Siap diuji</span>
+                </div>
+                <div class="input-action-wrap">
+                  <input type="text" id="ntp_server" name="ntp_server" value="%ntp_server%" placeholder="pool.ntp.org" maxlength="63" spellcheck="false" autocomplete="off" required>
+                  <button type="button" class="btn-input-action" id="btnTestNtp" title="Uji Koneksi Server NTP">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
+                    <span>Uji Server</span>
+                  </button>
+                </div>
+                <div id="ntpResultBox" class="ntp-result-feedback" style="display:none;"></div>
+                <span style="font-size:0.75rem;color:var(--text-dim);margin-top:6px;display:block;">
+                  Default: <code>pool.ntp.org</code>. Mendukung hostname publik atau IP lokal (misal: <code>192.168.1.1</code>). Port UDP: 123.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- BENTO CARD 4: Jadwal Reboot & Watchdog -->
           <div class="bento-card">
             <div class="bento-header">
               <div class="bento-icon slate">
@@ -476,8 +516,8 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
     </nav>
   </div>
 
-  <script src="assets/js/app.js"></script>
-  <script src="assets/js/settings.js"></script>
+  <script src="assets/js/app.js?v=%firmware_version%"></script>
+  <script src="assets/js/settings.js?v=%firmware_version%"></script>
   <script>
     document.getElementById("year").textContent = new Date().getFullYear();
   </script>

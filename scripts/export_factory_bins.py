@@ -71,34 +71,50 @@ def generate_nvs_binary(project_dir):
         log_error(f"File nvs_config.csv tidak ditemukan di {csv_path}")
 
     print("  -> Mengompilasi nvs_config.csv menjadi nvs.bin (ukuran 0x6000 / 24KB)...")
-    
-    # Coba via module esp_idf_nvs_partition_gen terlebih dahulu
-    cmd_module = [
-        sys.executable, "-m", "esp_idf_nvs_partition_gen",
-        "generate", csv_path, out_bin_path, "0x6000"
-    ]
-    res = subprocess.run(cmd_module)
-    if res.returncode == 0 and os.path.exists(out_bin_path) and os.path.getsize(out_bin_path) == 24576:
-        log_success("nvs.bin berhasil dibentuk via modul esp_idf_nvs_partition_gen (24576 bytes).")
-        return out_bin_path
 
-    # Fallback ke nvs_partition_gen.py di platformio packages
-    possible_paths = [
-        os.path.expanduser(r"~/.platformio/packages/framework-espidf/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py"),
+    # Daftar kandidat interpreter Python yang mungkin memiliki modul esp_idf_nvs_partition_gen
+    python_candidates = [
+        os.path.normpath(os.path.expanduser("~/.platformio/penv/Scripts/python.exe")),
+        os.path.normpath(os.path.expanduser("~/.platformio/penv/bin/python")),
+        sys.executable,
+    ]
+    # Filter kandidat yang unik dan benar-benar ada di filesystem
+    valid_pythons = []
+    for py in python_candidates:
+        if py and os.path.exists(py) and py not in valid_pythons:
+            valid_pythons.append(py)
+
+    # 1. Coba kompilasi via modul esp_idf_nvs_partition_gen pada interpreter yang tersedia
+    for py in valid_pythons:
+        cmd_module = [py, "-m", "esp_idf_nvs_partition_gen", "generate", csv_path, out_bin_path, "0x6000"]
+        res = subprocess.run(cmd_module, capture_output=True, text=True)
+        if res.returncode == 0 and os.path.exists(out_bin_path) and os.path.getsize(out_bin_path) == 24576:
+            log_success(f"nvs.bin berhasil dibentuk via modul esp_idf_nvs_partition_gen ({py}).")
+            return out_bin_path
+
+    # 2. Fallback: Coba script generator nvs_partition_gen.py (prioritaskan file mandiri di root proyek)
+    possible_scripts = [
+        os.path.join(project_dir, "nvs_partition_gen.py"),
+        os.path.normpath(os.path.expanduser("~/.platformio/packages/framework-espidf/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py")),
         r"C:\Users\syafr\.platformio\packages\framework-espidf\components\nvs_flash\nvs_partition_generator\nvs_partition_gen.py"
     ]
-    gen_script = None
-    for p in possible_paths:
-        if os.path.exists(p):
-            gen_script = p
-            break
+    for gen_script in possible_scripts:
+        if os.path.exists(gen_script):
+            for py in valid_pythons:
+                cmd_script = [py, gen_script, "generate", csv_path, out_bin_path, "0x6000"]
+                res = subprocess.run(cmd_script, capture_output=True, text=True)
+                if res.returncode == 0 and os.path.exists(out_bin_path) and os.path.getsize(out_bin_path) == 24576:
+                    log_success(f"nvs.bin berhasil dibentuk via {os.path.basename(gen_script)} ({py}).")
+                    return out_bin_path
 
-    if gen_script:
-        cmd_script = [sys.executable, gen_script, "generate", csv_path, out_bin_path, "0x6000"]
-        res = subprocess.run(cmd_script)
-        if res.returncode == 0 and os.path.exists(out_bin_path):
-            log_success(f"nvs.bin berhasil dibentuk via {gen_script}.")
-            return out_bin_path
+    # 3. Fallback: Coba generate_nvs.py di root proyek
+    gen_nvs_script = os.path.join(project_dir, "generate_nvs.py")
+    if os.path.exists(gen_nvs_script):
+        for py in valid_pythons:
+            res = subprocess.run([py, gen_nvs_script], cwd=project_dir, capture_output=True, text=True)
+            if res.returncode == 0 and os.path.exists(out_bin_path) and os.path.getsize(out_bin_path) == 24576:
+                log_success(f"nvs.bin berhasil dibentuk via generate_nvs.py ({py}).")
+                return out_bin_path
 
     log_error("Gagal membentuk nvs.bin dari nvs_config.csv!")
 

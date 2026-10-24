@@ -171,6 +171,7 @@ document.addEventListener("DOMContentLoaded", function() {
           didOpen: () => Swal.showLoading()
         });
 
+        window.isManualLoggingOut = true;
         fetch("/api/v1/system/reboot", { method: "POST" })
           .then(res => res.text())
           .then(text => {
@@ -184,7 +185,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 confirmButtonColor: "#0284c7",
                 allowOutsideClick: false
               }).then(() => {
-                window.location.href = "/login.html";
+                window.location.replace("/login.html");
               });
             }, 1000);
           })
@@ -218,6 +219,7 @@ document.addEventListener("DOMContentLoaded", function() {
           didOpen: () => Swal.showLoading()
         });
 
+        window.isManualLoggingOut = true;
         fetch("/api/v1/system/reset", { method: "POST" })
           .then(res => res.text())
           .then(text => {
@@ -231,7 +233,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 confirmButtonColor: "#0284c7",
                 allowOutsideClick: false
               }).then(() => {
-                window.location.href = "/login.html";
+                window.location.replace("/login.html");
               });
             }, 1000);
           })
@@ -277,12 +279,13 @@ document.addEventListener("DOMContentLoaded", function() {
       cancelButtonText: "Batal"
     }).then(res => {
       if (res.isConfirmed) {
+        window.isManualLoggingOut = true;
         fetch("/api/v1/auth/logout", { method: "POST" })
           .then(() => {
-            window.location.href = "/login.html";
+            window.location.replace("/login.html");
           })
           .catch(() => {
-            window.location.href = "/login.html";
+            window.location.replace("/login.html");
           });
       }
     });
@@ -522,6 +525,7 @@ function handleFormSubmit(formId, endpoint, successMsg) {
                 cancelButtonColor: "#64748b"
               }).then(choice => {
                 if (choice.isConfirmed) {
+                  window.isManualLoggingOut = true;
                   fetch("/api/v1/system/reboot", { method: "POST" });
                   Swal.fire({
                     title: "Me-reboot...",
@@ -531,7 +535,7 @@ function handleFormSubmit(formId, endpoint, successMsg) {
                     confirmButtonColor: "#0284c7",
                     allowOutsideClick: false
                   }).then(() => {
-                    window.location.href = "/login.html";
+                    window.location.replace("/login.html");
                   });
                 } else {
                   location.reload();
@@ -1019,7 +1023,7 @@ function initApModeWatcher() {
   initApUserActivityListeners();
 
   // Fetch status dari server untuk sinkronisasi SSID & sisa waktu countdown
-  fetch("/api/v1/system/version")
+  fetch("/api/v1/system/ap-status")
     .then(res => res.json())
     .then(data => {
       if (data && data.ap_active) {
@@ -1084,35 +1088,137 @@ function initApModeWatcher() {
 }
 
 // =================================================================
-// GLOBAL SESSION KEEPALIVE & SLIDING COOKIE RENEWAL
+// GLOBAL SESSION LIFECYCLE, IDLE TIMEOUT & AUTO-REDIRECT
 // =================================================================
-function initGlobalSessionKeepalive() {
+let isRedirectingToLogin = false;
+window.isManualLoggingOut = false;
+
+function redirectToLogin(reason) {
+  if (isRedirectingToLogin || window.isManualLoggingOut) return;
   const isLoginPage = (location.pathname.endsWith("login") || location.pathname.endsWith("login.html"));
   if (isLoginPage) return;
 
-  // Heartbeat setiap 45 detik selama tab browser terbuka
+  isRedirectingToLogin = true;
+  console.warn(`[SESSION] Sesi kedaluwarsa (${reason || 'timeout'}). Mengalihkan ke halaman login...`);
+
+  // Bersihkan cookie di client-side agar backend login_handler tidak memantulkan 302 kembali ke /
+  try {
+    document.cookie = "token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
+  } catch (e) {}
+
+  // Sinyal logout fire-and-forget ke server
+  try {
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon("/api/v1/auth/logout");
+    } else {
+      fetch("/api/v1/auth/logout", { method: "POST", keepalive: true }).catch(() => {});
+    }
+  } catch (e) {}
+
+  window.location.replace("/login.html?expired=1");
+}
+
+function initGlobalSessionLifecycle() {
+  const isLoginPage = (location.pathname.endsWith("login") || location.pathname.endsWith("login.html"));
+  if (isLoginPage) return;
+
+  // 15 menit batas waktu tidak aktif (sinkron dengan SESSION_TIMEOUT_MS = 900000 di firmware ESP32)
+  const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+  let lastUserActivity = Date.now();
+  let hasNewUserActivity = false;
+
+  function recordUserActivity() {
+    lastUserActivity = Date.now();
+    hasNewUserActivity = true;
+  }
+
+  // Rekam aktivitas nyata pengguna (mouse, ketikan keyboard, touch, scroll)
+  ['mousedown', 'keydown', 'touchstart', 'scroll'].forEach(evt => {
+    window.addEventListener(evt, recordUserActivity, { passive: true });
+  });
+
+  let mouseMoveThrottle = 0;
+  window.addEventListener('mousemove', () => {
+    const now = Date.now();
+    if (now - mouseMoveThrottle > 5000) {
+      mouseMoveThrottle = now;
+      recordUserActivity();
+    }
+  }, { passive: true });
+
+  // Fungsi verifikasi sesi ke server ESP32
+  function verifySessionNow() {
+    if (isRedirectingToLogin) return;
+
+    // Jika pengguna sudah diam (idle) melebihi batas waktu 15 menit
+    if (Date.now() - lastUserActivity > IDLE_TIMEOUT_MS) {
+      redirectToLogin("idle_timeout");
+      return;
+    }
+
+    // Hanya kirim ?active=1 jika pengguna BENAR-BENAR berinteraksi fisik sejak heartbeat terakhir.
+    // Jika pengguna idle, panggil /api/v1/auth/check pasif (tanpa ?active=1) agar timer sesi server tidak diperpanjang otomatis.
+    const shouldExtendSession = hasNewUserActivity;
+    hasNewUserActivity = false; // Reset flag aktivitas fisik
+
+    const checkUrl = shouldExtendSession ? "/api/v1/auth/check?active=1" : "/api/v1/auth/check";
+    fetch(checkUrl, { cache: "no-store" })
+      .then(res => {
+        if (res.status === 401) {
+          redirectToLogin("server_unauthorized");
+        }
+      })
+      .catch(() => {
+        // Abaikan galat jaringan sementara (misal wifi drop sebentar), jangan langsung force logout
+      });
+  }
+
+  // Heartbeat rutin setiap 30 detik selama tab aktif
   setInterval(() => {
     if (!document.hidden) {
-      fetch("/api/v1/auth/check", { cache: "no-store" })
-        .then(res => {
-          if (res.status === 401) {
-            console.warn("[SESSION] Sesi kedaluwarsa di server.");
-          }
-        })
-        .catch(() => {});
+      verifySessionNow();
     }
-  }, 45000);
+  }, 30000);
+
+  // Deteksi instan saat tab dibuka kembali (setelah laptop sleep atau beralih tab lama)
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      verifySessionNow();
+    }
+  });
+  window.addEventListener("focus", () => {
+    verifySessionNow();
+  });
+
+  // Global fetch response interceptor untuk mendeteksi 401 pada request API apapun
+  const originalFetch = window.fetch;
+  window.fetch = async function(...args) {
+    try {
+      const response = await originalFetch.apply(this, args);
+      if (response && response.status === 401) {
+        if (window.isManualLoggingOut) return response;
+        const url = (typeof args[0] === 'string') ? args[0] : (args[0] && args[0].url ? args[0].url : '');
+        // Kecualikan endpoint login & logout agar tidak terjadi loop
+        if (!url.includes('/auth/login') && !url.includes('/auth/logout')) {
+          redirectToLogin("api_401_detected");
+        }
+      }
+      return response;
+    } catch (err) {
+      throw err;
+    }
+  };
 }
 
 // Inisialisasi aman: jalankan langsung jika DOM sudah siap, atau listen DOMContentLoaded
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     initApModeWatcher();
-    initGlobalSessionKeepalive();
+    initGlobalSessionLifecycle();
   });
 } else {
   initApModeWatcher();
-  initGlobalSessionKeepalive();
+  initGlobalSessionLifecycle();
 }
 
 // =================================================================
@@ -1130,6 +1236,7 @@ function triggerRebootNow() {
     cancelButtonColor: "#64748b"
   }).then(res => {
     if (res.isConfirmed) {
+      window.isManualLoggingOut = true;
       fetch("/api/v1/system/reboot", { method: "POST" });
       Swal.fire({
         title: "Me-reboot...",
@@ -1139,7 +1246,7 @@ function triggerRebootNow() {
         showConfirmButton: false,
         timer: 6000
       }).then(() => {
-        window.location.href = "/login.html";
+        window.location.replace("/login.html");
       });
     }
   });

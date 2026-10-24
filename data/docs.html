@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IOTARU %model% - Integration Docs</title>
+  <link rel="stylesheet" href="assets/css/app.css?v=%firmware_version%">
+  <script src="assets/js/swal-lite.js"></script>
+<style>
+  /* Scoped Styles for Integration Docs Page */
+  .docs-container {
+    max-width: 1440px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  /* Header Banner */
+  .docs-hero-card {
+    background: #0d121f;
+    border: 1px solid #1a2333;
+    border-radius: 16px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  }
+  .docs-hero-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-width: 0;
+  }
+  .docs-hero-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    color: #10b981;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .docs-hero-title h2 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 0;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+  }
+  .docs-hero-title p {
+    font-size: 0.88rem;
+    color: #8191a6;
+    margin: 4px 0 0 0;
+  }
+  .docs-badge-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #141c2c;
+    border: 1px solid #233148;
+    color: #38bdf8;
+    padding: 6px 14px;
+    border-radius: 9999px;
+    font-size: 0.80rem;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Main 2-Column Responsive Layout */
+  .docs-layout-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+  @media (min-width: 1024px) {
+    .docs-layout-grid {
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 24px;
+    }
+  }
+
+  /* Card Containers */
+  .docs-card {
+    background: #0d121f;
+    border: 1px solid #1a2333;
+    border-radius: 14px;
+    padding: 22px 24px;
+    margin-bottom: 22px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.28);
+  }
+  .docs-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .docs-card-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .docs-card-title h3 {
+    font-size: 1.02rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 0;
+  }
+  .docs-card-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .docs-card-icon.blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+  .docs-card-icon.emerald { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+  .docs-card-icon.purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+  .docs-card-icon.amber { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+
+  /* Active Broker Summary Grid */
+  .docs-broker-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  @media (min-width: 640px) {
+    .docs-broker-grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+  .docs-broker-tile {
+    background: #080c14;
+    border: 1px solid #1a2333;
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .docs-broker-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #8191a6;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .docs-broker-val {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #ffffff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Tables */
+  .docs-table-wrap {
+    overflow-x: auto;
+    border-radius: 10px;
+    border: 1px solid #1a2333;
+    background: #080c14;
+  }
+  .docs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+    text-align: left;
+  }
+  .docs-table th {
+    background: #0f172a;
+    color: #94a3b8;
+    font-weight: 600;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 10px 14px;
+    border-bottom: 1px solid #1a2333;
+  }
+  .docs-table td {
+    padding: 11px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    color: #cbd5e1;
+    vertical-align: middle;
+  }
+  .docs-table tr:last-child td {
+    border-bottom: none;
+  }
+  .docs-type-badge {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.76rem;
+    background: #141c2c;
+    border: 1px solid #233148;
+    color: #38bdf8;
+    padding: 2px 7px;
+    border-radius: 5px;
+  }
+  .docs-method-badge {
+    font-weight: 700;
+    font-size: 0.72rem;
+    padding: 3px 8px;
+    border-radius: 5px;
+    letter-spacing: 0.05em;
+  }
+  .docs-method-badge.get {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+  }
+  .docs-method-badge.post {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+  }
+
+  /* QoS Comparison Callout */
+  .docs-qos-callout {
+    margin-top: 14px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    background: rgba(30, 41, 59, 0.4);
+    border: 1px solid rgba(51, 65, 85, 0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+  .docs-qos-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  /* Right Column: Sticky Code Terminal */
+  .docs-terminal-card {
+    background: #080c14;
+    border: 1px solid #1a2333;
+    border-radius: 14px;
+    overflow: hidden;
+    position: sticky;
+    top: 24px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  }
+  .docs-terminal-header {
+    background: #0f172a;
+    padding: 12px 16px;
+    border-bottom: 1px solid #1a2333;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .docs-lang-pills {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .docs-lang-pill {
+    background: transparent;
+    border: 1px solid transparent;
+    color: #8191a6;
+    padding: 5px 11px;
+    border-radius: 7px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .docs-lang-pill:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.05);
+  }
+  .docs-lang-pill.active {
+    background: rgba(16, 185, 129, 0.14);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: #34d399;
+  }
+  .docs-copy-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 7px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .docs-copy-action-btn:hover {
+    background: #334155;
+    color: #ffffff;
+  }
+  .docs-terminal-meta {
+    padding: 8px 16px;
+    background: #090e18;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.76rem;
+    color: #64748b;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+  .docs-code-viewport {
+    padding: 16px;
+    max-height: 540px;
+    overflow-y: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    color: #e2e8f0;
+    white-space: pre;
+    tab-size: 2;
+  }
+
+  /* Code Syntax Highlighting Classes */
+  .ck-kw { color: #c084fc; font-weight: 600; }     /* Keyword */
+  .ck-fn { color: #60a5fa; }                     /* Function/Method */
+  .ck-str { color: #34d399; }                    /* String */
+  .ck-num { color: #fbbf24; }                    /* Number */
+  .ck-cmt { color: #64748b; font-style: italic; }/* Comment */
+  .ck-prop { color: #38bdf8; }                   /* Property */
+
+  /* Notification Toast */
+  .sg-toast {
+    position: fixed;
+    bottom: calc(var(--bottom-nav-h, 64px) + 16px);
+    left: 16px;
+    right: 16px;
+    z-index: 999;
+    transform: translateY(20px);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    justify-content: center;
+  }
+  @media (min-width: 640px) {
+    .sg-toast {
+      bottom: 24px;
+      right: 24px;
+      left: auto;
+      justify-content: flex-end;
+    }
+  }
+  .sg-toast.show {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .sg-toast-box {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 500;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  }
+
+  /* Mobile adaptations */
+  @media (max-width: 640px) {
+    .docs-hero-card {
+      padding: 16px 18px;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .docs-hero-title h2 {
+      font-size: 1.15rem;
+    }
+    .docs-card {
+      padding: 16px 16px;
+    }
+    .docs-code-viewport {
+      max-height: 400px;
+      font-size: 0.78rem;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="wrapper">
+    <!-- Sidebar (Desktop) -->
+    <aside class="sidebar">
+      <div class="sidebar-wrapper">
+        <div class="logo">
+          <img src="assets/img/logo.png" alt="IOTARU" class="sidebar-logo-img">
+        </div>
+        <div class="user">
+          <div class="user-avatar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <span class="user-info">%user%</span>
+        </div>
+        <ul class="sidebar-nav">
+          <li>
+            <a href="/">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+              <span>Overview</span>
+            </a>
+          </li>
+          <li class="nav-test-highlight">
+            <a href="/test">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              <span>Live Test Monitor</span>
+            </a>
+          </li>
+          <li class="active">
+            <a href="/docs">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>Integration Docs</span>
+            </a>
+          </li>
+          <li>
+            <a href="/log">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
+              <span>System Logs</span>
+            </a>
+          </li>
+          <li>
+            <a href="/auth">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span>Auth Settings</span>
+            </a>
+          </li>
+          <li>
+            <a href="/settings">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+              <span>Device Settings</span>
+            </a>
+          </li>
+          <li>
+            <a href="/firmware">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+              <span>Update Firmware</span>
+            </a>
+          </li>
+          <li>
+            <a href="/reset">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+              <span>Reset Config</span>
+            </a>
+          </li>
+          <li>
+            <a href="/reboot">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+              <span>Reboot</span>
+            </a>
+          </li>
+          <li class="sidebar-logout">
+            <a href="/logout" id="sidebarLogoutBtn">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              <span>Logout</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Panel -->
+    <main class="main-panel">
+      <header class="navbar">
+        <div class="navbar-left">
+          <a href="/" class="mobile-logo-link">
+            <img src="assets/img/logo.png" alt="IOTARU" class="mobile-logo-img">
+          </a>
+          <span class="navbar-brand">Integration Docs</span>
+        </div>
+        <a href="/logout" class="mobile-logout-btn" id="mobileLogoutBtn" title="Logout">
+          <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span>Keluar</span>
+        </a>
+      </header>
+
+      <section class="content">
+        <div class="docs-container">
+          <!-- Hero Header Banner -->
+          <div class="docs-hero-card">
+            <div class="docs-hero-left">
+              <div class="docs-hero-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="16 18 22 12 16 6"/>
+                  <polyline points="8 6 2 12 8 18"/>
+                </svg>
+              </div>
+              <div class="docs-hero-title">
+                <h2>Integration & Developer API</h2>
+                <p>Panduan Payload Telemetri iBeacon, MQTT Uplink, dan REST Endpoint Gateway %model%</p>
+              </div>
+            </div>
+            <div class="docs-badge-tag">
+              <span>Firmware %firmware_version%</span>
+            </div>
+          </div>
+
+          <!-- 2-Column Responsive Layout -->
+          <div class="docs-layout-grid">
+            <!-- Kolom Kiri: Dokumentasi, Tabel Parameter, & REST API -->
+            <div class="docs-col-left">
+
+              <!-- Kartu 1: Parameter Broker Aktif -->
+              <div class="docs-card">
+                <div class="docs-card-header">
+                  <div class="docs-card-title">
+                    <span class="docs-card-icon blue">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/><path d="M12 13v4"/><path d="M10 15l2-2 2 2"/></svg>
+                    </span>
+                    <h3>Koneksi MQTT Gateway Saat Ini</h3>
+                  </div>
+                  <div id="mqtt-status-badge">%mqtt_conn_badge%</div>
+                </div>
+                <div class="docs-broker-grid">
+                  <div class="docs-broker-tile">
+                    <span class="docs-broker-label">Broker Host</span>
+                    <span class="docs-broker-val" title="%mqtt_broker_host%">%mqtt_broker_host%</span>
+                  </div>
+                  <div class="docs-broker-tile">
+                    <span class="docs-broker-label">Port</span>
+                    <span class="docs-broker-val">%mqtt_broker_port%</span>
+                  </div>
+                  <div class="docs-broker-tile">
+                    <span class="docs-broker-label">Security TLS</span>
+                    <span class="docs-broker-val">%mqtt_tls_badge%</span>
+                  </div>
+                  <div class="docs-broker-tile">
+                    <span class="docs-broker-label">Delivery QoS</span>
+                    <span class="docs-broker-val">%mqtt_qos_badge%</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Kartu 2: Spesifikasi Payload iBeacon -->
+              <div class="docs-card">
+                <div class="docs-card-header">
+                  <div class="docs-card-title">
+                    <span class="docs-card-icon emerald">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                    </span>
+                    <h3>Struktur Data Telemetri Beacon</h3>
+                  </div>
+                  <span class="docs-type-badge">application/json</span>
+                </div>
+                <p style="font-size:0.86rem;color:#94a3b8;margin-bottom:14px;line-height:1.45;">
+                  Gateway memancarkan paket data hasil pemindaian BLE iBeacon dalam bentuk JSON Array pada topik data broker MQTT.
+                </p>
+                <div class="docs-table-wrap">
+                  <table class="docs-table">
+                    <thead>
+                      <tr>
+                        <th>Field</th>
+                        <th>Tipe</th>
+                        <th>Contoh</th>
+                        <th>Keterangan</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><strong>mac</strong></td>
+                        <td><span class="docs-type-badge">string</span></td>
+                        <td><code>AC:23:3F:A1:B2:C3</code></td>
+                        <td>Alamat MAC fisik hardware beacon BLE</td>
+                      </tr>
+                      <tr>
+                        <td><strong>uuid</strong></td>
+                        <td><span class="docs-type-badge">string</span></td>
+                        <td><code>FDA50693-A4E2-4FB1...</code></td>
+                        <td>Proximity UUID 128-bit iBeacon</td>
+                      </tr>
+                      <tr>
+                        <td><strong>major</strong></td>
+                        <td><span class="docs-type-badge">uint16</span></td>
+                        <td><code>10001</code></td>
+                        <td>Identifier grup/lokasi (0 - 65535)</td>
+                      </tr>
+                      <tr>
+                        <td><strong>minor</strong></td>
+                        <td><span class="docs-type-badge">uint16</span></td>
+                        <td><code>102</code></td>
+                        <td>Identifier unit individual (0 - 65535)</td>
+                      </tr>
+                      <tr>
+                        <td><strong>rssi</strong></td>
+                        <td><span class="docs-type-badge">int8</span></td>
+                        <td><code>-68</code></td>
+                        <td>Kekuatan sinyal radio diterima (dBm)</td>
+                      </tr>
+                      <tr>
+                        <td><strong>tx_power</strong></td>
+                        <td><span class="docs-type-badge">int8</span></td>
+                        <td><code>-59</code></td>
+                        <td>Kalibrasi daya pancar pada jarak 1 meter</td>
+                      </tr>
+                      <tr>
+                        <td><strong>distance</strong></td>
+                        <td><span class="docs-type-badge">float</span></td>
+                        <td><code>2.45</code></td>
+                        <td>Estimasi jarak kalkulasi log-distance (meter)</td>
+                      </tr>
+                      <tr>
+                        <td><strong>batt_pct</strong></td>
+                        <td><span class="docs-type-badge">uint8</span></td>
+                        <td><code>94</code></td>
+                        <td>Estimasi kapasitas baterai beacon (%)</td>
+                      </tr>
+                      <tr>
+                        <td><strong>timestamp</strong></td>
+                        <td><span class="docs-type-badge">int64</span></td>
+                        <td><code>1729792000</code></td>
+                        <td>Unix Epoch timestamp detik (Sinkronisasi NTP)</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Callout Panduan QoS -->
+                <div class="docs-qos-callout">
+                  <div class="docs-qos-item">
+                    <span class="docs-type-badge" style="color:#10b981;">QoS 1</span>
+                    <span><strong>Delivery Guaranteed</strong>: Broker wajib mengembalikan <code>PUBACK</code>. Sangat disarankan untuk keandalan data pada jaringan kabel/LAN.</span>
+                  </div>
+                  <div class="docs-qos-item">
+                    <span class="docs-type-badge" style="color:#f59e0b;">QoS 0</span>
+                    <span><strong>Fire &amp; Forget</strong>: Transmisi instan tanpa tunggu konfirmasi outbox. Optimal untuk koneksi seluler berkuota / kepadatan &gt;500 beacon/detik.</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Kartu 3: REST API Lokal -->
+              <div class="docs-card">
+                <div class="docs-card-header">
+                  <div class="docs-card-title">
+                    <span class="docs-card-icon purple">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                    </span>
+                    <h3>Local Gateway REST API</h3>
+                  </div>
+                  <span class="docs-type-badge">HTTP / JSON</span>
+                </div>
+                <div class="docs-table-wrap">
+                  <table class="docs-table">
+                    <thead>
+                      <tr>
+                        <th>Metode</th>
+                        <th>Endpoint</th>
+                        <th>Deskripsi</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><span class="docs-method-badge get">GET</span></td>
+                        <td><code>/api/v1/system/version</code></td>
+                        <td>Telemetri sistem, uptime, sisa RAM, bandwidth, dan status link</td>
+                      </tr>
+                      <tr>
+                        <td><span class="docs-method-badge get">GET</span></td>
+                        <td><code>/api/v1/system/ap-status</code></td>
+                        <td>Status hotspot darurat AP Wi-Fi &amp; sisa timer auto-off</td>
+                      </tr>
+                      <tr>
+                        <td><span class="docs-method-badge post">POST</span></td>
+                        <td><code>/api/v1/system/reboot</code></td>
+                        <td>Restart gateway ESP32 dari jarak jauh (Memerlukan login admin)</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Kolom Kanan: Sticky Code Console -->
+            <div class="docs-col-right">
+              <div class="docs-terminal-card">
+                <div class="docs-terminal-header">
+                  <div class="docs-lang-pills">
+                    <button type="button" class="docs-lang-pill active" onclick="switchSnippet('python')">Python</button>
+                    <button type="button" class="docs-lang-pill" onclick="switchSnippet('nodejs')">Node.js</button>
+                    <button type="button" class="docs-lang-pill" onclick="switchSnippet('go')">Go</button>
+                    <button type="button" class="docs-lang-pill" onclick="switchSnippet('rust')">Rust</button>
+                    <button type="button" class="docs-lang-pill" onclick="switchSnippet('nodered')">Node-RED</button>
+                    <button type="button" class="docs-lang-pill" onclick="switchSnippet('curl')">cURL</button>
+                  </div>
+                  <button type="button" class="docs-copy-action-btn" onclick="copyCurrentCode()" title="Salin Kode ke Clipboard">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                    <span id="copyBtnText">Salin</span>
+                  </button>
+                </div>
+                <div class="docs-terminal-meta">
+                  <span id="snippetFileName">main.py</span>
+                  <span id="snippetDesc">paho-mqtt v2.x listener</span>
+                </div>
+                <div id="codeViewport" class="docs-code-viewport"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        &copy; <span id="year"></span> ESP32 Gateway (%model%). High-Reliability BLE Telemetry.
+      </footer>
+    </main>
+
+    <!-- Bottom Navigation Bar (Mobile) - Tidak menampilkan Docs sesuai arahan -->
+    <nav class="bottom-nav">
+      <a href="/" class="bottom-nav-item">
+        <svg viewBox="0 0 24 24"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+        <span>Overview</span>
+      </a>
+      <button type="button" class="bottom-nav-item" data-action="config-sheet">
+        <svg viewBox="0 0 24 24">
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+        <span>Config</span>
+      </button>
+      <a href="/test" class="bottom-nav-item nav-center-highlight">
+        <div class="center-pill">
+          <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span>Test</span>
+        </div>
+      </a>
+      <a href="/firmware" class="bottom-nav-item">
+        <svg viewBox="0 0 24 24"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+        <span>Firmware</span>
+      </a>
+      <button type="button" class="bottom-nav-item nav-tab-reboot" data-action="power-sheet">
+        <svg viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+        <span>Reboot</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Toast Notification Box -->
+  <div id="toast" class="sg-toast">
+    <div class="sg-toast-box">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <span id="toastMessage">Kode berhasil disalin ke clipboard!</span>
+    </div>
+  </div>
+
+  <script src="assets/js/app.js?v=%firmware_version%"></script>
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+
+    // Raw snippet storage for copying
+    const SNIPPETS = {
+      python: {
+        file: "subscriber.py",
+        desc: "Python 3 paho-mqtt listener",
+        raw: `import json
+import paho.mqtt.client as mqtt
+
+BROKER = "%mqtt_broker_host%"
+PORT = %mqtt_broker_port%
+TOPIC = "sg10/data"
+
+def on_connect(client, userdata, flags, rc, properties=None):
+    if rc == 0:
+        print("[+] Terhubung ke Broker MQTT!")
+        client.subscribe(TOPIC, qos=1)
+    else:
+        print(f"[-] Gagal terhubung, kode: {rc}")
+
+def on_message(client, userdata, msg):
+    try:
+        beacons = json.loads(msg.payload.decode("utf-8"))
+        for b in beacons:
+            print(f"[{b.get('mac')}] Major:{b.get('major')} Minor:{b.get('minor')} | RSSI:{b.get('rssi')} dBm | Jarak:{b.get('distance')}m")
+    except Exception as e:
+        print(f"[!] Error parsing: {e}")
+
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+client.on_connect = on_connect
+client.on_message = on_message
+
+print(f"Menghubungkan ke {BROKER}:{PORT}...")
+client.connect(BROKER, PORT, keepalive=%mqtt_keepalive%)
+client.loop_forever()`,
+        html: `<span class="ck-kw">import</span> json
+<span class="ck-kw">import</span> paho.mqtt.client <span class="ck-kw">as</span> mqtt
+
+<span class="ck-prop">BROKER</span> = <span class="ck-str">"%mqtt_broker_host%"</span>
+<span class="ck-prop">PORT</span> = <span class="ck-num">%mqtt_broker_port%</span>
+<span class="ck-prop">TOPIC</span> = <span class="ck-str">"sg10/data"</span>
+
+<span class="ck-kw">def</span> <span class="ck-fn">on_connect</span>(client, userdata, flags, rc, properties=None):
+    <span class="ck-kw">if</span> rc == <span class="ck-num">0</span>:
+        <span class="ck-fn">print</span>(<span class="ck-str">"[+] Terhubung ke Broker MQTT!"</span>)
+        client.<span class="ck-fn">subscribe</span>(TOPIC, qos=<span class="ck-num">1</span>)
+    <span class="ck-kw">else</span>:
+        <span class="ck-fn">print</span>(<span class="ck-str">f"[-] Gagal terhubung, kode: {rc}"</span>)
+
+<span class="ck-kw">def</span> <span class="ck-fn">on_message</span>(client, userdata, msg):
+    <span class="ck-kw">try</span>:
+        beacons = json.<span class="ck-fn">loads</span>(msg.payload.<span class="ck-fn">decode</span>(<span class="ck-str">"utf-8"</span>))
+        <span class="ck-kw">for</span> b <span class="ck-kw">in</span> beacons:
+            <span class="ck-fn">print</span>(<span class="ck-str">f"[{b.get('mac')}] Major:{b.get('major')} Minor:{b.get('minor')} | RSSI:{b.get('rssi')} dBm | Jarak:{b.get('distance')}m"</span>)
+    <span class="ck-kw">except</span> Exception <span class="ck-kw">as</span> e:
+        <span class="ck-fn">print</span>(<span class="ck-str">f"[!] Error parsing: {e}"</span>)
+
+client = mqtt.<span class="ck-fn">Client</span>(mqtt.CallbackAPIVersion.VERSION2)
+client.on_connect = on_connect
+client.on_message = on_message
+
+<span class="ck-fn">print</span>(<span class="ck-str">f"Menghubungkan ke {BROKER}:{PORT}..."</span>)
+client.<span class="ck-fn">connect</span>(BROKER, PORT, keepalive=<span class="ck-num">%mqtt_keepalive%</span>)
+client.<span class="ck-fn">loop_forever</span>()`
+      },
+      nodejs: {
+        file: "subscriber.js",
+        desc: "Node.js mqtt client",
+        raw: `const mqtt = require("mqtt");
+
+const brokerUrl = "mqtt://%mqtt_broker_host%:%mqtt_broker_port%";
+const topic = "sg10/data";
+
+const client = mqtt.connect(brokerUrl, {
+  keepalive: %mqtt_keepalive%,
+  clean: true,
+  reconnectPeriod: 2000
+});
+
+client.on("connect", () => {
+  console.log("[+] Terhubung ke broker MQTT!");
+  client.subscribe(topic, { qos: 1 });
+});
+
+client.on("message", (t, payload) => {
+  try {
+    const beacons = JSON.parse(payload.toString());
+    beacons.forEach(b => {
+      console.log(\`[\${b.mac}] Major:\${b.major} Minor:\${b.minor} | RSSI:\${b.rssi} dBm | Dist:\${b.distance}m\`);
+    });
+  } catch (err) {
+    console.error("Gagal parse payload:", err.message);
+  }
+});`,
+        html: `<span class="ck-kw">const</span> mqtt = <span class="ck-fn">require</span>(<span class="ck-str">"mqtt"</span>);
+
+<span class="ck-kw">const</span> brokerUrl = <span class="ck-str">"mqtt://%mqtt_broker_host%:%mqtt_broker_port%"</span>;
+<span class="ck-kw">const</span> topic = <span class="ck-str">"sg10/data"</span>;
+
+<span class="ck-kw">const</span> client = mqtt.<span class="ck-fn">connect</span>(brokerUrl, {
+  keepalive: <span class="ck-num">%mqtt_keepalive%</span>,
+  clean: <span class="ck-kw">true</span>,
+  reconnectPeriod: <span class="ck-num">2000</span>
+});
+
+client.<span class="ck-fn">on</span>(<span class="ck-str">"connect"</span>, () => {
+  console.<span class="ck-fn">log</span>(<span class="ck-str">"[+] Terhubung ke broker MQTT!"</span>);
+  client.<span class="ck-fn">subscribe</span>(topic, { qos: <span class="ck-num">1</span> });
+});
+
+client.<span class="ck-fn">on</span>(<span class="ck-str">"message"</span>, (t, payload) => {
+  <span class="ck-kw">try</span> {
+    <span class="ck-kw">const</span> beacons = JSON.<span class="ck-fn">parse</span>(payload.<span class="ck-fn">toString</span>());
+    beacons.<span class="ck-fn">forEach</span>(b => {
+      console.<span class="ck-fn">log</span>(\`[\${b.mac}] Major:\${b.major} Minor:\${b.minor} | RSSI:\${b.rssi} dBm | Dist:\${b.distance}m\`);
+    });
+  } <span class="ck-kw">catch</span> (err) {
+    console.<span class="ck-fn">error</span>(<span class="ck-str">"Gagal parse payload:"</span>, err.message);
+  }
+});`
+      },
+      go: {
+        file: "main.go",
+        desc: "Go paho.mqtt.golang listener",
+        raw: `package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
+)
+
+type BeaconData struct {
+	Mac       string  \`json:"mac"\`
+	UUID      string  \`json:"uuid"\`
+	Major     uint16  \`json:"major"\`
+	Minor     uint16  \`json:"minor"\`
+	RSSI      int     \`json:"rssi"\`
+	TxPower   int     \`json:"tx_power"\`
+	Distance  float64 \`json:"distance"\`
+	Timestamp int64   \`json:"timestamp"\`
+}
+
+func main() {
+	opts := mqtt.NewClientOptions().AddBroker("tcp://%mqtt_broker_host%:%mqtt_broker_port%")
+	opts.SetClientID("sg10_go_subscriber")
+	opts.SetKeepAlive(%mqtt_keepalive%)
+
+	client := mqtt.NewClient(opts)
+	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		log.Fatalf("Koneksi gagal: %v", token.Error())
+	}
+	defer client.Disconnect(250)
+
+	topic := "sg10/data"
+	client.Subscribe(topic, 1, func(c mqtt.Client, m mqtt.Message) {
+		var batch []BeaconData
+		if err := json.Unmarshal(m.Payload(), &batch); err == nil {
+			for _, b := range batch {
+				fmt.Printf("[%s] Major: %d Minor: %d | RSSI: %d dBm | Dist: %.2fm\\n",
+					b.Mac, b.Major, b.Minor, b.RSSI, b.Distance)
+			}
+		}
+	})
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+	<-sig
+}`,
+        html: `<span class="ck-kw">package</span> main
+
+<span class="ck-kw">import</span> (
+	<span class="ck-str">"encoding/json"</span>
+	<span class="ck-str">"fmt"</span>
+	<span class="ck-str">"log"</span>
+	<span class="ck-str">"os"</span>
+	<span class="ck-str">"os/signal"</span>
+	mqtt <span class="ck-str">"github.com/eclipse/paho.mqtt.golang"</span>
+)
+
+<span class="ck-kw">type</span> <span class="ck-prop">BeaconData</span> <span class="ck-kw">struct</span> {
+	Mac       <span class="ck-kw">string</span>  <span class="ck-str">\`json:"mac"\`</span>
+	UUID      <span class="ck-kw">string</span>  <span class="ck-str">\`json:"uuid"\`</span>
+	Major     <span class="ck-kw">uint16</span>  <span class="ck-str">\`json:"major"\`</span>
+	Minor     <span class="ck-kw">uint16</span>  <span class="ck-str">\`json:"minor"\`</span>
+	RSSI      <span class="ck-kw">int</span>     <span class="ck-str">\`json:"rssi"\`</span>
+	TxPower   <span class="ck-kw">int</span>     <span class="ck-str">\`json:"tx_power"\`</span>
+	Distance  <span class="ck-kw">float64</span> <span class="ck-str">\`json:"distance"\`</span>
+	Timestamp <span class="ck-kw">int64</span>   <span class="ck-str">\`json:"timestamp"\`</span>
+}
+
+<span class="ck-kw">func</span> <span class="ck-fn">main</span>() {
+	opts := mqtt.<span class="ck-fn">NewClientOptions</span>().<span class="ck-fn">AddBroker</span>(<span class="ck-str">"tcp://%mqtt_broker_host%:%mqtt_broker_port%"</span>)
+	opts.<span class="ck-fn">SetClientID</span>(<span class="ck-str">"sg10_go_subscriber"</span>)
+	opts.<span class="ck-fn">SetKeepAlive</span>(<span class="ck-num">%mqtt_keepalive%</span>)
+
+	client := mqtt.<span class="ck-fn">NewClient</span>(opts)
+	<span class="ck-kw">if</span> token := client.<span class="ck-fn">Connect</span>(); token.<span class="ck-fn">Wait</span>() &amp;&amp; token.<span class="ck-fn">Error</span>() != <span class="ck-kw">nil</span> {
+		log.<span class="ck-fn">Fatalf</span>(<span class="ck-str">"Koneksi gagal: %v"</span>, token.<span class="ck-fn">Error</span>())
+	}
+	<span class="ck-kw">defer</span> client.<span class="ck-fn">Disconnect</span>(<span class="ck-num">250</span>)
+
+	topic := <span class="ck-str">"sg10/data"</span>
+	client.<span class="ck-fn">Subscribe</span>(topic, <span class="ck-num">1</span>, <span class="ck-kw">func</span>(c mqtt.Client, m mqtt.Message) {
+		<span class="ck-kw">var</span> batch []BeaconData
+		<span class="ck-kw">if</span> err := json.<span class="ck-fn">Unmarshal</span>(m.<span class="ck-fn">Payload</span>(), &amp;batch); err == <span class="ck-kw">nil</span> {
+			<span class="ck-kw">for</span> _, b := <span class="ck-kw">range</span> batch {
+				fmt.<span class="ck-fn">Printf</span>(<span class="ck-str">"[%s] Major: %d Minor: %d | RSSI: %d dBm | Dist: %.2fm\\n"</span>,
+					b.Mac, b.Major, b.Minor, b.RSSI, b.Distance)
+			}
+		}
+	})
+
+	sig := <span class="ck-fn">make</span>(<span class="ck-kw">chan</span> os.Signal, <span class="ck-num">1</span>)
+	signal.<span class="ck-fn">Notify</span>(sig, os.Interrupt)
+	&lt;-sig
+}`
+      },
+      rust: {
+        file: "main.rs",
+        desc: "Rust rumqttc + serde_json consumer",
+        raw: `use rumqttc::{MqttOptions, Client, QoS, Event, Packet};
+use serde::Deserialize;
+use std::time::Duration;
+
+#[derive(Debug, Deserialize)]
+struct BeaconData {
+    mac: String,
+    uuid: String,
+    major: u16,
+    minor: u16,
+    rssi: i16,
+    tx_power: i16,
+    distance: f32,
+    timestamp: i64,
+}
+
+fn main() {
+    let mut mqttoptions = MqttOptions::new("sg10_rust_sub", "%mqtt_broker_host%", %mqtt_broker_port%);
+    mqttoptions.set_keep_alive(Duration::from_secs(%mqtt_keepalive%));
+
+    let (mut client, mut connection) = Client::new(mqttoptions, 10);
+    client.subscribe("sg10/data", QoS::AtLeastOnce).unwrap();
+
+    println!("Menunggu stream telemetri IOTARU SG-10...");
+    for notification in connection.iter() {
+        if let Ok(Event::Incoming(Packet::Publish(p))) = notification {
+            if let Ok(batch) = serde_json::from_slice::<Vec<BeaconData>>(&p.payload) {
+                for b in batch {
+                    println!("[{}] RSSI: {} dBm | Jarak: {:.2}m", b.mac, b.rssi, b.distance);
+                }
+            }
+        }
+    }
+}`,
+        html: `<span class="ck-kw">use</span> rumqttc::{MqttOptions, Client, QoS, Event, Packet};
+<span class="ck-kw">use</span> serde::Deserialize;
+<span class="ck-kw">use</span> std::time::Duration;
+
+#[<span class="ck-prop">derive</span>(Debug, Deserialize)]
+<span class="ck-kw">struct</span> <span class="ck-prop">BeaconData</span> {
+    mac: String,
+    uuid: String,
+    major: u16,
+    minor: u16,
+    rssi: i16,
+    tx_power: i16,
+    distance: f32,
+    timestamp: i64,
+}
+
+<span class="ck-kw">fn</span> <span class="ck-fn">main</span>() {
+    <span class="ck-kw">let</span> <span class="ck-kw">mut</span> mqttoptions = MqttOptions::<span class="ck-fn">new</span>(<span class="ck-str">"sg10_rust_sub"</span>, <span class="ck-str">"%mqtt_broker_host%"</span>, <span class="ck-num">%mqtt_broker_port%</span>);
+    mqttoptions.<span class="ck-fn">set_keep_alive</span>(Duration::<span class="ck-fn">from_secs</span>(<span class="ck-num">%mqtt_keepalive%</span>));
+
+    <span class="ck-kw">let</span> (<span class="ck-kw">mut</span> client, <span class="ck-kw">mut</span> connection) = Client::<span class="ck-fn">new</span>(mqttoptions, <span class="ck-num">10</span>);
+    client.<span class="ck-fn">subscribe</span>(<span class="ck-str">"sg10/data"</span>, QoS::AtLeastOnce).<span class="ck-fn">unwrap</span>();
+
+    <span class="ck-fn">println!</span>(<span class="ck-str">"Menunggu stream telemetri IOTARU SG-10..."</span>);
+    <span class="ck-kw">for</span> notification <span class="ck-kw">in</span> connection.<span class="ck-fn">iter</span>() {
+        <span class="ck-kw">if</span> <span class="ck-kw">let</span> <span class="ck-fn">Ok</span>(Event::Incoming(Packet::Publish(p))) = notification {
+            <span class="ck-kw">if</span> <span class="ck-kw">let</span> <span class="ck-fn">Ok</span>(batch) = serde_json::from_slice::&lt;Vec&lt;BeaconData&gt;&gt;(&amp;p.payload) {
+                <span class="ck-kw">for</span> b <span class="ck-kw">in</span> batch {
+                    <span class="ck-fn">println!</span>(<span class="ck-str">"[{}] RSSI: {} dBm | Jarak: {:.2}m"</span>, b.mac, b.rssi, b.distance);
+                }
+            }
+        }
+    }
+}`
+      },
+      nodered: {
+        file: "flow.json",
+        desc: "Node-RED Flow JSON (Import via Clipboard)",
+        raw: `[
+  {
+    "id": "mqtt_in_node",
+    "type": "mqtt in",
+    "z": "tab_sg10",
+    "name": "IOTARU Telemetry",
+    "topic": "sg10/data",
+    "qos": "1",
+    "datatype": "json",
+    "broker": "broker_config",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 130,
+    "y": 120,
+    "wires": [["parser_fn_node"]]
+  },
+  {
+    "id": "parser_fn_node",
+    "type": "function",
+    "z": "tab_sg10",
+    "name": "Beacon Parser",
+    "func": "if (Array.isArray(msg.payload)) {\\n    msg.payload.forEach(b => {\\n        node.send({ payload: b, topic: 'beacon/' + b.mac });\\n    });\\n}\\nreturn null;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 340,
+    "y": 120,
+    "wires": [["debug_node"]]
+  },
+  {
+    "id": "debug_node",
+    "type": "debug",
+    "z": "tab_sg10",
+    "name": "Print Payload",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 550,
+    "y": 120,
+    "wires": []
+  }
+]`,
+        html: `[
+  {
+    <span class="ck-prop">"id"</span>: <span class="ck-str">"mqtt_in_node"</span>,
+    <span class="ck-prop">"type"</span>: <span class="ck-str">"mqtt in"</span>,
+    <span class="ck-prop">"name"</span>: <span class="ck-str">"IOTARU Telemetry"</span>,
+    <span class="ck-prop">"topic"</span>: <span class="ck-str">"sg10/data"</span>,
+    <span class="ck-prop">"qos"</span>: <span class="ck-str">"1"</span>,
+    <span class="ck-prop">"datatype"</span>: <span class="ck-str">"json"</span>,
+    <span class="ck-prop">"wires"</span>: [[<span class="ck-str">"parser_fn_node"</span>]]
+  },
+  {
+    <span class="ck-prop">"id"</span>: <span class="ck-str">"parser_fn_node"</span>,
+    <span class="ck-prop">"type"</span>: <span class="ck-str">"function"</span>,
+    <span class="ck-prop">"name"</span>: <span class="ck-str">"Beacon Parser"</span>,
+    <span class="ck-prop">"func"</span>: <span class="ck-str">"msg.payload.forEach(b => node.send({ payload: b }));"</span>,
+    <span class="ck-prop">"wires"</span>: [[<span class="ck-str">"debug_node"</span>]]
+  }
+]`
+      },
+      curl: {
+        file: "terminal.sh",
+        desc: "cURL HTTP REST API examples",
+        raw: `# 1. Cek versi dan telemetri gateway
+curl -X GET "http://192.168.1.120/api/v1/system/version"
+
+# 2. Cek status Hotspot AP Konfigurasi
+curl -X GET "http://192.168.1.120/api/v1/system/ap-status"
+
+# 3. Trigger reboot gateway dari jarak jauh
+curl -X POST "http://192.168.1.120/api/v1/system/reboot" \\
+     -H "Cookie: token=YOUR_SESSION_TOKEN"`,
+        html: `<span class="ck-cmt"># 1. Cek versi dan telemetri gateway</span>
+curl -X GET <span class="ck-str">"http://192.168.1.120/api/v1/system/version"</span>
+
+<span class="ck-cmt"># 2. Cek status Hotspot AP Konfigurasi</span>
+curl -X GET <span class="ck-str">"http://192.168.1.120/api/v1/system/ap-status"</span>
+
+<span class="ck-cmt"># 3. Trigger reboot gateway dari jarak jauh</span>
+curl -X POST <span class="ck-str">"http://192.168.1.120/api/v1/system/reboot"</span> \\
+     -H <span class="ck-str">"Cookie: token=YOUR_SESSION_TOKEN"</span>`
+      }
+    };
+
+    let currentLang = "python";
+
+    function switchSnippet(lang) {
+      if (!SNIPPETS[lang]) return;
+      currentLang = lang;
+
+      // Update pill classes
+      document.querySelectorAll(".docs-lang-pill").forEach(p => {
+        p.classList.toggle("active", p.textContent.toLowerCase() === lang);
+      });
+
+      // Update meta & code viewport
+      document.getElementById("snippetFileName").textContent = SNIPPETS[lang].file;
+      document.getElementById("snippetDesc").textContent = SNIPPETS[lang].desc;
+      document.getElementById("codeViewport").innerHTML = SNIPPETS[lang].html;
+    }
+
+    function copyCurrentCode() {
+      const snip = SNIPPETS[currentLang];
+      if (!snip) return;
+      navigator.clipboard.writeText(snip.raw).then(() => {
+        const btnText = document.getElementById("copyBtnText");
+        btnText.textContent = "Tersalin!";
+        setTimeout(() => { btnText.textContent = "Salin"; }, 2000);
+        showToast("Snippet " + currentLang.toUpperCase() + " berhasil disalin!");
+      }).catch(() => {
+        showToast("Gagal menyalin kode");
+      });
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById("toast");
+      const msgEl = document.getElementById("toastMessage");
+      if (toast && msgEl) {
+        msgEl.textContent = msg;
+        toast.classList.add("show");
+        setTimeout(() => toast.classList.remove("show"), 2500);
+      }
+    }
+
+    // Default init
+    switchSnippet("python");
+  </script>
+</body>
+</html>

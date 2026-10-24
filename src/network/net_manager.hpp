@@ -55,6 +55,7 @@ public:
     static const char* getWifiDisconnectReasonName(uint8_t reason);
     static void initMdns();
     static void getMdnsHostname(char* outBuf, size_t maxLen);
+    static void updateSntpServer(const char* server);
 
 private:
     static void initWifiStation();

@@ -40,6 +40,8 @@ struct AppConfig {
     char mqtt_user[32];
     char mqtt_password[32];
     int  mqtt_use_ssl; // 0: TCP Plain (mqtt://), 1: TLS/SSL (mqtts://)
+    int  mqtt_qos;     // 0: QoS 0 (Fire & Forget), 1: QoS 1 (Delivery Guaranteed)
+    int  mqtt_keepalive; // 5 .. 300 detik (Default: 30)
 
     // Gateway Namespace ("gateway" / "cfg_gate")
     char    device_model[16];
@@ -55,6 +57,7 @@ struct AppConfig {
     int     data_ttl;         // e.g. 5000 ms
     char    restart_schedule[8]; // "HH:MM"
     int     discon_rst;       // Minutes before auto-reboot, 0 = disabled
+    char    ntp_server[64];   // e.g. "pool.ntp.org"
 };
 
 // Global metadata string view

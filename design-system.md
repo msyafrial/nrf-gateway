@@ -1420,5 +1420,205 @@ Pemisahan arsitektur versioning gateway agar setiap layer dapat di-update secara
   - Fitur diagnostik transmisi dan pemantauan live packet nRF52840 telah dapat diakses langsung secara permanen melalui item menu sidebar utama (`Live Test Monitor` pada `/test`) dan bottom navigation sheet pada mobile.
   - Penghapusan kartu sekunder ini menghilangkan redundansi tombol ganda, menyatukan ritme visual Grid Bento utama (panel identitas di kiri dan panel jaringan/telemetri MQTT di kanan), serta menghasilkan tampilan dasbor yang bersih dan presisi tanpa scrolling berlebih.
 
+## 51. Mekanisme Status Offline & Eliminasi Angka Live Uptime Saat Perangkat Padam
+- **1. Akar Masalah Uptime Berjalan Terus Saat Perangkat Mati**:
+  - Ticker waktu `updateUptimeDisplay()` di `data/index.html` dijalankan oleh `setInterval` lokal peramban (`uptimeSeconds++` tiap 1 detik) untuk kelancaran visual antarmuka.
+  - Polling status `/api/v1/system/version` berulang tiap 5 detik untuk kalibrasi ulang `uptimeSeconds`. Namun, jika mikrokontroler mati/terputus, blok `.catch()` awalnya dibiarkan kosong tanpa penanda kegagalan koneksi (*silent fail*).
+  - Akibatnya, selama tab peramban tetap terbuka, JavaScript di komputer/HP pengguna terus menghitung detik sendiri tanpa batas meskipun perangkat keras fisik sudah padam.
+- **2. Solusi Desain & Standarisasi UI/UX**:
+  - **Mekanisme Guard `isDeviceOnline` & AbortController**:
+    - Polling HTTP dilengkapi `AbortController` dengan batas waktu *timeout* 3500ms agar permintaan jaringan yang menggantung segera diputus jika perangkat mati.
+    - Variabel `offlineStreak` melacak kegagalan beruntun. Setelah 2 kali gagal berturut-turut, status beralih menjadi `isDeviceOnline = false`.
+    - Di dalam `updateUptimeDisplay()`, penambahan `uptimeSeconds++` langsung dihentikan saat `!isDeviceOnline`.
+  - **Komponen Visual & Token Warna (Eliminasi Angka Saat Offline)**:
+    - **`#detail-uptime-dot`**: Berubah dari hijau emerald aktif (`#10b981`, `●`) menjadi merah padam (`#ef4444`, `○`) dengan transisi halus `color 0.2s ease`.
+    - **`#detail-uptime-live`**: Seluruh angka durasi (seperti `0 Days 00:00:28`) dihilangkan secara tuntas dan digantikan dengan teks statis `"Offline"` berwarna merah (`#ef4444`) berbobot tebal (`font-weight: 700`) sehingga pengguna tidak dibingungkan oleh angka durasi beku (*frozen timestamp*).
+    - **`#detail-uptime-badge`**: Disembunyikan (`display: none;`) untuk menghindari redundansi teks ganda ("Offline OFFLINE").
+    - **`.sg-badge-pill.mode-offline`**: Badge koneksi utama di panel kanan beralih ke mode offline (`background: rgba(239, 68, 68, 0.12)`, `border: 1px solid rgba(239, 68, 68, 0.45)`, `color: #ef4444`) dengan label `DISCONNECTED` dan deskripsi `Device Unreachable — Gateway offline or connection lost`.
+  - **Pemulihan Otomatis (*Auto-Recovery*)**: Begitu perangkat menyala kembali dan request `/api/v1/system/version` sukses, `offlineStreak` di-reset ke 0, dot kembali hijau (`#10b981`, `●`), teks uptime dikembalikan ke angka durasi aktif (`formatUptimeString(uptimeSeconds)`) berwarna putih terang (`#ffffff`), dan ticker live counter 1 detik kembali berjalan sinkron dengan hardware.
+
+## 52. Siklus Sesi Global, Timeout Inaktivitas & Force Auto-Redirect ke Login
+- **1. Rasional Keamanan Sesi Industri (Zero Zombie Session)**:
+  - Sesi mikrokontroler ESP32 memiliki sliding timeout 15 menit (`SESSION_TIMEOUT_MS = 900000 ms`).
+  - Sebelumnya, jika tab dibiarkan terbuka, pemanggilan heartbeat `/api/v1/auth/check` secara buta terus me-refresh sesi di backend dan jika status `401 Unauthorized` terjadi, kode lama hanya mencetak `console.warn` tanpa me-redirect pengguna.
+  - Pengguna berpotensi melihat data lama (*stale UI*) dan baru terlempar ke halaman login jika melakukan reload halaman (F5) atau mengklik tautan antar-halaman.
+- **2. Arsitektur Otomasi Pengalihan Layar (`app.js`)**:
+  - **Pelacak Inaktivitas Nyata Pengguna (*User Activity Tracking*)**:
+    - Browser mendengarkan event pengguna nyata: `mousedown`, `keydown`, `touchstart`, dan `scroll`.
+    - Batas inaktivitas: `IDLE_TIMEOUT_MS = 15 * 60 * 1000` (15 menit).
+    - Jika pengguna diam tanpa interaksi selama 15 menit, perpanjangan sliding session dihentikan dan sistem memicu `redirectToLogin("idle_timeout")`.
+  - **Force Redirect Seketika (`window.location.replace`)**:
+    - Menggunakan `window.location.replace("/login.html?expired=1")` (bukan `location.href`) untuk menghapus riwayat halaman saat ini sehingga tombol *Back* pada peramban terkunci dan tidak bisa mengakses halaman terproteksi.
+  - **Verifikasi Instan saat Kembali ke Tab (`visibilitychange` & `focus`)**:
+    - Ketika laptop baru dibuka dari mode sleep atau pengguna kembali mengklik tab setelah lama diminimize, event `visibilitychange` dan `focus` langsung memverifikasi `/api/v1/auth/check` secara instan tanpa perlu menunggu sisa delay interval timer.
+  - **Global Fetch Interceptor Guard & Diferensiasi Logout Manual**:
+    - Seluruh pemanggilan `window.fetch` ke REST API gateway diproteksi interceptor terpusat. Setiap respons berstatus HTTP `401 Unauthorized` (di luar endpoint auth login/logout) seketika memicu force redirect ke login.
+    - **Guard `isManualLoggingOut`**: Saat pengguna mengklik logout secara sengaja (`triggerLogout`) atau memicu reboot/reset, sistem mengaktifkan flag `window.isManualLoggingOut = true`. Seluruh request background (seperti polling 5 detik) yang terputus dengan status 401 setelah logout tidak akan memicu flag `?expired=1`, sehingga pengguna mendarat bersih di `/login.html` tanpa banner sesi kedaluwarsa.
+- **3. Banner Notifikasi Ramah di Halaman Login (`login.html`)**:
+  - **Komponen `.session-expired-banner`**:
+    - Hanya muncul saat sesi benar-benar kedaluwarsa (inactivity timeout) via parameter `?expired=1`.
+    - Tidak muncul saat pengguna logout secara sadar/manual.
+    - Background: `rgba(239, 68, 68, 0.12)`, Border: `1px solid rgba(239, 68, 68, 0.35)`, Teks: `#fca5a5`, Ikon: `#ef4444`.
+    - Animasi halus `fadeInSlide 0.25s ease-out` (`translateY(-4px)` ke `translateY(0)`).
+    - Menjelaskan dengan transparan kepada pengguna: *"Sesi Anda telah berakhir demi keamanan. Silakan login kembali."*
+
+## 53. Server-Side Rendering (SSR) Halaman Login, Pemisahan Endpoint Hotspot AP, & Penguncian Telemetri
+- **1. Rasional Pemisahan Arsitektur (Separation of Concerns & Least Privilege)**:
+  - Sebelumnya, halaman login di-stream sebagai file statis (`stream_static_file`) sehingga tag `%model%` tidak diproses oleh server, memaksa browser melakukan pemanggilan JavaScript tambahan ke `/api/v1/system/version`.
+  - Selain itu, status Hotspot Mode AP darurat (`ap_active`, `ap_remain_sec`) ikut "menumpang" di endpoint version, sehingga endpoint version terpaksa dibuka publik dan berisiko membocorkan IP, MAC, MQTT Host, Uptime, dan Heap ke pengguna belum login.
+- **2. Standardisasi Server-Side Rendering (SSR) untuk Login**:
+  - `login_handler` beralih ke `Template::stream_template_file(req, "/storage/login.html")`.
+  - Placeholder `%model%` (`SG-10`), `%ap_ssid%` (`SG-10-xxxx`), dan `%ap_banner_active%` (`1` / `0`) dirender langsung di server sebelum byte pertama dikirim ke browser.
+  - Menghilangkan *layout shift* (kedipan teks judul), serta mengeliminasi pemanggilan `fetch("/api/v1/system/version")` dari JavaScript login.
+- **3. Endpoint Ringan Khusus Hotspot AP (`GET /api/v1/system/ap-status`)**:
+  - Endpoint publik mandiri tanpa autentikasi yang hanya mengembalikan status non-sensitif hotspot darurat:
+    ```json
+    {"ap_active":true,"ap_ssid":"SG-10-xxxx","ap_remain_sec":55,"reboot_required":false}
+    ```
+  - **Efisiensi Memori (Zero Heap Allocation)**: Diformat langsung menggunakan `snprintf` pada buffer lokal stack `128 byte` tanpa overhead `cJSON` atau `malloc`.
+  - Dipakai secara terpusat oleh `checkLoginApStatus()` di `login.html` dan `initApModeWatcher()` di `app.js`.
+- **4. Penguncian Penuh Data Sensitif Telemetri (`GET /api/v1/system/version`)**:
+  - Endpoint `/api/v1/system/version` kini dilindungi guard autentikasi ketat:
+    `if (Session::validate(req) == UserRole::NONE) return 401 Unauthorized;`
+  - Akses anonim tanpa cookie sesi ditolak seketika (menghemat RAM dan CPU cycle ESP32 karena parsing cJSON dilewati).
+  - Data sensitif jaringan dan broker MQTT hanya dapat dibaca oleh pengguna terotentikasi (Overview & Test Monitor).
+
+## 54. Arsitektur Validasi Sesi Pasif vs Aktif (Inactivity Timeout 15 Menit)
+- **1. Masalah Polling Otomatis Mereset Timer Sesi**:
+  - Pada arsitektur sebelumnya, setiap request berautentikasi otomatis mereset waktu `last_activity_ms` ke waktu terkini (sliding expiration).
+  - Karena halaman Overview melakukan polling telemetri setiap 5 detik ke `/api/v1/system/version`, timer sesi di ESP32 selalu di-reset ke 0 detik setiap 5 detik, sehingga sesi tidak pernah mencapai batas waktu 15 menit jika layar dibiarkan terbuka.
+- **2. Pemisahan Validasi Pasif vs Aktif (`update_sliding`)**:
+  - `Session::validate(req, out_token, max_len, bool update_sliding = true)`:
+    - **Validasi Pasif (`update_sliding = false`)**: Digunakan untuk request polling otomatis background (seperti telemetri `/api/v1/system/version`, polling log `/api/v1/system/net-logs`, `/api/v1/system/drop-logs`, dan heartbeat `/api/v1/auth/check` tanpa flag aktif). Sesi tetap dicek keabsahannya, namun `last_activity_ms` TIDAK diperbarui.
+    - **Validasi Aktif (`update_sliding = true`)**: Digunakan untuk aksi nyata pengguna (navigasi halaman, pengubahan pengaturan/POST konfigurasi, reboot/reset, dan heartbeat saat terdeteksi aktivitas via `/api/v1/auth/check?active=1`).
+- **3. Sinkronisasi Deteksi Diam Pengguna (User Inactivity)**:
+  - Frontend (`app.js`) mencatat aktivitas nyata: `mousedown`, `keydown`, `touchstart`, `scroll`, dan `mousemove` (dibatasi/throttled tiap 5 detik).
+  - Jika pengguna aktif dalam 15 menit, verifikasi background mengirimkan parameter `?active=1` untuk memperbarui sliding session di ESP32.
+  - Jika pengguna diam tanpa aktivitas selama >15 menit:
+    - Frontend langsung mengarahkan pengguna ke `/login.html?expired=1`.
+    - Di sisi backend ESP32, timer `now - last_activity_ms` juga melampaui `SESSION_TIMEOUT_MS = 900000 ms`, sehingga request polling pasif berikutnya langsung menerima respons HTTP `401 Unauthorized`.
+
+## 55. Konsistensi Zona Waktu Booting (WIB) & Pencatatan Event Pre-Reboot
+- **1. Inisialisasi Zona Waktu Dini (Zero-Boot Timezone Lock)**:
+  - Variabel lingkungan `setenv("TZ", "WIB-7", 1)` dan `tzset()` kini dieksekusi di baris paling awal `app_main()` serta pada awal inisialisasi `NetLogService::init()`.
+  - Mencegah *time-warp* / pergeseran zona waktu palsu (dari UTC ke WIB) pada saat gateway me-reboot.
+  - Log `SYSTEM BOOT` dan log driver awal kini langsung menggunakan waktu lokal WIB (`YYYY-MM-DD HH:MM:SS`) tanpa jeda transisi UTC.
+- **2. Pencatatan Event Pre-Reboot Sistem (`NetEvent::REBOOT`)**:
+  - Seluruh jalur eksekusi `esp_restart()` (Jadwal Restart Harian 03:00, Watchdog Diskoneksi Jaringan, Reboot Manual Dashboard, Remote Command MQTT, dan Selesai Update OTA) kini mencatat event eksplisit `SYSTEM REBOOT` sebelum sistem padam.
+  - Memastikan rekaman audit sistem memiliki pasangan kronologis yang lengkap:
+    - Sebelum padam: `SYSTEM REBOOT` (Badge warning kuning/amber) dengan alasan spesifik.
+    - Setelah menyala: `SYSTEM BOOT` (Badge primary biru) dengan verifikasi reset reason.
+- **3. Ketahanan Terhadap Ketiadaan Internet (Offline Graceful Fallback)**:
+  - Operasi POSIX `setenv/tzset` murni kalkulasi CPU register lokal tanpa request jaringan.
+  - Jika internet offline total, sistem log secara mulus beralih ke format waktu relatif (`+HH:MM:SS`), dan `checkDailyRestart()` secara aman standby tanpa memicu restart di jam yang salah.
+
+## 56. Konfigurasi Server Waktu (NTP) & Sistem Probe Validasi Real-Time
+- **1. Skema Master NVS & Nilai Default Pabrik**:
+  - Tabel master partisi (`nvs_config.csv`) kini menyertakan entri `ntp_server,data,string,pool.ntp.org` di bawah namespace `gateway`.
+  - Inisialisasi NVS operasional (`initNvsConfiguration` di `config_store.cpp`) menyalin parameter `ntp_server` dari partisi master ke namespace operasional `cfg_gate`.
+  - Fallback aman: Jika partisi master belum di-flash, sistem otomatis menetapkan default string `"pool.ntp.org"`.
+  - Struktur data POD firmware (`AppConfig` di `app_config.hpp`) memuat field `char ntp_server[64];` (Zero Dynamic Allocation, hemat RAM ESP32).
+  - Pemuatan (`loadConfig`) dan penyimpanan (`saveConfigSettings`) membaca serta menulis key `"ntp_server"` ke NVS.
+- **2. Hot-Reload Sinkronisasi SNTP (`updateSntpServer`)**:
+  - `NetworkManager::updateSntpServer(const char* server)` memperbarui server NTP primer pada slot 0 stack `esp_sntp` secara *runtime* tanpa mewajibkan gateway reboot.
+  - Slot 1 (`time.nist.gov`) dan Slot 2 (`time.google.com`) tetap dipertahankan sebagai lapisan redundansi cadangan global.
+- **3. Arsitektur Probe NTP Mandiri (UDP Port 123 Real-Time REST API)**:
+  - Endpoint baru: `POST /api/v1/system/test-ntp` (juga mendukung `GET /api/v1/system/test-ntp?server=...`).
+  - Mengirim paket SNTP standar RFC 5905 (48-byte, `LI=0, VN=4, Mode=3`) melalui socket UDP ke port 123 target.
+  - Dilindungi *socket timeout* 3000 ms (`SO_RCVTIMEO`) untuk menjamin web server tidak pernah terblokir jika host tidak dapat dihubungi.
+  - **Karakteristik Diagnostik**:
+    - **Aman**: Hanya membaca balasan jam dari server tanpa mengubah jam sistem internal ESP32 secara prematur sebelum disimpan.
+    - **Pengukuran Latensi (RTT)**: Menghitung durasi bolak-balik dalam milidetik ($$\Delta t = t_{\text{rx}} - t_{\text{tx}}$$).
+    - **Parsing Waktu Nyata**: Menghitung delta epoch NTP (1900) ke Unix (1970) dan memformat jam server ke zona waktu lokal `WIB`.
+- **4. Komponen Antarmuka Bento Grid & Status Feedback**:
+  - **Bento Card `Server Waktu (NTP)`**: Berada di `/settings.html` dengan ikon jam amber industrial.
+  - **Input Host/IP**: Mendukung nama domain (`pool.ntp.org`, `time.google.com`) maupun alamat IP lokal private (`192.168.1.1`).
+  - **Tombol Aksi Terintegrasi (`.btn-input-action`)**: Tombol *"Uji Server"* dengan ikon petir di sisi kanan kolom input.
+  - **Badge Status (`#ntpTestBadge`)**:
+    - Status netral: `.uuid-badge.neutral` (*"Siap diuji"*).
+    - Status menguji: `.uuid-badge.testing` (*"Menguji..."*) dengan animasi spinner inline.
+    - Status sukses: `.uuid-badge.valid` (*"<RTT> ms"*).
+    - Status gagal: `.uuid-badge.invalid` (*"Gagal"*).
+  - **Kotak Umpan Balik (`.ntp-result-feedback`)**:
+    - Sukses (`.ntp-result-feedback.success`): Latar hijau emerald transparan dengan IP server, RTT ms, dan jam aktual server.
+    - Gagal (`.ntp-result-feedback.error`): Latar merah transparan dengan rincian kendala (DNS lookup gagal, port UDP 123 diblokir, atau timeout 3 detik).
+
+## 57. Siklus Hidup Sesi Sliding & Pencegahan Infinite Loop / 302 Bounce
+- **1. Pemisahan Heartbeat Pasif dan Perpanjangan Aktif**:
+  - Heartbeat berkala (setiap 30 detik di `app.js`) hanya memanggil endpoint `/api/v1/auth/check` secara pasif (tanpa parameter `?active=1`).
+  - Server ESP32 memvalidasi sesi tanpa memperbarui timer aktivitas (`update_sliding = false`), sehingga sesi pengguna yang benar-benar ditinggalkan (idle) dapat kedaluwarsa tepat pada 15 menit.
+  - Sinyal perpanjangan sliding (`/api/v1/auth/check?active=1`) HANYA dikirimkan jika pengguna melakukan interaksi fisik baru (`mousedown`, `keydown`, `touchstart`, `scroll`, `mousemove`) sejak pemanggilan sebelumnya.
+- **2. Pencegahan 302 Bounce Loop pada Halaman Login**:
+  - Saat sesi habis (15 menit idle), JavaScript frontend membersihkan cookie `token` secara lokal dan mengarahkan browser ke `/login.html?expired=1`.
+  - Di backend ESP32 (`login_handler`), deteksi query parameter `expired=1` memastikan server tidak memantulkan request kembali ke `/` (`302 Found`), melainkan langsung menghanguskan sesi lama di memori ESP32, membersihkan header Set-Cookie, dan menyajikan halaman login.
+  - Di frontend `login.html`, IIFE `checkActiveSession()` mengabaikan pengecekan jika URL memiliki `expired=1` dan langsung menampilkan `#sessionExpiredBanner` berwarna amber/danger.
+- **3. Standardisasi Cache-Busting Script**:
+  - Seluruh halaman web gateway (`index.html`, `settings.html`, `log.html`, `test.html`, `auth_admin.html`, `auth_teknisi.html`, `firmware.html`) kini memanggil script dengan token versi dinamis `app.js?v=%firmware_version%` untuk mencegah browser menahan script lama dalam cache disk.
+
+## 58. Konfigurasi Tingkat Pengiriman Data MQTT (QoS) & Interval Keep Alive
+- **1. Pengaturan Tingkat Pengiriman Data (Quality of Service - QoS)**:
+  - **Elemen Antarmuka**: Dropdown `<select id="mqtt_qos" name="mqtt_qos">` pada Bento Card 4 (*Broker Telemetri MQTT Gateway*) di `data/auth_admin.html`.
+  - **Opsi Seleksi**:
+    - `QoS 1 — Delivery Guaranteed (Default)`: Nilai `1`. Broker wajib mengirimkan paket konfirmasi `PUBACK` untuk setiap batch data telemetri. Sangat disarankan untuk integritas data pada jaringan kabel/LAN atau Wi-Fi berkecepatan tinggi.
+    - `QoS 0 — Fire & Forget (Hemat Kuota)`: Nilai `0`. Transmisi instan tanpa menunggu konfirmasi `PUBACK`. Mengurangi overhead paket bolak-balik, menghilangkan bottleneck outbox buffer, dan menghemat kuota transmisi (sangat ideal untuk koneksi seluler berkuota / kepadatan >500 beacon/detik).
+  - **Proteksi Pesan Kritis**: Mode QoS 0 hanya berlaku untuk aliran paket data beacon pada topik `s_topicData`. Pesan operasional vital gateway (*Birth Message* `status:online`, *Last Will & Testament* `status:offline`, dan *Command Subscription*) tetap terkunci pada `QoS 1` & `Retain 1` demi keandalan monitoring sistem.
+- **2. Pengaturan Interval Detak Soket TCP (MQTT Keep Alive)**:
+  - **Elemen Antarmuka**: Input numerik terstandardisasi dengan unit visual `.unit-box` dan label satuan `.unit-text` (*Detik*):
+    `<input type="number" id="mqtt_keepalive" name="mqtt_keepalive" value="%mqtt_keepalive%" min="5" max="300" placeholder="30" required>`.
+  - **Batas Nilai**: Rentang valid `5` s/d `300` detik (Default bawaan pabrik: `30` detik).
+  - **Fungsi**: Mengatur frekuensi pengiriman frame `PINGREQ` ke broker saat tidak ada transmisi data agar koneksi soket TCP tidak ditutup sepihak oleh router atau operator seluler (*NAT timeout*).
+- **3. Tata Letak Grid & Preservasi NVS**:
+  - Disusun berdampingan dalam form grid 2-kolom (`.bento-grid` dengan elemen `.item`) tepat di bawah kredensial password broker.
+  - Tersimpan secara persisten pada partisi NVS `cfg_mqtt` (kunci `qos` bertipe `u32` dan `keepalive` bertipe `u32`), terdaftar pada master provisioning `nvs_config.csv`, dan di-*backup* secara otomatis oleh logika inisialisasi pabrik `initNvsConfiguration()`.
+
+## 59. Visualisasi QoS dan Keep Alive pada Kartu Telemetri MQTT Dashboard Overview
+- **1. Struktur Grid Responsif 5 Kolom (`.sg-mqtt-data-grid`)**:
+  - **Desktop / Tablet Widescreen (`min-width: 768px`)**:
+    - Disusun dalam 1 baris grid 5 kolom presisi: `grid-template-columns: 1.8fr 0.75fr 1.15fr 0.85fr 0.8fr; gap: 16px;`.
+    - Kolom 1: *Broker Host* (dengan tombol salin clipboard).
+    - Kolom 2: *Port* (`%mqtt_broker_port%`).
+    - Kolom 3: *Security (TLS)* (`%mqtt_tls_badge%`).
+    - Kolom 4: *Delivery QoS* (`#mqtt-qos-val` / `%mqtt_qos_badge%`).
+    - Kolom 5: *Keep Alive* (`#mqtt-keepalive-val` / `%mqtt_keepalive%s`).
+  - **Mobile Viewport (`< 768px`)**:
+    - Bertransformasi menjadi grid 2-kolom 3-tingkat yang simetris dan rapi:
+      - Baris 1: Broker Host (membentang penuh: `grid-column: 1 / -1`).
+      - Baris 2: Port (kiri) | Security TLS (kanan).
+      - Baris 3: Delivery QoS (kiri) | Keep Alive (kanan).
+- **2. Status Visual Badge QoS (`#mqtt-qos-val`)**:
+  - **QoS 1**: `<span class="sg-subcard-status-badge active">QoS 1</span>` (Aksen hijau emerald transparan `rgba(16, 185, 129, 0.12)` dengan teks `#10b981`), menandakan jaminan pengiriman dengan `PUBACK`.
+  - **QoS 0**: `<span class="sg-subcard-status-badge amber">QoS 0</span>` (Aksen amber transparan `rgba(245, 158, 11, 0.12)` dengan teks `#f59e0b`), menandakan transmisi fire-and-forget tanpa konfirmasi outbox.
+- **3. Nilai Monospace Keep Alive (`#mqtt-keepalive-val`)**:
+  - Ditampilkan dengan tipografi monospace industri: `font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.90rem; font-weight: 700; color: #ffffff;`.
+  - Dilengkapi akhiran satuan detik (`30s`, `60s`).
+- **4. Sinkronisasi Real-Time Dua Arah (SSR & Live Polling)**:
+  - **Server-Side Render (SSR)**: Menggunakan template placeholder `%mqtt_qos_badge%` dan `%mqtt_keepalive%` di `src/web/web_template.cpp` sehingga saat HTML pertama kali dimuat oleh browser, nilai sudah langsung terisi tanpa layout shift (*zero CLS*).
+  - **Live API Endpoint (`/api/v1/system/version`)**: Mengembalikan field numerik `"mqtt_qos"` dan `"mqtt_keepalive"`.
+  - **Client-Side Polling Loop**: Fungsi `syncDashboardStatus()` di `index.html` menyegarkan elemen DOM `#mqtt-qos-val` dan `#mqtt-keepalive-val` secara mulus setiap 5 detik.
+
+## 60. Halaman Dokumentasi Integrasi & Developer API (`data/docs.html`)
+- **1. Otorisasi Akses Eksklusif Administrator (RBAC Guard)**:
+  - Rute `/docs` dan `/docs.html` dilindungi oleh `docs_handler` di `src/web/web_routes.cpp`.
+  - Pengguna tanpa sesi (`UserRole::NONE`) dialihkan seketika via `302 Found` ke `/login.html`.
+  - Pengguna role Teknisi (`UserRole::TEKNISI`) dialihkan ke `/auth_teknisi.html`.
+  - Hanya peran Administrator (`UserRole::ADMIN`) yang diizinkan mengakses konten dokumentasi integrasi.
+- **2. Tata Letak Terstruktur 2-Kolom (Stripe/Supabase API Style)**:
+  - **Kolom Kiri (~55%)**:
+    - **Header Hero**: Banner judul `Integration & Developer API` dengan badge versi firmware.
+    - **Ringkasan Koneksi Broker**: Tile mini parameter aktif (`%mqtt_broker_host%`, `%mqtt_broker_port%`, `%mqtt_tls_badge%`, `%mqtt_qos_badge%`).
+    - **Tabel Spesifikasi Payload iBeacon**: Rincian field `mac`, `uuid`, `major`, `minor`, `rssi`, `tx_power`, `distance`, `batt_pct`, `timestamp` beserta tipe data monospace `.docs-type-badge`.
+    - **Komparasi QoS**: Callout perbandingan QoS 1 (Guaranteed Delivery) vs QoS 0 (Fire & Forget).
+    - **Tabel Local REST API**: Endpoint `/api/v1/system/version`, `/api/v1/system/ap-status`, `/api/v1/system/reboot` dengan method badges (`.docs-method-badge.get`, `.docs-method-badge.post`).
+  - **Kolom Kanan (~45%)**:
+    - **Sticky Code Terminal**: Kotak konsol kode gelap bernomor baris dengan syntax highlighting (`.ck-kw`, `.ck-fn`, `.ck-str`, `.ck-num`, `.ck-prop`, `.ck-cmt`).
+    - **Language Switcher Pills**: Tab minimalis interaktif untuk 6 bahasa/platform: **`Python`**, **`Node.js`**, **`Go`**, **`Rust`**, **`Node-RED`**, dan **`cURL`**.
+    - **Aksi Salin Kode (`.docs-copy-action-btn`)**: Tombol salin satu klik dengan teks berubah menjadi "Tersalin!" dan feedback toast.
+- **3. Kebijakan Navigasi & Tampilan Mobile**:
+  - **Sidebar Desktop**: Item navigasi `Integration Docs` dengan ikon `< / >` (`<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>`) ditambahkan secara konsisten pada seluruh halaman admin (`index.html`, `auth_admin.html`, `settings.html`, `firmware.html`, `log.html`, `test.html`).
+  - **Top Header Mobile (`.navbar`)**: Konsisten dengan seluruh halaman administratif: Logo IOTARU di kiri, judul halaman (`Integration Docs`), dan tombol logout mobile (`#mobileLogoutBtn`) dengan ikon dan teks bahasa Indonesia (`Keluar`).
+  - **Bottom Navbar Mobile (`.bottom-nav`)**: **TIDAK MENAMPILKAN** item Docs demi menjaga kebersihan, kerapian, dan ergonomi jempol pada layar smartphone berlebar 360–414px. Tetap mempertahankan 5 tombol inti standar yang simetris: `Overview`, `Config` (sheet trigger), `Test` (highlight center pill), `Firmware`, dan `Reboot` (power sheet trigger).
+
+
+
 
 
