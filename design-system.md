@@ -1618,6 +1618,32 @@ Pemisahan arsitektur versioning gateway agar setiap layer dapat di-update secara
   - **Top Header Mobile (`.navbar`)**: Konsisten dengan seluruh halaman administratif: Logo IOTARU di kiri, judul halaman (`Integration Docs`), dan tombol logout mobile (`#mobileLogoutBtn`) dengan ikon dan teks bahasa Indonesia (`Keluar`).
   - **Bottom Navbar Mobile (`.bottom-nav`)**: **TIDAK MENAMPILKAN** item Docs demi menjaga kebersihan, kerapian, dan ergonomi jempol pada layar smartphone berlebar 360–414px. Tetap mempertahankan 5 tombol inti standar yang simetris: `Overview`, `Config` (sheet trigger), `Test` (highlight center pill), `Firmware`, dan `Reboot` (power sheet trigger).
 
+## 61. Kustomisasi Field Telemetri MQTT Dinamis (Dynamic Bitmask Protocol v2)
+- **1. Deskripsi Komponen UI & Lokasi**:
+  - Ditempatkan di dalam Bento Card 4 (*Broker Telemetri MQTT Gateway*) pada halaman `data/auth_admin.html`.
+  - Menggunakan grid checkbox responsif (`.telem-checkbox-grid`) dengan tile interaktif (`.telem-chk-card`).
+  - Dilengkapi indikator badge interaktif (`#telemByteBadge`) yang menghitung panjang total biner secara real-time via fungsi `recalcTelemMask()`.
+- **2. Spesifikasi Token CSS Komponen**:
+  - Grid Layout: `display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;`.
+  - Tile Card (`.telem-chk-card`):
+    - Background normal: `#090e18`, Border: `1px solid #1a2333`, Border Radius: `9px`, Padding: `10px 14px`.
+    - Hover state: Background `#0d1424`, Border `#334155`.
+    - Active / Checked state: Background `rgba(14, 165, 233, 0.07)`, Border `rgba(56, 189, 248, 0.45)`.
+  - Bobot Byte Badge (`.telem-chk-badge`):
+    - Tipografi: `ui-monospace, monospace; font-size: 0.70rem; font-weight: 700;`.
+    - Badge state checked: Background `rgba(56, 189, 248, 0.2)`, Text `#38bdf8`.
+- **3. Arsitektur Bitmask Biner Protocol v2**:
+  - Setiap beacon diawali 1 Byte Header Mask (`uint8_t`):
+    - `0x80`: Identifier Protokol Dinamis v2 (selalu 1).
+    - `0x01`: Proximity UUID (16 Byte).
+    - `0x02`: Major ID (2 Byte, Big-Endian).
+    - `0x04`: Minor ID (2 Byte, Big-Endian).
+    - `0x08`: RSSI (1 Byte, Signed int8).
+    - `0x10`: Battery % (1 Byte, Unsigned uint8).
+    - `0x20`: Timestamp (4 Byte, Unsigned uint32 Big-Endian).
+  - **Urutan Pengemasan Biner**: `UUID` &rarr; `Major` &rarr; `Minor` &rarr; `RSSI` &rarr; `Battery` &rarr; `Timestamp`.
+  - **Universal Client Parser Compatibility**: Subscriber klien (Node.js, Python, Go, Rust) hanya menguji bitmask flag, sehingga perubahan centang di Web UI tidak pernah merusak atau membutuhkan modifikasi script klien.
+
 
 
 

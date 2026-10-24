@@ -236,29 +236,65 @@ static size_t calculateWireBytes(size_t topicLen, size_t payloadLen, uint8_t qos
 
 bool MqttService::buildBinaryPayload(const BeaconPacket& p, uint8_t* outBuf, size_t outBufMaxLen, size_t& outLen) {
     if (!outBuf) return false;
-    if (p.type == BeaconType::IBEACON) {
-        if (outBufMaxLen < 6) return false;
-        outBuf[0] = 0x00;
-        outBuf[1] = (uint8_t)(p.major >> 8);
-        outBuf[2] = (uint8_t)(p.major & 0xFF);
-        outBuf[3] = (uint8_t)(p.minor >> 8);
-        outBuf[4] = (uint8_t)(p.minor & 0xFF);
-        outBuf[5] = (int8_t)p.rssi;
-        outLen = 6;
-        return true;
-    } else if (p.type == BeaconType::IBEACON_EXT || p.type == BeaconType::MINEW_B) {
-        if (outBufMaxLen < 7) return false;
-        outBuf[0] = 0x01;
-        outBuf[1] = (uint8_t)(p.major >> 8);
-        outBuf[2] = (uint8_t)(p.major & 0xFF);
-        outBuf[3] = (uint8_t)(p.minor >> 8);
-        outBuf[4] = (uint8_t)(p.minor & 0xFF);
-        outBuf[5] = (int8_t)p.rssi;
-        outBuf[6] = p.battery;
-        outLen = 7;
-        return true;
+
+    // Bitmask dinamis v2 (Bit 7 selalu 1)
+    uint8_t mask = TELEM_MASK_V2_FLAG | (uint8_t)(g_config.telem_mask & 0x3F);
+
+    // Hitung ukuran total yang dibutuhkan
+    size_t reqLen = 1; // 1 byte mask
+    if (mask & TELEM_MASK_UUID)  reqLen += 16;
+    if (mask & TELEM_MASK_MAJOR) reqLen += 2;
+    if (mask & TELEM_MASK_MINOR) reqLen += 2;
+    if (mask & TELEM_MASK_RSSI)  reqLen += 1;
+    if (mask & TELEM_MASK_BATT)  reqLen += 1;
+    if (mask & TELEM_MASK_TIME)  reqLen += 4;
+
+    if (outBufMaxLen < reqLen) return false;
+
+    size_t idx = 0;
+    outBuf[idx++] = mask;
+
+    // 1. Proximity UUID (16 Byte)
+    if (mask & TELEM_MASK_UUID) {
+        memcpy(outBuf + idx, p.uuid, 16);
+        idx += 16;
     }
-    return false;
+
+    // 2. Major (2 Byte, Big-Endian)
+    if (mask & TELEM_MASK_MAJOR) {
+        outBuf[idx++] = (uint8_t)(p.major >> 8);
+        outBuf[idx++] = (uint8_t)(p.major & 0xFF);
+    }
+
+    // 3. Minor (2 Byte, Big-Endian)
+    if (mask & TELEM_MASK_MINOR) {
+        outBuf[idx++] = (uint8_t)(p.minor >> 8);
+        outBuf[idx++] = (uint8_t)(p.minor & 0xFF);
+    }
+
+    // 4. RSSI (1 Byte Bertanda)
+    if (mask & TELEM_MASK_RSSI) {
+        outBuf[idx++] = (int8_t)p.rssi;
+    }
+
+    // 5. Battery (1 Byte Persentase)
+    if (mask & TELEM_MASK_BATT) {
+        outBuf[idx++] = (p.type == BeaconType::IBEACON_EXT || p.type == BeaconType::MINEW_B) ? p.battery : 0;
+    }
+
+    // 6. Timestamp (4 Byte, Big-Endian) - Menggunakan Epoch NTP riil jika ada, atau uptime detik
+    if (mask & TELEM_MASK_TIME) {
+        time_t nowSec = 0;
+        time(&nowSec);
+        uint32_t ts = (nowSec > 1600000000) ? (uint32_t)nowSec : (uint32_t)(esp_timer_get_time() / 1000000);
+        outBuf[idx++] = (uint8_t)((ts >> 24) & 0xFF);
+        outBuf[idx++] = (uint8_t)((ts >> 16) & 0xFF);
+        outBuf[idx++] = (uint8_t)((ts >> 8) & 0xFF);
+        outBuf[idx++] = (uint8_t)(ts & 0xFF);
+    }
+
+    outLen = idx;
+    return true;
 }
 
 void MqttService::updateTopicNames() {
@@ -631,7 +667,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                 continue; // Buang paket kadaluarsa dan catat ke DropLog
             }
 
-            uint8_t binBuffer[16];
+            uint8_t binBuffer[32];
             size_t binLen = 0;
             if (buildBinaryPayload(packet, binBuffer, sizeof(binBuffer), binLen)) {
                 // Periksa apakah batch saat ini sudah penuh sebelum menambah item baru

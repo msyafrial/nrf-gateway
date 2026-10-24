@@ -559,77 +559,73 @@
                     <span class="docs-card-icon emerald">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
                     </span>
-                    <h3>Struktur Data Telemetri Beacon</h3>
+                    <h3>Struktur Data Telemetri Beacon (Bitmask Dynamic Protocol v2)</h3>
                   </div>
-                  <span class="docs-type-badge">application/json</span>
+                  <span class="docs-type-badge">Compact Binary v2</span>
                 </div>
                 <p style="font-size:0.86rem;color:#94a3b8;margin-bottom:14px;line-height:1.45;">
-                  Gateway memancarkan paket data hasil pemindaian BLE iBeacon dalam bentuk JSON Array pada topik data broker MQTT.
+                  Gateway memancarkan paket telemetri biner hemat bandwidth dengan bitmask <em>self-describing</em>. Field yang dikirim dapat dicentang bebas di Web UI tanpa merusak script parser klien.
                 </p>
                 <div class="docs-table-wrap">
                   <table class="docs-table">
                     <thead>
                       <tr>
-                        <th>Field</th>
-                        <th>Tipe</th>
-                        <th>Contoh</th>
+                        <th>Urutan Field</th>
+                        <th>Bit Flag</th>
+                        <th>Ukuran</th>
+                        <th>Tipe Data</th>
                         <th>Keterangan</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr>
-                        <td><strong>mac</strong></td>
-                        <td><span class="docs-type-badge">string</span></td>
-                        <td><code>AC:23:3F:A1:B2:C3</code></td>
-                        <td>Alamat MAC fisik hardware beacon BLE</td>
-                      </tr>
-                      <tr>
-                        <td><strong>uuid</strong></td>
-                        <td><span class="docs-type-badge">string</span></td>
-                        <td><code>FDA50693-A4E2-4FB1...</code></td>
-                        <td>Proximity UUID 128-bit iBeacon</td>
-                      </tr>
-                      <tr>
-                        <td><strong>major</strong></td>
-                        <td><span class="docs-type-badge">uint16</span></td>
-                        <td><code>10001</code></td>
-                        <td>Identifier grup/lokasi (0 - 65535)</td>
-                      </tr>
-                      <tr>
-                        <td><strong>minor</strong></td>
-                        <td><span class="docs-type-badge">uint16</span></td>
-                        <td><code>102</code></td>
-                        <td>Identifier unit individual (0 - 65535)</td>
-                      </tr>
-                      <tr>
-                        <td><strong>rssi</strong></td>
-                        <td><span class="docs-type-badge">int8</span></td>
-                        <td><code>-68</code></td>
-                        <td>Kekuatan sinyal radio diterima (dBm)</td>
-                      </tr>
-                      <tr>
-                        <td><strong>tx_power</strong></td>
-                        <td><span class="docs-type-badge">int8</span></td>
-                        <td><code>-59</code></td>
-                        <td>Kalibrasi daya pancar pada jarak 1 meter</td>
-                      </tr>
-                      <tr>
-                        <td><strong>distance</strong></td>
-                        <td><span class="docs-type-badge">float</span></td>
-                        <td><code>2.45</code></td>
-                        <td>Estimasi jarak kalkulasi log-distance (meter)</td>
-                      </tr>
-                      <tr>
-                        <td><strong>batt_pct</strong></td>
+                        <td><strong>Header Mask</strong></td>
+                        <td><code>0x80</code></td>
+                        <td>1 Byte</td>
                         <td><span class="docs-type-badge">uint8</span></td>
-                        <td><code>94</code></td>
-                        <td>Estimasi kapasitas baterai beacon (%)</td>
+                        <td>Penanda protokol dinamis v2 + kombinasi bit aktif</td>
                       </tr>
                       <tr>
-                        <td><strong>timestamp</strong></td>
-                        <td><span class="docs-type-badge">int64</span></td>
-                        <td><code>1729792000</code></td>
-                        <td>Unix Epoch timestamp detik (Sinkronisasi NTP)</td>
+                        <td><strong>1. Proximity UUID</strong></td>
+                        <td><code>0x01</code></td>
+                        <td>16 Byte</td>
+                        <td><span class="docs-type-badge">hex 128-bit</span></td>
+                        <td>Raw Proximity UUID iBeacon</td>
+                      </tr>
+                      <tr>
+                        <td><strong>2. Major ID</strong></td>
+                        <td><code>0x02</code></td>
+                        <td>2 Byte</td>
+                        <td><span class="docs-type-badge">uint16 BE</span></td>
+                        <td>ID grup / lantai / lokasi (0 - 65535)</td>
+                      </tr>
+                      <tr>
+                        <td><strong>3. Minor ID</strong></td>
+                        <td><code>0x04</code></td>
+                        <td>2 Byte</td>
+                        <td><span class="docs-type-badge">uint16 BE</span></td>
+                        <td>ID unik unit aset / tag (0 - 65535)</td>
+                      </tr>
+                      <tr>
+                        <td><strong>4. RSSI</strong></td>
+                        <td><code>0x08</code></td>
+                        <td>1 Byte</td>
+                        <td><span class="docs-type-badge">int8</span></td>
+                        <td>Kekuatan sinyal radio fisik diterima (dBm)</td>
+                      </tr>
+                      <tr>
+                        <td><strong>5. Battery</strong></td>
+                        <td><code>0x10</code></td>
+                        <td>1 Byte</td>
+                        <td><span class="docs-type-badge">uint8</span></td>
+                        <td>Kapasitas baterai beacon (0 - 100%)</td>
+                      </tr>
+                      <tr>
+                        <td><strong>6. Timestamp</strong></td>
+                        <td><code>0x20</code></td>
+                        <td>4 Byte</td>
+                        <td><span class="docs-type-badge">uint32 BE</span></td>
+                        <td>Unix Epoch detik sinkronisasi NTP / uptime detik</td>
                       </tr>
                     </tbody>
                   </table>

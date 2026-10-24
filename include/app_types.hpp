@@ -22,6 +22,16 @@ struct __attribute__((packed)) BeaconBinaryFrame {
 
 static_assert(sizeof(BeaconBinaryFrame) == 25, "BeaconBinaryFrame must be exactly 25 bytes");
 
+// Bitmask Flags Dynamic Telemetry Protocol v2 (Urutan: UUID, Major, Minor, RSSI, Battery, Timestamp)
+constexpr uint32_t TELEM_MASK_V2_FLAG   = 0x80; // Penanda format dinamis v2
+constexpr uint32_t TELEM_MASK_UUID      = 0x01; // Proximity UUID (16B)
+constexpr uint32_t TELEM_MASK_MAJOR     = 0x02; // Major (2B)
+constexpr uint32_t TELEM_MASK_MINOR     = 0x04; // Minor (2B)
+constexpr uint32_t TELEM_MASK_RSSI      = 0x08; // RSSI (1B)
+constexpr uint32_t TELEM_MASK_BATT      = 0x10; // Battery (1B)
+constexpr uint32_t TELEM_MASK_TIME      = 0x20; // Timestamp (4B)
+constexpr uint32_t TELEM_MASK_DEFAULT   = 0x9E; // 0x80 | 0x02 | 0x04 | 0x08 | 0x10 (Major, Minor, RSSI, Battery)
+
 enum class BeaconType : uint8_t {
     UNKNOWN     = 0,
     IBEACON_EXT = 1,

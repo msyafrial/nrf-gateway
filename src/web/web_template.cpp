@@ -449,6 +449,20 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
         snprintf(out_buf, max_len, "%s", (g_config.mqtt_qos != 0) ? "selected" : "");
     } else if (key == "mqtt_keepalive") {
         snprintf(out_buf, max_len, "%d", (g_config.mqtt_keepalive >= 5 && g_config.mqtt_keepalive <= 65535) ? g_config.mqtt_keepalive : 30);
+    } else if (key == "telem_mask") {
+        snprintf(out_buf, max_len, "%u", (unsigned int)g_config.telem_mask);
+    } else if (key == "telem_uuid_checked") {
+        snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_UUID) ? "checked" : "");
+    } else if (key == "telem_major_checked") {
+        snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_MAJOR) ? "checked" : "");
+    } else if (key == "telem_minor_checked") {
+        snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_MINOR) ? "checked" : "");
+    } else if (key == "telem_rssi_checked") {
+        snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_RSSI) ? "checked" : "");
+    } else if (key == "telem_batt_checked") {
+        snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_BATT) ? "checked" : "");
+    } else if (key == "telem_time_checked") {
+        snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_TIME) ? "checked" : "");
     } else if (key == "filter_uuid_en") {
         snprintf(out_buf, max_len, "%s", g_config.filter_uuid_en ? "1" : "0");
     } else if (key == "filter_uuid_checked") {

@@ -199,6 +199,73 @@
     .ap-banner-card { flex-direction: column; align-items: stretch; gap: 12px; }
     .btn-ap-stop { width: 100%; justify-content: center; }
   }
+
+  /* Kustomisasi Field Telemetri MQTT (Bitmask v2) */
+  .telem-checkbox-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .telem-chk-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #090e18;
+    border: 1px solid #1a2333;
+    border-radius: 9px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+  }
+  .telem-chk-card:hover {
+    border-color: #334155;
+    background: #0d1424;
+  }
+  .telem-chk-card:has(input:checked) {
+    border-color: rgba(56, 189, 248, 0.45);
+    background: rgba(14, 165, 233, 0.07);
+  }
+  .telem-chk-card input[type="checkbox"] {
+    width: 17px;
+    height: 17px;
+    accent-color: #0284c7;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .telem-chk-content {
+    flex: 1;
+    min-width: 0;
+  }
+  .telem-chk-title {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: #e2e8f0;
+    line-height: 1.25;
+  }
+  .telem-chk-sub {
+    font-size: 0.72rem;
+    color: #8191a6;
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .telem-chk-badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #1e293b;
+    color: #94a3b8;
+    font-size: 0.70rem;
+    font-weight: 700;
+    font-family: ui-monospace, monospace;
+    flex-shrink: 0;
+  }
+  .telem-chk-card:has(input:checked) .telem-chk-badge {
+    background: rgba(56, 189, 248, 0.2);
+    color: #38bdf8;
+  }
 </style>
 
 <div id="apModeBanner" class="ap-banner-card" style="display:none;">
@@ -619,6 +686,91 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                 </div>
                 <span style="font-size:0.75rem; color:#94a3b8; margin-top:2px; display:block;">Interval detak ping soket TCP (5 &ndash; 300 detik. Default: 30s).</span>
               </div>
+
+              <!-- KUSTOMISASI FIELD TELEMETRI BINER (BITMASK PROTOCOL V2) -->
+              <div class="item full" style="margin-top: 8px; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.06);">
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+                  <div>
+                    <label style="font-size: 0.92rem; font-weight: 700; color: #ffffff; display: flex; align-items: center; gap: 8px; margin: 0;">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                      Kustomisasi Field Telemetri MQTT
+                    </label>
+                    <span style="font-size: 0.78rem; color: #94a3b8; display: block; margin-top: 2px;">
+                      Pilih data beacon yang dikemas ke MQTT. Parser klien tetap satu kode (urutan otomatis via bitmask).
+                    </span>
+                  </div>
+                  <div id="telemByteBadge" style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.35); color: #38bdf8; font-size: 0.76rem; font-weight: 600; font-family: ui-monospace, monospace;">
+                    Panjang: <strong id="telemTotalBytes">7</strong> Byte / Beacon
+                  </div>
+                </div>
+
+                <!-- Hidden inputs for form submit -->
+                <input type="hidden" name="telem_present" value="1">
+                <input type="hidden" id="telem_mask_input" name="telem_mask" value="%telem_mask%">
+
+                <!-- Checkbox Grid (Urutan: UUID, Major, Minor, RSSI, Battery, Timestamp) -->
+                <div class="telem-checkbox-grid">
+                  <!-- 1. UUID -->
+                  <label class="telem-chk-card">
+                    <input type="checkbox" id="chk_telem_uuid" name="telem_uuid" value="1" %telem_uuid_checked% onchange="recalcTelemMask()">
+                    <div class="telem-chk-content">
+                      <div class="telem-chk-title">Proximity UUID</div>
+                      <div class="telem-chk-sub">128-bit raw hex UUID</div>
+                    </div>
+                    <span class="telem-chk-badge">+16B</span>
+                  </label>
+
+                  <!-- 2. Major -->
+                  <label class="telem-chk-card">
+                    <input type="checkbox" id="chk_telem_major" name="telem_major" value="1" %telem_major_checked% onchange="recalcTelemMask()">
+                    <div class="telem-chk-content">
+                      <div class="telem-chk-title">Major ID</div>
+                      <div class="telem-chk-sub">ID grup / lokasi (uint16)</div>
+                    </div>
+                    <span class="telem-chk-badge">+2B</span>
+                  </label>
+
+                  <!-- 3. Minor -->
+                  <label class="telem-chk-card">
+                    <input type="checkbox" id="chk_telem_minor" name="telem_minor" value="1" %telem_minor_checked% onchange="recalcTelemMask()">
+                    <div class="telem-chk-content">
+                      <div class="telem-chk-title">Minor ID</div>
+                      <div class="telem-chk-sub">ID unik aset / tag (uint16)</div>
+                    </div>
+                    <span class="telem-chk-badge">+2B</span>
+                  </label>
+
+                  <!-- 4. RSSI -->
+                  <label class="telem-chk-card">
+                    <input type="checkbox" id="chk_telem_rssi" name="telem_rssi" value="1" %telem_rssi_checked% onchange="recalcTelemMask()">
+                    <div class="telem-chk-content">
+                      <div class="telem-chk-title">Kekuatan RSSI</div>
+                      <div class="telem-chk-sub">Sinyal radio dBm (int8)</div>
+                    </div>
+                    <span class="telem-chk-badge">+1B</span>
+                  </label>
+
+                  <!-- 5. Battery -->
+                  <label class="telem-chk-card">
+                    <input type="checkbox" id="chk_telem_batt" name="telem_batt" value="1" %telem_batt_checked% onchange="recalcTelemMask()">
+                    <div class="telem-chk-content">
+                      <div class="telem-chk-title">Baterai Tag</div>
+                      <div class="telem-chk-sub">Persentase 0-100% (uint8)</div>
+                    </div>
+                    <span class="telem-chk-badge">+1B</span>
+                  </label>
+
+                  <!-- 6. Timestamp -->
+                  <label class="telem-chk-card">
+                    <input type="checkbox" id="chk_telem_time" name="telem_time" value="1" %telem_time_checked% onchange="recalcTelemMask()">
+                    <div class="telem-chk-content">
+                      <div class="telem-chk-title">Waktu Detik</div>
+                      <div class="telem-chk-sub">Epoch NTP / uptime (uint32)</div>
+                    </div>
+                    <span class="telem-chk-badge">+4B</span>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -694,6 +846,24 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
           }
         });
       }
+
+      window.recalcTelemMask = function() {
+        var mask = 0x80; // Flag Protocol v2
+        var bytes = 1;   // Header mask
+        if (document.getElementById("chk_telem_uuid") && document.getElementById("chk_telem_uuid").checked) { mask |= 0x01; bytes += 16; }
+        if (document.getElementById("chk_telem_major") && document.getElementById("chk_telem_major").checked) { mask |= 0x02; bytes += 2; }
+        if (document.getElementById("chk_telem_minor") && document.getElementById("chk_telem_minor").checked) { mask |= 0x04; bytes += 2; }
+        if (document.getElementById("chk_telem_rssi") && document.getElementById("chk_telem_rssi").checked) { mask |= 0x08; bytes += 1; }
+        if (document.getElementById("chk_telem_batt") && document.getElementById("chk_telem_batt").checked) { mask |= 0x10; bytes += 1; }
+        if (document.getElementById("chk_telem_time") && document.getElementById("chk_telem_time").checked) { mask |= 0x20; bytes += 4; }
+
+        var inputEl = document.getElementById("telem_mask_input");
+        if (inputEl) inputEl.value = mask;
+
+        var bytesEl = document.getElementById("telemTotalBytes");
+        if (bytesEl) bytesEl.textContent = bytes;
+      };
+      recalcTelemMask();
     })();
   </script>
   <!-- Modal Pop-up Pilihan Wi-Fi Scanner -->

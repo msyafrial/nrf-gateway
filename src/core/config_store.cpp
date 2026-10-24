@@ -440,6 +440,7 @@ void ConfigStore::initNvsConfiguration() {
             nvsCopyU32(hMaster, hDest, "use_ssl", 0);
             nvsCopyU32(hMaster, hDest, "qos", 1);
             nvsCopyU32(hMaster, hDest, "keepalive", 30);
+            nvsCopyU32(hMaster, hDest, "telem_mask", TELEM_MASK_DEFAULT);
             nvs_close(hMaster);
         } else {
             nvs_set_str(hDest, "host", "socket.cubeacon.com");
@@ -449,6 +450,7 @@ void ConfigStore::initNvsConfiguration() {
             nvs_set_u32(hDest, "use_ssl", 0);
             nvs_set_u32(hDest, "qos", 1);
             nvs_set_u32(hDest, "keepalive", 30);
+            nvs_set_u32(hDest, "telem_mask", TELEM_MASK_DEFAULT);
         }
         nvs_commit(hDest);
         nvs_close(hDest);
@@ -575,6 +577,7 @@ void ConfigStore::loadConfig() {
         g_config.mqtt_use_ssl = (int)nvsGetU32(h, "use_ssl", 0);
         g_config.mqtt_qos = (int)nvsGetU32(h, "qos", 1);
         g_config.mqtt_keepalive = (int)nvsGetU32(h, "keepalive", 30);
+        g_config.telem_mask = nvsGetU32(h, "telem_mask", TELEM_MASK_DEFAULT);
 
         char rawMqttPass[192] = {0};
         nvsGetStr(h, "pass", rawMqttPass, sizeof(rawMqttPass), "");
@@ -661,6 +664,7 @@ void ConfigStore::saveConfigAuth() {
         nvs_set_u32(h, "use_ssl", (uint32_t)g_config.mqtt_use_ssl);
         nvs_set_u32(h, "qos", (uint32_t)g_config.mqtt_qos);
         nvs_set_u32(h, "keepalive", (uint32_t)g_config.mqtt_keepalive);
+        nvs_set_u32(h, "telem_mask", g_config.telem_mask);
 
         char encMqttPass[192];
         encryptSecret(g_config.mqtt_password, encMqttPass, sizeof(encMqttPass));

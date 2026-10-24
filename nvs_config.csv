@@ -29,6 +29,7 @@ pass,data,string,eyroMQTT1234
 use_ssl,data,u32,0
 qos,data,u32,1
 keepalive,data,u32,30
+telem_mask,data,u32,158
 gateway,namespace,,
 dev_model,data,string,SG-10
 dev_ver,data,string,v1.0.0

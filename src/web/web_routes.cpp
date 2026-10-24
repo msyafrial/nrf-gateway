@@ -563,7 +563,7 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
         return ESP_OK;
     }
 
-    char body[1024] = {0};
+    char body[1536] = {0};
     int r = httpd_req_recv(req, body, sizeof(body) - 1);
     if (r <= 0) {
         httpd_resp_set_status(req, "400 Bad Request");
@@ -602,6 +602,19 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
             if (k < 5) k = 5;
             if (k > 65535) k = 65535;
             g_config.mqtt_keepalive = k;
+        }
+        if (get_form_param(body, "telem_mask", val, sizeof(val))) {
+            g_config.telem_mask = (uint32_t)strtoul(val, nullptr, 10);
+        } else if (strstr(body, "telem_present=1") != nullptr) {
+            uint32_t mask = TELEM_MASK_V2_FLAG;
+            char chk[16];
+            if (get_form_param(body, "telem_uuid", chk, sizeof(chk)) && strcmp(chk, "1") == 0)  mask |= TELEM_MASK_UUID;
+            if (get_form_param(body, "telem_major", chk, sizeof(chk)) && strcmp(chk, "1") == 0) mask |= TELEM_MASK_MAJOR;
+            if (get_form_param(body, "telem_minor", chk, sizeof(chk)) && strcmp(chk, "1") == 0) mask |= TELEM_MASK_MINOR;
+            if (get_form_param(body, "telem_rssi", chk, sizeof(chk)) && strcmp(chk, "1") == 0)  mask |= TELEM_MASK_RSSI;
+            if (get_form_param(body, "telem_batt", chk, sizeof(chk)) && strcmp(chk, "1") == 0)  mask |= TELEM_MASK_BATT;
+            if (get_form_param(body, "telem_time", chk, sizeof(chk)) && strcmp(chk, "1") == 0)  mask |= TELEM_MASK_TIME;
+            g_config.telem_mask = mask;
         }
         if (get_form_param(body, "mqtt_password", val, sizeof(val))) {
             if (!is_masked_or_empty(val)) {

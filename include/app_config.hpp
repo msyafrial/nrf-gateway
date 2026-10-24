@@ -42,6 +42,7 @@ struct AppConfig {
     int  mqtt_use_ssl; // 0: TCP Plain (mqtt://), 1: TLS/SSL (mqtts://)
     int  mqtt_qos;     // 0: QoS 0 (Fire & Forget), 1: QoS 1 (Delivery Guaranteed)
     int  mqtt_keepalive; // 5 .. 300 detik (Default: 30)
+    uint32_t telem_mask; // Bitmask flags seleksi field telemetri dinamis (Default: 0x9E)
 
     // Gateway Namespace ("gateway" / "cfg_gate")
     char    device_model[16];
