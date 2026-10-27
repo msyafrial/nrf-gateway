@@ -938,7 +938,7 @@ Pemisahan arsitektur versioning gateway agar setiap layer dapat di-update secara
   - Cookie otentikasi ditingkatkan menggunakan atribut `SameSite=Strict`.
   - Alokasi hak akses admin otomatis pada WebSocket (`allocate_ws_slot(fd, UserRole::ADMIN)`) dihapus total; frame WebSocket hanya diproses setelah memvalidasi session cookie atau query parameter `?token=`.
 - **5. Filesystem OTA Flash Erase Protection (`OtaService`)**:
-  - Panggilan `esp_vfs_littlefs_unregister("storage")` disematkan sebelum eksekusi `esp_partition_erase_range`, mencegah rusaknya VFS cache dan crash sistem saat partisi LittleFS ditimpa.
+  - Pengecekan `esp_littlefs_mounted("storage")` sebelum eksekusi `esp_vfs_littlefs_unregister("storage")` dan proteksi error `0x103` (`ESP_ERR_INVALID_STATE`). Mencegah rusaknya VFS cache saat partisi LittleFS ditimpa, sekaligus menjamin proses upload LittleFS via Emergency Recovery Mode tetap berhasil meskipun LittleFS awalnya belum terpasang atau gagal mount saat cold boot.
 - **6. Kredensial NVS Universal Terenkripsi AES-128 Hardware-Bound (`ConfigStore`)**:
   - Mempertahankan satu citra pabrik universal `nvs.bin` untuk seluruh unit ESP32 tanpa memerlukan pembakaran eFuse fisik.
   - Pada boot pertama atau saat penyimpanan, password dienkripsi secara software menggunakan algoritma AES-128-ECB dengan key 16-byte yang diturunkan secara deterministik dari MAC fisik unik ESP32 (`esp_read_mac`) ditambah salt konstan.
@@ -1643,6 +1643,21 @@ Pemisahan arsitektur versioning gateway agar setiap layer dapat di-update secara
     - `0x20`: Timestamp (4 Byte, Unsigned uint32 Big-Endian).
   - **Urutan Pengemasan Biner**: `UUID` &rarr; `Major` &rarr; `Minor` &rarr; `RSSI` &rarr; `Battery` &rarr; `Timestamp`.
   - **Universal Client Parser Compatibility**: Subscriber klien (Node.js, Python, Go, Rust) hanya menguji bitmask flag, sehingga perubahan centang di Web UI tidak pernah merusak atau membutuhkan modifikasi script klien.
+
+## 62. Standarisasi Terminal Kode Dokumentasi Integrasi (Integration Docs Code Terminal)
+- **1. Sinkronisasi Snippet dengan `test.js`**:
+  - Tab `Node.js` ditetapkan sebagai default aktif (`switchSnippet('nodejs')`) pada konsol kode sticky terminal di `data/docs.html`.
+  - Logika dekoder biner di dalam snippet mengadopsi secara persis arsitektur fungsi `parseBinaryPayload(buf)` dari `test.js`, meliputi penanganan dinamis Header Bitmask v2 (`0x80 | (mask & 0x3F)`) dan backward compatibility untuk Protokol Legacy v1 (`0x00` Standard 6B dan `0x01` Extended 7B).
+- **2. Standarisasi Parameter Koneksi & Topik Subkripsi**:
+  - **Topik Subkripsi**: Menggunakan format spesifik per gateway: `SG-10/data/<id-device>`.
+  - **Kredensial Autentikasi**: Placeholder kredensial standar pengembang:
+    - Username: `"MQTT_USERNAME"`
+    - Password: `"MQTT_PASSWORD"`
+  - Menghilangkan kredensial hardcoded pada dokumentasi publik untuk menjaga keamanan operasional.
+- **3. Urutan Tab Bahasa Pengembang**:
+  - `Node.js` (Aktif secara default) &rarr; `Python` &rarr; `Go` &rarr; `Rust` &rarr; `Node-RED` &rarr; `cURL`.
+  - Seluruh contoh kode bahasa pemrograman pendukung diperbarui untuk membaca struktur paket biner telemetri iBeacon secara akurat.
+
 
 
 

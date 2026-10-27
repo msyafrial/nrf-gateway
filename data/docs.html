@@ -245,6 +245,11 @@
     gap: 8px;
   }
 
+  .docs-col-left, .docs-col-right {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   /* Right Column: Sticky Code Terminal */
   .docs-terminal-card {
     background: #080c14;
@@ -254,6 +259,8 @@
     position: sticky;
     top: 24px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    min-width: 0;
+    max-width: 100%;
   }
   .docs-terminal-header {
     background: #0f172a;
@@ -263,6 +270,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    flex-wrap: wrap;
   }
   .docs-lang-pills {
     display: flex;
@@ -322,6 +330,7 @@
   .docs-code-viewport {
     padding: 16px;
     max-height: 540px;
+    overflow-x: auto;
     overflow-y: auto;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.82rem;
@@ -692,8 +701,8 @@
               <div class="docs-terminal-card">
                 <div class="docs-terminal-header">
                   <div class="docs-lang-pills">
-                    <button type="button" class="docs-lang-pill active" onclick="switchSnippet('python')">Python</button>
-                    <button type="button" class="docs-lang-pill" onclick="switchSnippet('nodejs')">Node.js</button>
+                    <button type="button" class="docs-lang-pill active" onclick="switchSnippet('nodejs')">Node.js</button>
+                    <button type="button" class="docs-lang-pill" onclick="switchSnippet('python')">Python</button>
                     <button type="button" class="docs-lang-pill" onclick="switchSnippet('go')">Go</button>
                     <button type="button" class="docs-lang-pill" onclick="switchSnippet('rust')">Rust</button>
                     <button type="button" class="docs-lang-pill" onclick="switchSnippet('nodered')">Node-RED</button>
@@ -705,8 +714,8 @@
                   </button>
                 </div>
                 <div class="docs-terminal-meta">
-                  <span id="snippetFileName">main.py</span>
-                  <span id="snippetDesc">paho-mqtt v2.x listener</span>
+                  <span id="snippetFileName">test.js</span>
+                  <span id="snippetDesc">Universal Bitmask v2 &amp; Legacy v1 Decoder</span>
                 </div>
                 <div id="codeViewport" class="docs-code-viewport"></div>
               </div>
@@ -765,61 +774,459 @@
 
     // Raw snippet storage for copying
     const SNIPPETS = {
+      nodejs: {
+        file: "test.js",
+        desc: "Universal SG-10 Bitmask v2 & Legacy v1 Decoder",
+        raw: `const mqtt = require("mqtt");
+
+const brokerUrl = "mqtt://%mqtt_broker_host%:%mqtt_broker_port%";
+const topic = "SG-10/data/<id-device>";
+
+console.log(\`[*] Menghubungkan ke \${brokerUrl}...\`);
+
+const client = mqtt.connect(brokerUrl, {
+    username: "MQTT_USERNAME",
+    password: "MQTT_PASSWORD",
+    keepalive: %mqtt_keepalive%,
+    clean: true,
+    reconnectPeriod: 2000
+});
+
+client.on("connect", () => {
+    console.log("[+] Terhubung ke broker MQTT!");
+    client.subscribe(topic, { qos: 1 }, (err) => {
+        if (!err) {
+            console.log(\`[+] Berhasil subscribe ke topik: \${topic}\`);
+            console.log("[*] Menunggu paket data beacon...\\n");
+        }
+    });
+});
+
+client.on("error", (err) => {
+    console.error("[-] Error MQTT:", err.message);
+});
+
+client.on("offline", () => {
+    console.warn("[!] Koneksi terputus / offline");
+});
+
+// ─── UNIVERSAL BEACON DECODER (SG-10 Dynamic Bitmask v2 & Legacy v1) ──────────
+function parseBinaryPayload(buf) {
+    const beacons = [];
+    let i = 0;
+
+    while (i < buf.length) {
+        const header = buf[i++];
+
+        // ==============================================================
+        // PROTOKOL DINAMIS V2 (Header Bit 7 = 1)
+        // Urutan Field: UUID -> Major -> Minor -> RSSI -> Battery -> Timestamp
+        // ==============================================================
+        if (header & 0x80) {
+            const b = { protocol: "v2" };
+
+            // 1. Proximity UUID (16 Bytes)
+            if (header & 0x01) {
+                if (i + 16 > buf.length) break;
+                b.uuid = buf.toString("hex", i, i + 16)
+                    .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5")
+                    .toUpperCase();
+                i += 16;
+            }
+
+            // 2. Major (2 Bytes, Big-Endian)
+            if (header & 0x02) {
+                if (i + 2 > buf.length) break;
+                b.major = buf.readUInt16BE(i);
+                i += 2;
+            }
+
+            // 3. Minor (2 Bytes, Big-Endian)
+            if (header & 0x04) {
+                if (i + 2 > buf.length) break;
+                b.minor = buf.readUInt16BE(i);
+                i += 2;
+            }
+
+            // 4. RSSI (1 Byte Bertanda)
+            if (header & 0x08) {
+                if (i + 1 > buf.length) break;
+                b.rssi = buf.readInt8(i);
+                i += 1;
+            }
+
+            // 5. Battery (1 Byte Persentase)
+            if (header & 0x10) {
+                if (i + 1 > buf.length) break;
+                b.batt = \`\${buf.readUInt8(i)}%\`;
+                i += 1;
+            }
+
+            // 6. Timestamp (4 Bytes Big-Endian)
+            if (header & 0x20) {
+                if (i + 4 > buf.length) break;
+                const ts = buf.readUInt32BE(i);
+                b.timestamp = ts;
+                b.timeStr = (ts > 1600000000) ? new Date(ts * 1000).toISOString() : \`\${ts}s uptime\`;
+                i += 4;
+            }
+
+            beacons.push(b);
+        }
+        // ==============================================================
+        // PROTOKOL LEGACY V1 (Header 0x00 = Standard 6B, 0x01 = Extended 7B)
+        // ==============================================================
+        else if (header === 0x00) {
+            if (i + 5 > buf.length) break;
+            beacons.push({
+                protocol: "v1-std",
+                major: buf.readUInt16BE(i),
+                minor: buf.readUInt16BE(i + 2),
+                rssi: buf.readInt8(i + 4),
+                batt: "-"
+            });
+            i += 5;
+        } else if (header === 0x01) {
+            if (i + 6 > buf.length) break;
+            beacons.push({
+                protocol: "v1-ext",
+                major: buf.readUInt16BE(i),
+                minor: buf.readUInt16BE(i + 2),
+                rssi: buf.readInt8(i + 4),
+                batt: \`\${buf.readUInt8(i + 5)}%\`
+            });
+            i += 6;
+        } else {
+            break;
+        }
+    }
+
+    return beacons;
+}
+
+client.on("message", (t, payload) => {
+    const beacons = parseBinaryPayload(payload);
+
+    if (beacons.length > 0) {
+        console.log(\`[Topik: \${t}] Diterima \${beacons.length} beacon (\${payload.length} bytes):\`);
+        beacons.forEach(b => {
+            let out = "  └─";
+            if (b.major !== undefined) out += \` Major: \${b.major.toString().padEnd(5)} |\`;
+            if (b.minor !== undefined) out += \` Minor: \${b.minor.toString().padEnd(5)} |\`;
+            if (b.rssi !== undefined) out += \` RSSI: \${b.rssi.toString().padStart(3)} dBm |\`;
+            if (b.batt !== undefined) out += \` Batt: \${b.batt.padEnd(4)} |\`;
+            if (b.uuid) out += \` UUID: \${b.uuid} |\`;
+            if (b.timeStr) out += \` Time: \${b.timeStr} |\`;
+            console.log(out.slice(0, -1));
+        });
+        return;
+    }
+
+    try {
+        const json = JSON.parse(payload.toString());
+        console.log(\`[JSON Topik: \${t}]\`, json);
+    } catch {
+        console.log(\`[RAW HEX Topik: \${t}] (\${payload.length} bytes):\`, payload.toString("hex"));
+    }
+});`,
+        html: `<span class="ck-kw">const</span> mqtt = <span class="ck-fn">require</span>(<span class="ck-str">"mqtt"</span>);
+
+<span class="ck-kw">const</span> brokerUrl = <span class="ck-str">"mqtt://%mqtt_broker_host%:%mqtt_broker_port%"</span>;
+<span class="ck-kw">const</span> topic = <span class="ck-str">"SG-10/data/&lt;id-device&gt;"</span>;
+
+console.<span class="ck-fn">log</span>(\`[*] Menghubungkan ke \${brokerUrl}...\`);
+
+<span class="ck-kw">const</span> client = mqtt.<span class="ck-fn">connect</span>(brokerUrl, {
+    <span class="ck-prop">username</span>: <span class="ck-str">"MQTT_USERNAME"</span>,
+    <span class="ck-prop">password</span>: <span class="ck-str">"MQTT_PASSWORD"</span>,
+    <span class="ck-prop">keepalive</span>: <span class="ck-num">%mqtt_keepalive%</span>,
+    <span class="ck-prop">clean</span>: <span class="ck-kw">true</span>,
+    <span class="ck-prop">reconnectPeriod</span>: <span class="ck-num">2000</span>
+});
+
+client.<span class="ck-fn">on</span>(<span class="ck-str">"connect"</span>, () => {
+    console.<span class="ck-fn">log</span>(<span class="ck-str">"[+] Terhubung ke broker MQTT!"</span>);
+    client.<span class="ck-fn">subscribe</span>(topic, { <span class="ck-prop">qos</span>: <span class="ck-num">1</span> }, (err) => {
+        <span class="ck-kw">if</span> (!err) {
+            console.<span class="ck-fn">log</span>(\`[+] Berhasil subscribe ke topik: \${topic}\`);
+            console.<span class="ck-fn">log</span>(<span class="ck-str">"[*] Menunggu paket data beacon...\\n"</span>);
+        }
+    });
+});
+
+client.<span class="ck-fn">on</span>(<span class="ck-str">"error"</span>, (err) => {
+    console.<span class="ck-fn">error</span>(<span class="ck-str">"[-] Error MQTT:"</span>, err.message);
+});
+
+client.<span class="ck-fn">on</span>(<span class="ck-str">"offline"</span>, () => {
+    console.<span class="ck-fn">warn</span>(<span class="ck-str">"[!] Koneksi terputus / offline"</span>);
+});
+
+<span class="ck-cmt">// ─── UNIVERSAL BEACON DECODER (SG-10 Dynamic Bitmask v2 &amp; Legacy v1) ───</span>
+<span class="ck-kw">function</span> <span class="ck-fn">parseBinaryPayload</span>(buf) {
+    <span class="ck-kw">const</span> beacons = [];
+    <span class="ck-kw">let</span> i = <span class="ck-num">0</span>;
+
+    <span class="ck-kw">while</span> (i &lt; buf.length) {
+        <span class="ck-kw">const</span> header = buf[i++];
+
+        <span class="ck-cmt">// PROTOKOL DINAMIS V2 (Header Bit 7 = 1)</span>
+        <span class="ck-kw">if</span> (header &amp; <span class="ck-num">0x80</span>) {
+            <span class="ck-kw">const</span> b = { <span class="ck-prop">protocol</span>: <span class="ck-str">"v2"</span> };
+
+            <span class="ck-cmt">// 1. Proximity UUID (16 Bytes)</span>
+            <span class="ck-kw">if</span> (header &amp; <span class="ck-num">0x01</span>) {
+                <span class="ck-kw">if</span> (i + <span class="ck-num">16</span> &gt; buf.length) <span class="ck-kw">break</span>;
+                b.uuid = buf.<span class="ck-fn">toString</span>(<span class="ck-str">"hex"</span>, i, i + <span class="ck-num">16</span>)
+                    .<span class="ck-fn">replace</span>(<span class="ck-str">/(.{8})(.{4})(.{4})(.{4})(.{12})/</span>, <span class="ck-str">"$1-$2-$3-$4-$5"</span>)
+                    .<span class="ck-fn">toUpperCase</span>();
+                i += <span class="ck-num">16</span>;
+            }
+
+            <span class="ck-cmt">// 2. Major (2 Bytes, Big-Endian)</span>
+            <span class="ck-kw">if</span> (header &amp; <span class="ck-num">0x02</span>) {
+                <span class="ck-kw">if</span> (i + <span class="ck-num">2</span> &gt; buf.length) <span class="ck-kw">break</span>;
+                b.major = buf.<span class="ck-fn">readUInt16BE</span>(i);
+                i += <span class="ck-num">2</span>;
+            }
+
+            <span class="ck-cmt">// 3. Minor (2 Bytes, Big-Endian)</span>
+            <span class="ck-kw">if</span> (header &amp; <span class="ck-num">0x04</span>) {
+                <span class="ck-kw">if</span> (i + <span class="ck-num">2</span> &gt; buf.length) <span class="ck-kw">break</span>;
+                b.minor = buf.<span class="ck-fn">readUInt16BE</span>(i);
+                i += <span class="ck-num">2</span>;
+            }
+
+            <span class="ck-cmt">// 4. RSSI (1 Byte Bertanda)</span>
+            <span class="ck-kw">if</span> (header &amp; <span class="ck-num">0x08</span>) {
+                <span class="ck-kw">if</span> (i + <span class="ck-num">1</span> &gt; buf.length) <span class="ck-kw">break</span>;
+                b.rssi = buf.<span class="ck-fn">readInt8</span>(i);
+                i += <span class="ck-num">1</span>;
+            }
+
+            <span class="ck-cmt">// 5. Battery (1 Byte Persentase)</span>
+            <span class="ck-kw">if</span> (header &amp; <span class="ck-num">0x10</span>) {
+                <span class="ck-kw">if</span> (i + <span class="ck-num">1</span> &gt; buf.length) <span class="ck-kw">break</span>;
+                b.batt = \`\${buf.<span class="ck-fn">readUInt8</span>(i)}%\`;
+                i += <span class="ck-num">1</span>;
+            }
+
+            <span class="ck-cmt">// 6. Timestamp (4 Bytes Big-Endian)</span>
+            <span class="ck-kw">if</span> (header &amp; <span class="ck-num">0x20</span>) {
+                <span class="ck-kw">if</span> (i + <span class="ck-num">4</span> &gt; buf.length) <span class="ck-kw">break</span>;
+                <span class="ck-kw">const</span> ts = buf.<span class="ck-fn">readUInt32BE</span>(i);
+                b.timestamp = ts;
+                b.timeStr = (ts &gt; <span class="ck-num">1600000000</span>) ? <span class="ck-kw">new</span> <span class="ck-fn">Date</span>(ts * <span class="ck-num">1000</span>).<span class="ck-fn">toISOString</span>() : \`\${ts}s uptime\`;
+                i += <span class="ck-num">4</span>;
+            }
+
+            beacons.<span class="ck-fn">push</span>(b);
+        }
+        <span class="ck-cmt">// PROTOKOL LEGACY V1</span>
+        <span class="ck-kw">else if</span> (header === <span class="ck-num">0x00</span>) {
+            <span class="ck-kw">if</span> (i + <span class="ck-num">5</span> &gt; buf.length) <span class="ck-kw">break</span>;
+            beacons.<span class="ck-fn">push</span>({
+                <span class="ck-prop">protocol</span>: <span class="ck-str">"v1-std"</span>,
+                <span class="ck-prop">major</span>: buf.<span class="ck-fn">readUInt16BE</span>(i),
+                <span class="ck-prop">minor</span>: buf.<span class="ck-fn">readUInt16BE</span>(i + <span class="ck-num">2</span>),
+                <span class="ck-prop">rssi</span>: buf.<span class="ck-fn">readInt8</span>(i + <span class="ck-num">4</span>),
+                <span class="ck-prop">batt</span>: <span class="ck-str">"-"</span>
+            });
+            i += <span class="ck-num">5</span>;
+        } <span class="ck-kw">else if</span> (header === <span class="ck-num">0x01</span>) {
+            <span class="ck-kw">if</span> (i + <span class="ck-num">6</span> &gt; buf.length) <span class="ck-kw">break</span>;
+            beacons.<span class="ck-fn">push</span>({
+                <span class="ck-prop">protocol</span>: <span class="ck-str">"v1-ext"</span>,
+                <span class="ck-prop">major</span>: buf.<span class="ck-fn">readUInt16BE</span>(i),
+                <span class="ck-prop">minor</span>: buf.<span class="ck-fn">readUInt16BE</span>(i + <span class="ck-num">2</span>),
+                <span class="ck-prop">rssi</span>: buf.<span class="ck-fn">readInt8</span>(i + <span class="ck-num">4</span>),
+                <span class="ck-prop">batt</span>: \`\${buf.<span class="ck-fn">readUInt8</span>(i + <span class="ck-num">5</span>)}%\`
+            });
+            i += <span class="ck-num">6</span>;
+        } <span class="ck-kw">else</span> {
+            <span class="ck-kw">break</span>;
+        }
+    }
+
+    <span class="ck-kw">return</span> beacons;
+}
+
+client.<span class="ck-fn">on</span>(<span class="ck-str">"message"</span>, (t, payload) => {
+    <span class="ck-kw">const</span> beacons = <span class="ck-fn">parseBinaryPayload</span>(payload);
+
+    <span class="ck-kw">if</span> (beacons.length &gt; <span class="ck-num">0</span>) {
+        console.<span class="ck-fn">log</span>(\`[Topik: \${t}] Diterima \${beacons.length} beacon (\${payload.length} bytes):\`);
+        beacons.<span class="ck-fn">forEach</span>(b => {
+            <span class="ck-kw">let</span> out = <span class="ck-str">"  └─"</span>;
+            <span class="ck-kw">if</span> (b.major !== undefined) out += \` Major: \${b.major.toString().padEnd(5)} |\`;
+            <span class="ck-kw">if</span> (b.minor !== undefined) out += \` Minor: \${b.minor.toString().padEnd(5)} |\`;
+            <span class="ck-kw">if</span> (b.rssi !== undefined) out += \` RSSI: \${b.rssi.toString().padStart(3)} dBm |\`;
+            <span class="ck-kw">if</span> (b.batt !== undefined) out += \` Batt: \${b.batt.padEnd(4)} |\`;
+            <span class="ck-kw">if</span> (b.uuid) out += \` UUID: \${b.uuid} |\`;
+            <span class="ck-kw">if</span> (b.timeStr) out += \` Time: \${b.timeStr} |\`;
+            console.<span class="ck-fn">log</span>(out.<span class="ck-fn">slice</span>(<span class="ck-num">0</span>, <span class="ck-num">-1</span>));
+        });
+        <span class="ck-kw">return</span>;
+    }
+
+    <span class="ck-kw">try</span> {
+        <span class="ck-kw">const</span> json = JSON.<span class="ck-fn">parse</span>(payload.<span class="ck-fn">toString</span>());
+        console.<span class="ck-fn">log</span>(\`[JSON Topik: \${t}]\`, json);
+    } <span class="ck-kw">catch</span> {
+        console.<span class="ck-fn">log</span>(\`[RAW HEX Topik: \${t}] (\${payload.length} bytes):\`, payload.<span class="ck-fn">toString</span>(<span class="ck-str">"hex"</span>));
+    }
+});`
+      },
       python: {
         file: "subscriber.py",
         desc: "Python 3 paho-mqtt listener",
-        raw: `import json
+        raw: `import struct
 import paho.mqtt.client as mqtt
 
 BROKER = "%mqtt_broker_host%"
 PORT = %mqtt_broker_port%
-TOPIC = "sg10/data"
+TOPIC = "SG-10/data/<id-device>"
+
+def parse_binary_payload(buf):
+    beacons = []
+    i = 0
+    n = len(buf)
+    while i < n:
+        header = buf[i]
+        i += 1
+        # Bitmask Protocol v2
+        if header & 0x80:
+            b = {'protocol': 'v2'}
+            if header & 0x01: # UUID (16B)
+                if i + 16 > n: break
+                raw_u = buf[i:i+16].hex()
+                b['uuid'] = f"{raw_u[0:8]}-{raw_u[8:12]}-{raw_u[12:16]}-{raw_u[16:20]}-{raw_u[20:32]}".upper()
+                i += 16
+            if header & 0x02: # Major (2B BE)
+                if i + 2 > n: break
+                b['major'] = struct.unpack(">H", buf[i:i+2])[0]
+                i += 2
+            if header & 0x04: # Minor (2B BE)
+                if i + 2 > n: break
+                b['minor'] = struct.unpack(">H", buf[i:i+2])[0]
+                i += 2
+            if header & 0x08: # RSSI (1B signed)
+                if i + 1 > n: break
+                b['rssi'] = struct.unpack("b", buf[i:i+1])[0]
+                i += 1
+            if header & 0x10: # Battery (1B unsigned)
+                if i + 1 > n: break
+                b['batt'] = f"{buf[i]}%"
+                i += 1
+            if header & 0x20: # Timestamp (4B BE)
+                if i + 4 > n: break
+                b['timestamp'] = struct.unpack(">I", buf[i:i+4])[0]
+                i += 4
+            beacons.append(b)
+        elif header == 0x00 and i + 5 <= n: # Legacy v1 std
+            maj, min_, rssi = struct.unpack(">HHb", buf[i:i+5])
+            beacons.append({'protocol': 'v1-std', 'major': maj, 'minor': min_, 'rssi': rssi, 'batt': '-'})
+            i += 5
+        elif header == 0x01 and i + 6 <= n: # Legacy v1 ext
+            maj, min_, rssi, batt = struct.unpack(">HHbB", buf[i:i+6])
+            beacons.append({'protocol': 'v1-ext', 'major': maj, 'minor': min_, 'rssi': rssi, 'batt': f"{batt}%"})
+            i += 6
+        else:
+            break
+    return beacons
 
 def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
-        print("[+] Terhubung ke Broker MQTT!")
+        print(f"[+] Terhubung ke Broker! Subscribing: {TOPIC}")
         client.subscribe(TOPIC, qos=1)
     else:
-        print(f"[-] Gagal terhubung, kode: {rc}")
+        print(f"[-] Gagal terhubung, rc: {rc}")
 
 def on_message(client, userdata, msg):
-    try:
-        beacons = json.loads(msg.payload.decode("utf-8"))
+    beacons = parse_binary_payload(msg.payload)
+    if beacons:
+        print(f"[Topik: {msg.topic}] Diterima {len(beacons)} beacon ({len(msg.payload)} bytes):")
         for b in beacons:
-            print(f"[{b.get('mac')}] Major:{b.get('major')} Minor:{b.get('minor')} | RSSI:{b.get('rssi')} dBm | Jarak:{b.get('distance')}m")
-    except Exception as e:
-        print(f"[!] Error parsing: {e}")
+            print(f"  └─ Major: {str(b.get('major','-')):<5} | Minor: {str(b.get('minor','-')):<5} | RSSI: {str(b.get('rssi','-')):>3} dBm | Batt: {str(b.get('batt','-')):<4}")
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+client.username_pw_set("MQTT_USERNAME", "MQTT_PASSWORD")
 client.on_connect = on_connect
 client.on_message = on_message
 
 print(f"Menghubungkan ke {BROKER}:{PORT}...")
 client.connect(BROKER, PORT, keepalive=%mqtt_keepalive%)
 client.loop_forever()`,
-        html: `<span class="ck-kw">import</span> json
+        html: `<span class="ck-kw">import</span> struct
 <span class="ck-kw">import</span> paho.mqtt.client <span class="ck-kw">as</span> mqtt
 
 <span class="ck-prop">BROKER</span> = <span class="ck-str">"%mqtt_broker_host%"</span>
 <span class="ck-prop">PORT</span> = <span class="ck-num">%mqtt_broker_port%</span>
-<span class="ck-prop">TOPIC</span> = <span class="ck-str">"sg10/data"</span>
+<span class="ck-prop">TOPIC</span> = <span class="ck-str">"SG-10/data/&lt;id-device&gt;"</span>
+
+<span class="ck-kw">def</span> <span class="ck-fn">parse_binary_payload</span>(buf):
+    beacons = []
+    i = <span class="ck-num">0</span>
+    n = <span class="ck-fn">len</span>(buf)
+    <span class="ck-kw">while</span> i &lt; n:
+        header = buf[i]
+        i += <span class="ck-num">1</span>
+        <span class="ck-kw">if</span> header &amp; <span class="ck-num">0x80</span>:
+            b = {<span class="ck-str">'protocol'</span>: <span class="ck-str">'v2'</span>}
+            <span class="ck-kw">if</span> header &amp; <span class="ck-num">0x01</span>:
+                <span class="ck-kw">if</span> i + <span class="ck-num">16</span> &gt; n: <span class="ck-kw">break</span>
+                raw_u = buf[i:i+<span class="ck-num">16</span>].<span class="ck-fn">hex</span>()
+                b[<span class="ck-str">'uuid'</span>] = <span class="ck-str">f"{raw_u[0:8]}-{raw_u[8:12]}-{raw_u[12:16]}-{raw_u[16:20]}-{raw_u[20:32]}"</span>.<span class="ck-fn">upper</span>()
+                i += <span class="ck-num">16</span>
+            <span class="ck-kw">if</span> header &amp; <span class="ck-num">0x02</span>:
+                <span class="ck-kw">if</span> i + <span class="ck-num">2</span> &gt; n: <span class="ck-kw">break</span>
+                b[<span class="ck-str">'major'</span>] = struct.<span class="ck-fn">unpack</span>(<span class="ck-str">"&gt;H"</span>, buf[i:i+<span class="ck-num">2</span>])[<span class="ck-num">0</span>]
+                i += <span class="ck-num">2</span>
+            <span class="ck-kw">if</span> header &amp; <span class="ck-num">0x04</span>:
+                <span class="ck-kw">if</span> i + <span class="ck-num">2</span> &gt; n: <span class="ck-kw">break</span>
+                b[<span class="ck-str">'minor'</span>] = struct.<span class="ck-fn">unpack</span>(<span class="ck-str">"&gt;H"</span>, buf[i:i+<span class="ck-num">2</span>])[<span class="ck-num">0</span>]
+                i += <span class="ck-num">2</span>
+            <span class="ck-kw">if</span> header &amp; <span class="ck-num">0x08</span>:
+                <span class="ck-kw">if</span> i + <span class="ck-num">1</span> &gt; n: <span class="ck-kw">break</span>
+                b[<span class="ck-str">'rssi'</span>] = struct.<span class="ck-fn">unpack</span>(<span class="ck-str">"b"</span>, buf[i:i+<span class="ck-num">1</span>])[<span class="ck-num">0</span>]
+                i += <span class="ck-num">1</span>
+            <span class="ck-kw">if</span> header &amp; <span class="ck-num">0x10</span>:
+                <span class="ck-kw">if</span> i + <span class="ck-num">1</span> &gt; n: <span class="ck-kw">break</span>
+                b[<span class="ck-str">'batt'</span>] = <span class="ck-str">f"{buf[i]}%"</span>
+                i += <span class="ck-num">1</span>
+            <span class="ck-kw">if</span> header &amp; <span class="ck-num">0x20</span>:
+                <span class="ck-kw">if</span> i + <span class="ck-num">4</span> &gt; n: <span class="ck-kw">break</span>
+                b[<span class="ck-str">'timestamp'</span>] = struct.<span class="ck-fn">unpack</span>(<span class="ck-str">"&gt;I"</span>, buf[i:i+<span class="ck-num">4</span>])[<span class="ck-num">0</span>]
+                i += <span class="ck-num">4</span>
+            beacons.<span class="ck-fn">append</span>(b)
+        <span class="ck-kw">elif</span> header == <span class="ck-num">0x00</span> <span class="ck-kw">and</span> i + <span class="ck-num">5</span> &lt;= n:
+            maj, min_, rssi = struct.<span class="ck-fn">unpack</span>(<span class="ck-str">"&gt;HHb"</span>, buf[i:i+<span class="ck-num">5</span>])
+            beacons.<span class="ck-fn">append</span>({<span class="ck-str">'protocol'</span>: <span class="ck-str">'v1-std'</span>, <span class="ck-str">'major'</span>: maj, <span class="ck-str">'minor'</span>: min_, <span class="ck-str">'rssi'</span>: rssi, <span class="ck-str">'batt'</span>: <span class="ck-str">'-'</span>})
+            i += <span class="ck-num">5</span>
+        <span class="ck-kw">elif</span> header == <span class="ck-num">0x01</span> <span class="ck-kw">and</span> i + <span class="ck-num">6</span> &lt;= n:
+            maj, min_, rssi, batt = struct.<span class="ck-fn">unpack</span>(<span class="ck-str">"&gt;HHbB"</span>, buf[i:i+<span class="ck-num">6</span>])
+            beacons.<span class="ck-fn">append</span>({<span class="ck-str">'protocol'</span>: <span class="ck-str">'v1-ext'</span>, <span class="ck-str">'major'</span>: maj, <span class="ck-str">'minor'</span>: min_, <span class="ck-str">'rssi'</span>: rssi, <span class="ck-str">'batt'</span>: <span class="ck-str">f"{batt}%"</span>})
+            i += <span class="ck-num">6</span>
+        <span class="ck-kw">else</span>:
+            <span class="ck-kw">break</span>
+    <span class="ck-kw">return</span> beacons
 
 <span class="ck-kw">def</span> <span class="ck-fn">on_connect</span>(client, userdata, flags, rc, properties=None):
     <span class="ck-kw">if</span> rc == <span class="ck-num">0</span>:
-        <span class="ck-fn">print</span>(<span class="ck-str">"[+] Terhubung ke Broker MQTT!"</span>)
+        <span class="ck-fn">print</span>(<span class="ck-str">f"[+] Terhubung ke Broker! Subscribing: {TOPIC}"</span>)
         client.<span class="ck-fn">subscribe</span>(TOPIC, qos=<span class="ck-num">1</span>)
     <span class="ck-kw">else</span>:
-        <span class="ck-fn">print</span>(<span class="ck-str">f"[-] Gagal terhubung, kode: {rc}"</span>)
+        <span class="ck-fn">print</span>(<span class="ck-str">f"[-] Gagal terhubung, rc: {rc}"</span>)
 
 <span class="ck-kw">def</span> <span class="ck-fn">on_message</span>(client, userdata, msg):
-    <span class="ck-kw">try</span>:
-        beacons = json.<span class="ck-fn">loads</span>(msg.payload.<span class="ck-fn">decode</span>(<span class="ck-str">"utf-8"</span>))
+    beacons = <span class="ck-fn">parse_binary_payload</span>(msg.payload)
+    <span class="ck-kw">if</span> beacons:
+        <span class="ck-fn">print</span>(<span class="ck-str">f"[Topik: {msg.topic}] Diterima {len(beacons)} beacon ({len(msg.payload)} bytes):"</span>)
         <span class="ck-kw">for</span> b <span class="ck-kw">in</span> beacons:
-            <span class="ck-fn">print</span>(<span class="ck-str">f"[{b.get('mac')}] Major:{b.get('major')} Minor:{b.get('minor')} | RSSI:{b.get('rssi')} dBm | Jarak:{b.get('distance')}m"</span>)
-    <span class="ck-kw">except</span> Exception <span class="ck-kw">as</span> e:
-        <span class="ck-fn">print</span>(<span class="ck-str">f"[!] Error parsing: {e}"</span>)
+            <span class="ck-fn">print</span>(<span class="ck-str">f"  └─ Major: {str(b.get('major','-')):&lt;5} | Minor: {str(b.get('minor','-')):&lt;5} | RSSI: {str(b.get('rssi','-')):&gt;3} dBm | Batt: {str(b.get('batt','-')):&lt;4}"</span>)
 
 client = mqtt.<span class="ck-fn">Client</span>(mqtt.CallbackAPIVersion.VERSION2)
+client.<span class="ck-fn">username_pw_set</span>(<span class="ck-str">"MQTT_USERNAME"</span>, <span class="ck-str">"MQTT_PASSWORD"</span>)
 client.on_connect = on_connect
 client.on_message = on_message
 
@@ -827,69 +1234,13 @@ client.on_message = on_message
 client.<span class="ck-fn">connect</span>(BROKER, PORT, keepalive=<span class="ck-num">%mqtt_keepalive%</span>)
 client.<span class="ck-fn">loop_forever</span>()`
       },
-      nodejs: {
-        file: "subscriber.js",
-        desc: "Node.js mqtt client",
-        raw: `const mqtt = require("mqtt");
-
-const brokerUrl = "mqtt://%mqtt_broker_host%:%mqtt_broker_port%";
-const topic = "sg10/data";
-
-const client = mqtt.connect(brokerUrl, {
-  keepalive: %mqtt_keepalive%,
-  clean: true,
-  reconnectPeriod: 2000
-});
-
-client.on("connect", () => {
-  console.log("[+] Terhubung ke broker MQTT!");
-  client.subscribe(topic, { qos: 1 });
-});
-
-client.on("message", (t, payload) => {
-  try {
-    const beacons = JSON.parse(payload.toString());
-    beacons.forEach(b => {
-      console.log(\`[\${b.mac}] Major:\${b.major} Minor:\${b.minor} | RSSI:\${b.rssi} dBm | Dist:\${b.distance}m\`);
-    });
-  } catch (err) {
-    console.error("Gagal parse payload:", err.message);
-  }
-});`,
-        html: `<span class="ck-kw">const</span> mqtt = <span class="ck-fn">require</span>(<span class="ck-str">"mqtt"</span>);
-
-<span class="ck-kw">const</span> brokerUrl = <span class="ck-str">"mqtt://%mqtt_broker_host%:%mqtt_broker_port%"</span>;
-<span class="ck-kw">const</span> topic = <span class="ck-str">"sg10/data"</span>;
-
-<span class="ck-kw">const</span> client = mqtt.<span class="ck-fn">connect</span>(brokerUrl, {
-  keepalive: <span class="ck-num">%mqtt_keepalive%</span>,
-  clean: <span class="ck-kw">true</span>,
-  reconnectPeriod: <span class="ck-num">2000</span>
-});
-
-client.<span class="ck-fn">on</span>(<span class="ck-str">"connect"</span>, () => {
-  console.<span class="ck-fn">log</span>(<span class="ck-str">"[+] Terhubung ke broker MQTT!"</span>);
-  client.<span class="ck-fn">subscribe</span>(topic, { qos: <span class="ck-num">1</span> });
-});
-
-client.<span class="ck-fn">on</span>(<span class="ck-str">"message"</span>, (t, payload) => {
-  <span class="ck-kw">try</span> {
-    <span class="ck-kw">const</span> beacons = JSON.<span class="ck-fn">parse</span>(payload.<span class="ck-fn">toString</span>());
-    beacons.<span class="ck-fn">forEach</span>(b => {
-      console.<span class="ck-fn">log</span>(\`[\${b.mac}] Major:\${b.major} Minor:\${b.minor} | RSSI:\${b.rssi} dBm | Dist:\${b.distance}m\`);
-    });
-  } <span class="ck-kw">catch</span> (err) {
-    console.<span class="ck-fn">error</span>(<span class="ck-str">"Gagal parse payload:"</span>, err.message);
-  }
-});`
-      },
       go: {
         file: "main.go",
         desc: "Go paho.mqtt.golang listener",
         raw: `package main
 
 import (
-	"encoding/json"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"os"
@@ -897,20 +1248,66 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-type BeaconData struct {
-	Mac       string  \`json:"mac"\`
-	UUID      string  \`json:"uuid"\`
-	Major     uint16  \`json:"major"\`
-	Minor     uint16  \`json:"minor"\`
-	RSSI      int     \`json:"rssi"\`
-	TxPower   int     \`json:"tx_power"\`
-	Distance  float64 \`json:"distance"\`
-	Timestamp int64   \`json:"timestamp"\`
+type Beacon struct {
+	Major     uint16
+	Minor     uint16
+	RSSI      int8
+	Batt      string
+	UUID      string
+	Timestamp uint32
+}
+
+func parsePayload(buf []byte) []Beacon {
+	var list []Beacon
+	i := 0
+	for i < len(buf) {
+		h := buf[i]
+		i++
+		if (h & 0x80) != 0 {
+			var b Beacon
+			if (h & 0x01) != 0 {
+				if i+16 > len(buf) { break }
+				b.UUID = fmt.Sprintf("%X", buf[i:i+16])
+				i += 16
+			}
+			if (h & 0x02) != 0 {
+				if i+2 > len(buf) { break }
+				b.Major = binary.BigEndian.Uint16(buf[i:i+2])
+				i += 2
+			}
+			if (h & 0x04) != 0 {
+				if i+2 > len(buf) { break }
+				b.Minor = binary.BigEndian.Uint16(buf[i:i+2])
+				i += 2
+			}
+			if (h & 0x08) != 0 {
+				if i+1 > len(buf) { break }
+				b.RSSI = int8(buf[i])
+				i++
+			}
+			if (h & 0x10) != 0 {
+				if i+1 > len(buf) { break }
+				b.Batt = fmt.Sprintf("%d%%", buf[i])
+				i++
+			}
+			if (h & 0x20) != 0 {
+				if i+4 > len(buf) { break }
+				b.Timestamp = binary.BigEndian.Uint32(buf[i:i+4])
+				i += 4
+			}
+			list = append(list, b)
+		} else {
+			break
+		}
+	}
+	return list
 }
 
 func main() {
 	opts := mqtt.NewClientOptions().AddBroker("tcp://%mqtt_broker_host%:%mqtt_broker_port%")
 	opts.SetClientID("sg10_go_subscriber")
+	opts.SetUsername("MQTT_USERNAME")
+	opts.SetPassword("MQTT_PASSWORD")
 	opts.SetKeepAlive(%mqtt_keepalive%)
 
 	client := mqtt.NewClient(opts)
@@ -919,14 +1316,11 @@ func main() {
 	}
 	defer client.Disconnect(250)
 
-	topic := "sg10/data"
+	topic := "SG-10/data/<id-device>"
 	client.Subscribe(topic, 1, func(c mqtt.Client, m mqtt.Message) {
-		var batch []BeaconData
-		if err := json.Unmarshal(m.Payload(), &batch); err == nil {
-			for _, b := range batch {
-				fmt.Printf("[%s] Major: %d Minor: %d | RSSI: %d dBm | Dist: %.2fm\\n",
-					b.Mac, b.Major, b.Minor, b.RSSI, b.Distance)
-			}
+		beacons := parsePayload(m.Payload())
+		for _, b := range beacons {
+			fmt.Printf("Major: %d | Minor: %d | RSSI: %d dBm | Batt: %s\\n", b.Major, b.Minor, b.RSSI, b.Batt)
 		}
 	})
 
@@ -937,7 +1331,7 @@ func main() {
         html: `<span class="ck-kw">package</span> main
 
 <span class="ck-kw">import</span> (
-	<span class="ck-str">"encoding/json"</span>
+	<span class="ck-str">"encoding/binary"</span>
 	<span class="ck-str">"fmt"</span>
 	<span class="ck-str">"log"</span>
 	<span class="ck-str">"os"</span>
@@ -945,20 +1339,66 @@ func main() {
 	mqtt <span class="ck-str">"github.com/eclipse/paho.mqtt.golang"</span>
 )
 
-<span class="ck-kw">type</span> <span class="ck-prop">BeaconData</span> <span class="ck-kw">struct</span> {
-	Mac       <span class="ck-kw">string</span>  <span class="ck-str">\`json:"mac"\`</span>
-	UUID      <span class="ck-kw">string</span>  <span class="ck-str">\`json:"uuid"\`</span>
-	Major     <span class="ck-kw">uint16</span>  <span class="ck-str">\`json:"major"\`</span>
-	Minor     <span class="ck-kw">uint16</span>  <span class="ck-str">\`json:"minor"\`</span>
-	RSSI      <span class="ck-kw">int</span>     <span class="ck-str">\`json:"rssi"\`</span>
-	TxPower   <span class="ck-kw">int</span>     <span class="ck-str">\`json:"tx_power"\`</span>
-	Distance  <span class="ck-kw">float64</span> <span class="ck-str">\`json:"distance"\`</span>
-	Timestamp <span class="ck-kw">int64</span>   <span class="ck-str">\`json:"timestamp"\`</span>
+<span class="ck-kw">type</span> <span class="ck-prop">Beacon</span> <span class="ck-kw">struct</span> {
+	Major     <span class="ck-kw">uint16</span>
+	Minor     <span class="ck-kw">uint16</span>
+	RSSI      <span class="ck-kw">int8</span>
+	Batt      <span class="ck-kw">string</span>
+	UUID      <span class="ck-kw">string</span>
+	Timestamp <span class="ck-kw">uint32</span>
+}
+
+<span class="ck-kw">func</span> <span class="ck-fn">parsePayload</span>(buf []<span class="ck-kw">byte</span>) []<span class="ck-prop">Beacon</span> {
+	<span class="ck-kw">var</span> list []Beacon
+	i := <span class="ck-num">0</span>
+	<span class="ck-kw">for</span> i &lt; <span class="ck-fn">len</span>(buf) {
+		h := buf[i]
+		i++
+		<span class="ck-kw">if</span> (h &amp; <span class="ck-num">0x80</span>) != <span class="ck-num">0</span> {
+			<span class="ck-kw">var</span> b Beacon
+			<span class="ck-kw">if</span> (h &amp; <span class="ck-num">0x01</span>) != <span class="ck-num">0</span> {
+				<span class="ck-kw">if</span> i+<span class="ck-num">16</span> &gt; <span class="ck-fn">len</span>(buf) { <span class="ck-kw">break</span> }
+				b.UUID = fmt.<span class="ck-fn">Sprintf</span>(<span class="ck-str">"%X"</span>, buf[i:i+<span class="ck-num">16</span>])
+				i += <span class="ck-num">16</span>
+			}
+			<span class="ck-kw">if</span> (h &amp; <span class="ck-num">0x02</span>) != <span class="ck-num">0</span> {
+				<span class="ck-kw">if</span> i+<span class="ck-num">2</span> &gt; <span class="ck-fn">len</span>(buf) { <span class="ck-kw">break</span> }
+				b.Major = binary.BigEndian.<span class="ck-fn">Uint16</span>(buf[i:i+<span class="ck-num">2</span>])
+				i += <span class="ck-num">2</span>
+			}
+			<span class="ck-kw">if</span> (h &amp; <span class="ck-num">0x04</span>) != <span class="ck-num">0</span> {
+				<span class="ck-kw">if</span> i+<span class="ck-num">2</span> &gt; <span class="ck-fn">len</span>(buf) { <span class="ck-kw">break</span> }
+				b.Minor = binary.BigEndian.<span class="ck-fn">Uint16</span>(buf[i:i+<span class="ck-num">2</span>])
+				i += <span class="ck-num">2</span>
+			}
+			<span class="ck-kw">if</span> (h &amp; <span class="ck-num">0x08</span>) != <span class="ck-num">0</span> {
+				<span class="ck-kw">if</span> i+<span class="ck-num">1</span> &gt; <span class="ck-fn">len</span>(buf) { <span class="ck-kw">break</span> }
+				b.RSSI = <span class="ck-kw">int8</span>(buf[i])
+				i++
+			}
+			<span class="ck-kw">if</span> (h &amp; <span class="ck-num">0x10</span>) != <span class="ck-num">0</span> {
+				<span class="ck-kw">if</span> i+<span class="ck-num">1</span> &gt; <span class="ck-fn">len</span>(buf) { <span class="ck-kw">break</span> }
+				b.Batt = fmt.<span class="ck-fn">Sprintf</span>(<span class="ck-str">"%d%%"</span>, buf[i])
+				i++
+			}
+			<span class="ck-kw">if</span> (h &amp; <span class="ck-num">0x20</span>) != <span class="ck-num">0</span> {
+				<span class="ck-kw">if</span> i+<span class="ck-num">4</span> &gt; <span class="ck-fn">len</span>(buf) { <span class="ck-kw">break</span> }
+				b.Timestamp = binary.BigEndian.<span class="ck-fn">Uint32</span>(buf[i:i+<span class="ck-num">4</span>])
+				i += <span class="ck-num">4</span>
+			}
+			list = <span class="ck-fn">append</span>(list, b)
+		} <span class="ck-kw">else</span> {
+			<span class="ck-kw">break</span>
+		}
+	}
+	<span class="ck-kw">return</span> list
 }
 
 <span class="ck-kw">func</span> <span class="ck-fn">main</span>() {
 	opts := mqtt.<span class="ck-fn">NewClientOptions</span>().<span class="ck-fn">AddBroker</span>(<span class="ck-str">"tcp://%mqtt_broker_host%:%mqtt_broker_port%"</span>)
 	opts.<span class="ck-fn">SetClientID</span>(<span class="ck-str">"sg10_go_subscriber"</span>)
+	opts.<span class="ck-fn">SetUsername</span>(<span class="ck-str">"MQTT_USERNAME"</span>)
+	opts.<span class="ck-fn">SetPassword</span>(<span class="ck-str">"MQTT_PASSWORD"</span>)
 	opts.<span class="ck-fn">SetKeepAlive</span>(<span class="ck-num">%mqtt_keepalive%</span>)
 
 	client := mqtt.<span class="ck-fn">NewClient</span>(opts)
@@ -967,14 +1407,11 @@ func main() {
 	}
 	<span class="ck-kw">defer</span> client.<span class="ck-fn">Disconnect</span>(<span class="ck-num">250</span>)
 
-	topic := <span class="ck-str">"sg10/data"</span>
+	topic := <span class="ck-str">"SG-10/data/&lt;id-device&gt;"</span>
 	client.<span class="ck-fn">Subscribe</span>(topic, <span class="ck-num">1</span>, <span class="ck-kw">func</span>(c mqtt.Client, m mqtt.Message) {
-		<span class="ck-kw">var</span> batch []BeaconData
-		<span class="ck-kw">if</span> err := json.<span class="ck-fn">Unmarshal</span>(m.<span class="ck-fn">Payload</span>(), &amp;batch); err == <span class="ck-kw">nil</span> {
-			<span class="ck-kw">for</span> _, b := <span class="ck-kw">range</span> batch {
-				fmt.<span class="ck-fn">Printf</span>(<span class="ck-str">"[%s] Major: %d Minor: %d | RSSI: %d dBm | Dist: %.2fm\\n"</span>,
-					b.Mac, b.Major, b.Minor, b.RSSI, b.Distance)
-			}
+		beacons := <span class="ck-fn">parsePayload</span>(m.<span class="ck-fn">Payload</span>())
+		<span class="ck-kw">for</span> _, b := <span class="ck-kw">range</span> beacons {
+			fmt.<span class="ck-fn">Printf</span>(<span class="ck-str">"Major: %d | Minor: %d | RSSI: %d dBm | Batt: %s\\n"</span>, b.Major, b.Minor, b.RSSI, b.Batt)
 		}
 	})
 
@@ -985,88 +1422,56 @@ func main() {
       },
       rust: {
         file: "main.rs",
-        desc: "Rust rumqttc + serde_json consumer",
+        desc: "Rust rumqttc consumer",
         raw: `use rumqttc::{MqttOptions, Client, QoS, Event, Packet};
-use serde::Deserialize;
 use std::time::Duration;
-
-#[derive(Debug, Deserialize)]
-struct BeaconData {
-    mac: String,
-    uuid: String,
-    major: u16,
-    minor: u16,
-    rssi: i16,
-    tx_power: i16,
-    distance: f32,
-    timestamp: i64,
-}
 
 fn main() {
     let mut mqttoptions = MqttOptions::new("sg10_rust_sub", "%mqtt_broker_host%", %mqtt_broker_port%);
+    mqttoptions.set_credentials("MQTT_USERNAME", "MQTT_PASSWORD");
     mqttoptions.set_keep_alive(Duration::from_secs(%mqtt_keepalive%));
 
     let (mut client, mut connection) = Client::new(mqttoptions, 10);
-    client.subscribe("sg10/data", QoS::AtLeastOnce).unwrap();
+    client.subscribe("SG-10/data/<id-device>", QoS::AtLeastOnce).unwrap();
 
     println!("Menunggu stream telemetri IOTARU SG-10...");
     for notification in connection.iter() {
         if let Ok(Event::Incoming(Packet::Publish(p))) = notification {
-            if let Ok(batch) = serde_json::from_slice::<Vec<BeaconData>>(&p.payload) {
-                for b in batch {
-                    println!("[{}] RSSI: {} dBm | Jarak: {:.2}m", b.mac, b.rssi, b.distance);
-                }
-            }
+            println!("Diterima paket biner ({} bytes) dari {}", p.payload.len(), p.topic);
         }
     }
 }`,
         html: `<span class="ck-kw">use</span> rumqttc::{MqttOptions, Client, QoS, Event, Packet};
-<span class="ck-kw">use</span> serde::Deserialize;
 <span class="ck-kw">use</span> std::time::Duration;
-
-#[<span class="ck-prop">derive</span>(Debug, Deserialize)]
-<span class="ck-kw">struct</span> <span class="ck-prop">BeaconData</span> {
-    mac: String,
-    uuid: String,
-    major: u16,
-    minor: u16,
-    rssi: i16,
-    tx_power: i16,
-    distance: f32,
-    timestamp: i64,
-}
 
 <span class="ck-kw">fn</span> <span class="ck-fn">main</span>() {
     <span class="ck-kw">let</span> <span class="ck-kw">mut</span> mqttoptions = MqttOptions::<span class="ck-fn">new</span>(<span class="ck-str">"sg10_rust_sub"</span>, <span class="ck-str">"%mqtt_broker_host%"</span>, <span class="ck-num">%mqtt_broker_port%</span>);
+    mqttoptions.<span class="ck-fn">set_credentials</span>(<span class="ck-str">"MQTT_USERNAME"</span>, <span class="ck-str">"MQTT_PASSWORD"</span>);
     mqttoptions.<span class="ck-fn">set_keep_alive</span>(Duration::<span class="ck-fn">from_secs</span>(<span class="ck-num">%mqtt_keepalive%</span>));
 
     <span class="ck-kw">let</span> (<span class="ck-kw">mut</span> client, <span class="ck-kw">mut</span> connection) = Client::<span class="ck-fn">new</span>(mqttoptions, <span class="ck-num">10</span>);
-    client.<span class="ck-fn">subscribe</span>(<span class="ck-str">"sg10/data"</span>, QoS::AtLeastOnce).<span class="ck-fn">unwrap</span>();
+    client.<span class="ck-fn">subscribe</span>(<span class="ck-str">"SG-10/data/&lt;id-device&gt;"</span>, QoS::AtLeastOnce).<span class="ck-fn">unwrap</span>();
 
     <span class="ck-fn">println!</span>(<span class="ck-str">"Menunggu stream telemetri IOTARU SG-10..."</span>);
     <span class="ck-kw">for</span> notification <span class="ck-kw">in</span> connection.<span class="ck-fn">iter</span>() {
         <span class="ck-kw">if</span> <span class="ck-kw">let</span> <span class="ck-fn">Ok</span>(Event::Incoming(Packet::Publish(p))) = notification {
-            <span class="ck-kw">if</span> <span class="ck-kw">let</span> <span class="ck-fn">Ok</span>(batch) = serde_json::from_slice::&lt;Vec&lt;BeaconData&gt;&gt;(&amp;p.payload) {
-                <span class="ck-kw">for</span> b <span class="ck-kw">in</span> batch {
-                    <span class="ck-fn">println!</span>(<span class="ck-str">"[{}] RSSI: {} dBm | Jarak: {:.2}m"</span>, b.mac, b.rssi, b.distance);
-                }
-            }
+            <span class="ck-fn">println!</span>(<span class="ck-str">"Diterima paket biner ({} bytes) dari {}"</span>, p.payload.len(), p.topic);
         }
     }
 }`
       },
       nodered: {
         file: "flow.json",
-        desc: "Node-RED Flow JSON (Import via Clipboard)",
+        desc: "Node-RED Flow JSON",
         raw: `[
   {
     "id": "mqtt_in_node",
     "type": "mqtt in",
     "z": "tab_sg10",
     "name": "IOTARU Telemetry",
-    "topic": "sg10/data",
+    "topic": "SG-10/data/<id-device>",
     "qos": "1",
-    "datatype": "json",
+    "datatype": "buffer",
     "broker": "broker_config",
     "nl": false,
     "rap": true,
@@ -1074,28 +1479,13 @@ fn main() {
     "inputs": 0,
     "x": 130,
     "y": 120,
-    "wires": [["parser_fn_node"]]
-  },
-  {
-    "id": "parser_fn_node",
-    "type": "function",
-    "z": "tab_sg10",
-    "name": "Beacon Parser",
-    "func": "if (Array.isArray(msg.payload)) {\\n    msg.payload.forEach(b => {\\n        node.send({ payload: b, topic: 'beacon/' + b.mac });\\n    });\\n}\\nreturn null;",
-    "outputs": 1,
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 340,
-    "y": 120,
     "wires": [["debug_node"]]
   },
   {
     "id": "debug_node",
     "type": "debug",
     "z": "tab_sg10",
-    "name": "Print Payload",
+    "name": "Raw Payload Buffer",
     "active": true,
     "tosidebar": true,
     "console": false,
@@ -1104,7 +1494,7 @@ fn main() {
     "targetType": "msg",
     "statusVal": "",
     "statusType": "auto",
-    "x": 550,
+    "x": 350,
     "y": 120,
     "wires": []
   }
@@ -1114,16 +1504,9 @@ fn main() {
     <span class="ck-prop">"id"</span>: <span class="ck-str">"mqtt_in_node"</span>,
     <span class="ck-prop">"type"</span>: <span class="ck-str">"mqtt in"</span>,
     <span class="ck-prop">"name"</span>: <span class="ck-str">"IOTARU Telemetry"</span>,
-    <span class="ck-prop">"topic"</span>: <span class="ck-str">"sg10/data"</span>,
+    <span class="ck-prop">"topic"</span>: <span class="ck-str">"SG-10/data/&lt;id-device&gt;"</span>,
     <span class="ck-prop">"qos"</span>: <span class="ck-str">"1"</span>,
-    <span class="ck-prop">"datatype"</span>: <span class="ck-str">"json"</span>,
-    <span class="ck-prop">"wires"</span>: [[<span class="ck-str">"parser_fn_node"</span>]]
-  },
-  {
-    <span class="ck-prop">"id"</span>: <span class="ck-str">"parser_fn_node"</span>,
-    <span class="ck-prop">"type"</span>: <span class="ck-str">"function"</span>,
-    <span class="ck-prop">"name"</span>: <span class="ck-str">"Beacon Parser"</span>,
-    <span class="ck-prop">"func"</span>: <span class="ck-str">"msg.payload.forEach(b => node.send({ payload: b }));"</span>,
+    <span class="ck-prop">"datatype"</span>: <span class="ck-str">"buffer"</span>,
     <span class="ck-prop">"wires"</span>: [[<span class="ck-str">"debug_node"</span>]]
   }
 ]`
@@ -1138,7 +1521,7 @@ curl -X GET "http://192.168.1.120/api/v1/system/version"
 curl -X GET "http://192.168.1.120/api/v1/system/ap-status"
 
 # 3. Trigger reboot gateway dari jarak jauh
-curl -X POST "http://192.168.1.120/api/v1/system/reboot" \\
+curl -X POST "http://192.168.1.120/api/v1/system/reboot" \
      -H "Cookie: token=YOUR_SESSION_TOKEN"`,
         html: `<span class="ck-cmt"># 1. Cek versi dan telemetri gateway</span>
 curl -X GET <span class="ck-str">"http://192.168.1.120/api/v1/system/version"</span>
@@ -1152,7 +1535,9 @@ curl -X POST <span class="ck-str">"http://192.168.1.120/api/v1/system/reboot"</s
       }
     };
 
-    let currentLang = "python";
+    let currentLang = "nodejs";
+
+
 
     function switchSnippet(lang) {
       if (!SNIPPETS[lang]) return;
@@ -1193,7 +1578,7 @@ curl -X POST <span class="ck-str">"http://192.168.1.120/api/v1/system/reboot"</s
     }
 
     // Default init
-    switchSnippet("python");
+    switchSnippet("nodejs");
   </script>
 </body>
 </html>

@@ -23,6 +23,7 @@ static constexpr uint32_t OTA_INACTIVITY_TIMEOUT_MS = 10000;
 static std::atomic<bool> s_ota_in_progress{false};
 static bool s_flash_dirty = false;
 static size_t s_erased_bytes = 0;
+static bool s_fs_was_mounted = false;
 
 static inline uint32_t get_millis() {
     return static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
@@ -40,6 +41,7 @@ void init() {
     s_ota_in_progress.store(false, std::memory_order_seq_cst);
     s_flash_dirty = false;
     s_erased_bytes = 0;
+    s_fs_was_mounted = false;
 }
 
 bool is_in_progress() {
@@ -66,8 +68,13 @@ void abort() {
         s_ota_handle = 0;
     } else if (s_status.target == TargetType::Filesystem) {
         if (!s_flash_dirty) {
-            ESP_LOGI(TAG, "OTA Filesystem dibatalkan sebelum flash disentuh. Memulihkan LittleFS...");
-            Server::remountStorage();
+            if (s_fs_was_mounted) {
+                ESP_LOGI(TAG, "OTA Filesystem dibatalkan sebelum flash disentuh. Memulihkan LittleFS...");
+                Server::remountStorage();
+            } else {
+                ESP_LOGI(TAG, "OTA Filesystem dibatalkan sebelum flash disentuh (status awal darurat). Menahan Emergency Mode.");
+                Server::mark_filesystem_unmounted();
+            }
         } else {
             ESP_LOGW(TAG, "OTA Filesystem dibatalkan saat flash sudah terisi parsial. Menahan Emergency Mode.");
             Server::mark_filesystem_unmounted();
@@ -99,6 +106,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
     // Reset pelacak flash di baris paling atas
     s_flash_dirty = false;
     s_erased_bytes = 0;
+    s_fs_was_mounted = false;
 
     s_status.in_progress = true;
     s_status.success = false;
@@ -243,20 +251,23 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
             return false;
         }
 
-        // Lakukan unregister VFS
-        esp_err_t unreg_err = esp_vfs_littlefs_unregister("storage");
-        if (unreg_err != ESP_OK) {
-            // BATALKAN SECARA BERSIH: Jangan remountStorage() karena VFS belum ter-unmount!
-            ESP_LOGE(TAG, "esp_vfs_littlefs_unregister gagal: 0x%x", unreg_err);
-            Server::set_maintenance_mode(false);
-            snprintf(out_err, err_len, "Gagal unmount VFS storage (0x%x).", unreg_err);
-            snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
-            s_status.in_progress = false;
-            s_ota_in_progress.store(false, std::memory_order_seq_cst);
-            return false;
+        // Lakukan unregister VFS jika LittleFS sedang terpasang/ter-mount
+        s_fs_was_mounted = esp_littlefs_mounted("storage");
+        if (s_fs_was_mounted) {
+            esp_err_t unreg_err = esp_vfs_littlefs_unregister("storage");
+            if (unreg_err != ESP_OK && unreg_err != ESP_ERR_INVALID_STATE) {
+                // BATALKAN SECARA BERSIH: Jangan remountStorage() karena VFS belum ter-unmount!
+                ESP_LOGE(TAG, "esp_vfs_littlefs_unregister gagal: 0x%x", unreg_err);
+                Server::set_maintenance_mode(false);
+                snprintf(out_err, err_len, "Gagal unmount VFS storage (0x%x).", unreg_err);
+                snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
+                s_status.in_progress = false;
+                s_ota_in_progress.store(false, std::memory_order_seq_cst);
+                return false;
+            }
         }
 
-        // Unmount sukses
+        // Unmount sukses atau partisi memang belum terdaftar di VFS
         Server::mark_filesystem_unmounted();
     }
 

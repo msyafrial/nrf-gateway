@@ -198,14 +198,27 @@ echo Memulai proses flashing ke %PORT% pada baudrate 921600...
 echo Tekan tombol BOOT pada ESP32 jika proses koneksi menunggu (Connecting...)...
 echo.
 
-python -m esptool --chip esp32 --port %PORT% --baud 921600 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 80m --flash_size 4MB ^
-  0x1000 bootloader.bin ^
-  0x8000 partitions.bin ^
-  0x9000 nvs.bin ^
-  0xf000 ota_data_initial.bin ^
-  0x20000 firmware.bin ^
-  0x190000 firmware.bin ^
-  0x300000 filesystem.bin
+if exist "%~dp0esptool.exe" (
+    echo [INFO] Menggunakan standalone esptool.exe portable (tanpa butuh install Python)...
+    "%~dp0esptool.exe" --chip esp32 --port %PORT% --baud 921600 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 80m --flash_size 4MB ^
+      0x1000 "%~dp0bootloader.bin" ^
+      0x8000 "%~dp0partitions.bin" ^
+      0x9000 "%~dp0nvs.bin" ^
+      0xf000 "%~dp0ota_data_initial.bin" ^
+      0x20000 "%~dp0firmware.bin" ^
+      0x190000 "%~dp0firmware.bin" ^
+      0x300000 "%~dp0filesystem.bin"
+) else (
+    echo [INFO] esptool.exe lokal tidak ditemukan, mencoba via Python esptool module...
+    python -m esptool --chip esp32 --port %PORT% --baud 921600 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 80m --flash_size 4MB ^
+      0x1000 bootloader.bin ^
+      0x8000 partitions.bin ^
+      0x9000 nvs.bin ^
+      0xf000 ota_data_initial.bin ^
+      0x20000 firmware.bin ^
+      0x190000 firmware.bin ^
+      0x300000 filesystem.bin
+)
 
 if %ERRORLEVEL% EQU 0 (
     echo.
@@ -499,6 +512,15 @@ def main():
         print(f"  -> Disalin: {src_label.ljust(35)} ({sz:>10,} bytes) ===> {dst_path}")
 
     log_success("Semua 6 file binary berhasil disalin ke folder target.")
+
+    # Salin esptool.exe standalone (Portable Windows Flasher)
+    portable_esptool = os.path.join(project_dir, "tools", "esptool", "esptool.exe")
+    if os.path.exists(portable_esptool):
+        dst_esptool = os.path.join(target_dir, "esptool.exe")
+        shutil.copy2(portable_esptool, dst_esptool)
+        sz = os.path.getsize(dst_esptool)
+        print(f"  -> Disalin: {'esptool.exe (Portable)'.ljust(35)} ({sz:>10,} bytes) ===> {dst_esptool}")
+        log_success("Standalone esptool.exe berhasil disertakan (Portable Flash Ready).")
 
     # 6. Buat File Panduan Offset dan Script Flashing 1-Klik
     log_step(6, "Membuat File Panduan Offset dan Script Flash Otomatis")
