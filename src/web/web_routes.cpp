@@ -1059,7 +1059,18 @@ static esp_err_t api_net_logs_export_handler(httpd_req_t *req) {
     }
 
     httpd_resp_set_type(req, "text/csv");
-    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"net_log_sg10.csv\"");
+    char clean_model[32] = {0};
+    size_t mIdx = 0;
+    const char* raw_model = g_config.device_model[0] ? g_config.device_model : "sg10";
+    for (size_t k = 0; raw_model[k] != '\0' && mIdx < sizeof(clean_model) - 1; ++k) {
+        char c = raw_model[k];
+        if (c >= 'A' && c <= 'Z') clean_model[mIdx++] = static_cast<char>(c + ('a' - 'A'));
+        else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) clean_model[mIdx++] = c;
+    }
+    if (mIdx == 0) strlcpy(clean_model, "sg10", sizeof(clean_model));
+    char disp_hdr[64];
+    snprintf(disp_hdr, sizeof(disp_hdr), "attachment; filename=\"net_log_%s.csv\"", clean_model);
+    httpd_resp_set_hdr(req, "Content-Disposition", disp_hdr);
 
     // Header CSV
     const char *csv_head = "No,Waktu,Interface,Event,Detail\r\n";
@@ -1165,7 +1176,18 @@ static esp_err_t api_drop_logs_export_handler(httpd_req_t *req) {
     }
 
     httpd_resp_set_type(req, "text/csv");
-    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"drop_log_sg10.csv\"");
+    char clean_drop_model[32] = {0};
+    size_t dmIdx = 0;
+    const char* raw_drop_model = g_config.device_model[0] ? g_config.device_model : "sg10";
+    for (size_t k = 0; raw_drop_model[k] != '\0' && dmIdx < sizeof(clean_drop_model) - 1; ++k) {
+        char c = raw_drop_model[k];
+        if (c >= 'A' && c <= 'Z') clean_drop_model[dmIdx++] = static_cast<char>(c + ('a' - 'A'));
+        else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) clean_drop_model[dmIdx++] = c;
+    }
+    if (dmIdx == 0) strlcpy(clean_drop_model, "sg10", sizeof(clean_drop_model));
+    char drop_disp_hdr[64];
+    snprintf(drop_disp_hdr, sizeof(drop_disp_hdr), "attachment; filename=\"drop_log_%s.csv\"", clean_drop_model);
+    httpd_resp_set_hdr(req, "Content-Disposition", drop_disp_hdr);
 
     // Header CSV (6 kolom presisi tanpa keterangan)
     const char *csv_head = "No,Waktu,Tipe,Major-Minor/Tag,RSSI(dBm),Alasan\r\n";

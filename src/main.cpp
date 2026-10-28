@@ -102,7 +102,7 @@ extern "C" void app_main(void) {
     char device_id[32], module_id[32];
     Core::ConfigStore::getDeviceId(device_id, sizeof(device_id));
     Core::ConfigStore::getModuleId(module_id, sizeof(module_id));
-    ESP_LOGI(TAG, "Gateway Identity: Module='%s', DeviceID='%s'", module_id, device_id);
+    ESP_LOGI(TAG, "Gateway Identity: Model='%s', Module='%s', DeviceID='%s'", g_config.device_model, module_id, device_id);
 
     // 4. Inisialisasi Hardware I2C AT24C256, Filesystem LittleFS & NetLogService
     Bsp::At24c256::init();

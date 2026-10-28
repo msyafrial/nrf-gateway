@@ -31,7 +31,7 @@ qos,data,u32,1
 keepalive,data,u32,30
 telem_mask,data,u32,158
 gateway,namespace,,
-dev_model,data,string,SG-10
+dev_model,data,string,AR-27
 dev_ver,data,string,v1.0.0
 uuid_en,data,u32,0
 uuid,data,string,FDA50693A4E24FB1AFCFC6EB07647825

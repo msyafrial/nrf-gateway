@@ -1161,7 +1161,8 @@ void NetworkManager::checkEthernetFallback() {
 
             if (!ip_occupied) {
                 // MASTER NODE: Ambil 192.168.4.1 dan jalankan Micro-DHCP
-                ESP_LOGI(TAG, "192.168.4.1 bebas -> SG-10 terpilih sebagai MASTER (Direct PC Mode)!");
+                ESP_LOGI(TAG, "192.168.4.1 bebas -> %s terpilih sebagai MASTER (Direct PC Mode)!",
+                         g_config.device_model[0] ? g_config.device_model : "Gateway");
                 s_ethFsmState = EthFsmState::DIRECT_PC;
                 s_directPcStartMs = now;
 

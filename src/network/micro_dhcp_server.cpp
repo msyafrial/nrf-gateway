@@ -1,4 +1,5 @@
 #include "micro_dhcp_server.hpp"
+#include "app_config.hpp"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
 #include "lwip/ip_addr.h"
@@ -283,10 +284,24 @@ void MicroDhcpServer::taskWorker(void* arg) {
         }
 
         // CATATAN KRUSIAL 1: Filter Hostname Option 12
-        // Jika diawali "sg10-" (berasal dari sesama gateway IOTARU), Master WAJIB MENGABAIKAN!
-        // Jangan layani sesama SG-10 agar IP 192.168.4.2 100% khusus untuk PC teknisi!
-        if (opt12_len >= 5 && strncmp(opt12_hostname, "sg10-", 5) == 0) {
-            ESP_LOGD(TAG, "Mengabaikan DHCP paket dari sesama SG-10 ('%s')", opt12_hostname);
+        // Jika diawali prefix model gateway (misal "sg10-" atau model NVS), Master WAJIB MENGABAIKAN!
+        // Jangan layani sesama gateway agar IP 192.168.4.2 100% khusus untuk PC teknisi!
+        char dyn_prefix[32] = {0};
+        size_t pIdx = 0;
+        const char* raw_model = g_config.device_model[0] ? g_config.device_model : "sg10";
+        for (size_t k = 0; raw_model[k] != '\0' && pIdx < sizeof(dyn_prefix) - 2; ++k) {
+            char c = raw_model[k];
+            if (c >= 'A' && c <= 'Z') dyn_prefix[pIdx++] = static_cast<char>(c + ('a' - 'A'));
+            else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) dyn_prefix[pIdx++] = c;
+        }
+        dyn_prefix[pIdx++] = '-';
+        dyn_prefix[pIdx] = '\0';
+
+        bool is_peer_gw = (pIdx > 1 && opt12_len >= pIdx && strncmp(opt12_hostname, dyn_prefix, pIdx) == 0) ||
+                          (opt12_len >= 5 && strncmp(opt12_hostname, "sg10-", 5) == 0);
+
+        if (is_peer_gw) {
+            ESP_LOGD(TAG, "Mengabaikan DHCP paket dari sesama gateway ('%s')", opt12_hostname);
             continue;
         }
 

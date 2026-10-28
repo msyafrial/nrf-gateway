@@ -1,4 +1,5 @@
 #include "net_log_service.hpp"
+#include "app_config.hpp"
 #include "bsp_at24c256.hpp"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -210,7 +211,8 @@ void NetLogService::init() {
 
         // Catat peristiwa Booting sistem
         char bootDetail[80];
-        snprintf(bootDetail, sizeof(bootDetail), "Gateway IOTARU SG-10 aktif (Reset Reason: %s)", resetReasonToString(reason));
+        const char* model = g_config.device_model[0] ? g_config.device_model : "SG-10";
+        snprintf(bootDetail, sizeof(bootDetail), "Gateway IOTARU %s aktif (Reset Reason: %s)", model, resetReasonToString(reason));
 
         // Insert boot event (internal without recursive mutex lock)
         uint32_t uptimeSec = static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);

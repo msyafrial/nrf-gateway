@@ -7,7 +7,7 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IOTARU SG-10 - Emergency Recovery</title>
+  <title>IOTARU %DEVICE_MODEL% - Emergency Recovery</title>
   <style>
     :root {
       --bg: #0b0f17;
@@ -341,7 +341,7 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
     </div>
 
     <div class="footer-note">
-      IOTARU SG-10 Industrial Gateway &bull; Firmware %FIRMWARE_VERSION%
+      IOTARU %DEVICE_MODEL% Industrial Gateway &bull; Firmware %FIRMWARE_VERSION%
     </div>
   </div>
 
