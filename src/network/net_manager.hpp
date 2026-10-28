@@ -67,6 +67,9 @@ private:
     static void checkEthernetFallback();
     static void checkNtpWatchdog();
     static void checkDisconWatchdog();
+    static void checkFastLinkHealth();
+    static void checkWifiDisconRetry();
+    static void forceWifiReassociate(const char* reason);
     static void checkApInactivityTimeout();
     static void checkDailyRestart();
 };

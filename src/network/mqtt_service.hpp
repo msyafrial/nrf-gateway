@@ -14,6 +14,7 @@ public:
     static bool isConnected();
     static void updateTopicNames();
     static void forceReconnect();
+    static uint32_t getLastInboundActivityMs();
 
     static void getTopicData(char* outBuf, size_t maxLen);
     static void getTopicStatus(char* outBuf, size_t maxLen);

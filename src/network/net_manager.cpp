@@ -63,6 +63,9 @@ static uint8_t  s_fastRetryCount = 0;
 
 static uint32_t s_disconStartTime = 0;
 static uint32_t s_lastApActivityTime = 0;
+static uint8_t  s_gatewayRtoCount = 0;
+static uint32_t s_lastReassociateTimeMs = 0;
+static uint32_t s_lastDisconRetryMs = 0;
 static const uint32_t AP_INACTIVITY_TIMEOUT_MS = 60000; // 60 Detik
 static uint32_t s_pendingApStopMillis = 0;
 
@@ -890,6 +893,155 @@ void NetworkManager::checkDisconWatchdog() {
     }
 }
 
+static bool probeGateway(uint32_t gw_ip) {
+    if (gw_ip == 0) return false;
+
+    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    if (sock < 0) return false;
+
+    // Timeout 400ms agar responsif dan tidak memblokir supervisor task
+    struct timeval tv = {};
+    tv.tv_sec = 0;
+    tv.tv_usec = 400000;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    struct sockaddr_in dest = {};
+    dest.sin_family = AF_INET;
+    dest.sin_port = htons(53); // Port 53 DNS internal Gateway Router
+    dest.sin_addr.s_addr = gw_ip;
+
+    // Paket DNS kueri minimal Unicast (17 bytes: ID 0x1234, Opcode 0, Root Query '.')
+    static const uint8_t dns_probe[] = {
+        0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01
+    };
+
+    ssize_t sent = sendto(sock, dns_probe, sizeof(dns_probe), 0, (struct sockaddr*)&dest, sizeof(dest));
+    if (sent < 0) {
+        close(sock);
+        return false;
+    }
+
+    uint8_t rx_buf[64];
+    ssize_t r = recvfrom(sock, rx_buf, sizeof(rx_buf), 0, nullptr, nullptr);
+    int err = (r < 0) ? errno : 0;
+    close(sock);
+
+    // Jika router merespons kueri DNS (r > 0), ATAU jika port 53 router tidak aktif tapi router mengirim ICMP Port Unreachable (ECONNREFUSED / 111):
+    // Keduanya membuktikan router aktif merespons paket ESP32 di Layer 2/3!
+    if (r > 0 || err == ECONNREFUSED) {
+        return true;
+    }
+
+    return false;
+}
+
+void NetworkManager::forceWifiReassociate(const char* reason) {
+    ESP_LOGW(TAG, "Memicu rekoneksi paksa Wi-Fi Station! Alasan: %s", reason ? reason : "-");
+    char det[80];
+    snprintf(det, sizeof(det), "Link Zombie (%s) -> Reconnect Paksa", reason ? reason : "5s RTO");
+    NetLogService::log(NetCategory::WIFI, NetEvent::ERROR_EVT, det);
+
+    s_wifiConnected = false;
+    s_wifiHasIp = false;
+    Bsp::LedManager::setComState(ComLedState::DISCONNECTED);
+
+    if (s_disconStartTime == 0) {
+        s_disconStartTime = (uint32_t)(esp_timer_get_time() / 1000);
+    }
+
+    // Putuskan sesi radio lama di level driver
+    esp_wifi_disconnect();
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // Gunakan konfigurasi channel cache jika ada untuk re-koneksi kilat (~1.5 detik)
+    if (s_hasCachedAp && s_cachedChannel > 0) {
+        wifi_config_t sta_cfg = {};
+        if (esp_wifi_get_config(WIFI_IF_STA, &sta_cfg) == ESP_OK) {
+            sta_cfg.sta.channel = s_cachedChannel;
+            sta_cfg.sta.scan_method = WIFI_FAST_SCAN;
+            sta_cfg.sta.bssid_set = 0;
+            esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
+        }
+    }
+
+    esp_err_t err = esp_wifi_connect();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Gagal memanggil esp_wifi_connect: %s (0x%X)", esp_err_to_name(err), err);
+    }
+}
+
+void NetworkManager::checkFastLinkHealth() {
+    // 1. Hanya aktif pada mode Wi-Fi Station
+    if (g_config.connection_mode != static_cast<int>(ConnectionMode::WIFI)) return;
+    if (s_manualConfigMode || s_apActive) return;
+
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+
+    // 2. Jika Wi-Fi Station belum terhubung atau sedang dalam masa pemulihan (grace period 10s)
+    if (!s_wifiConnected || !s_wifiHasIp || s_staNetif == nullptr) {
+        s_gatewayRtoCount = 0;
+        return;
+    }
+
+    if (s_lastReassociateTimeMs > 0 && (now - s_lastReassociateTimeMs) < 10000) {
+        s_gatewayRtoCount = 0;
+        return;
+    }
+
+    // 3. PASSIVE SNOOPING: Cek apakah ada trafik downlink masuk dalam 2 detik terakhir
+    uint32_t lastInbound = MqttService::getLastInboundActivityMs();
+    if (MqttService::isConnected() && lastInbound > 0 && (now - lastInbound) < 2000) {
+        // Trafik data riil mengalir lancar dari router! 0 beban probe ke router.
+        s_gatewayRtoCount = 0;
+        return;
+    }
+
+    // 4. ACTIVE UNICAST PROBE: Jika tidak ada trafik masuk dalam 2s (atau MQTT terputus), probe Gateway
+    esp_netif_ip_info_t ip_info = {};
+    if (esp_netif_get_ip_info(s_staNetif, &ip_info) != ESP_OK || ip_info.gw.addr == 0) {
+        return;
+    }
+
+    // Jitter pencegah spike bersamaan jika banyak device ESP di satu router (0 - 150 ms berbasis MAC)
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    uint32_t jitter = (mac[5] % 4) * 50; // 0, 50, 100, 150 ms
+    if (jitter > 0) {
+        vTaskDelay(pdMS_TO_TICKS(jitter));
+    }
+
+    bool alive = probeGateway(ip_info.gw.addr);
+    if (alive) {
+        s_gatewayRtoCount = 0;
+    } else {
+        s_gatewayRtoCount++;
+        ESP_LOGW(TAG, "Gateway Router tidak merespons! (RTO %d/5)", s_gatewayRtoCount);
+
+        if (s_gatewayRtoCount >= 5) {
+            s_gatewayRtoCount = 0;
+            s_lastReassociateTimeMs = now;
+            forceWifiReassociate("Gateway RTO 5 Detik");
+        }
+    }
+}
+
+void NetworkManager::checkWifiDisconRetry() {
+    if (!shouldWifiStaConnect()) return;
+    if (s_wifiConnected) return;
+
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    // Jika router sedang reboot fisik atau event loop terhenti, coba reconnect setiap 5 detik
+    if (s_lastDisconRetryMs == 0 || (now - s_lastDisconRetryMs) >= 5000) {
+        s_lastDisconRetryMs = now;
+        ESP_LOGI(TAG, "Watchdog Diskoneksi Wi-Fi: Mencoba ulang esp_wifi_connect (Interval 5s)...");
+        esp_err_t err = esp_wifi_connect();
+        if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
+            ESP_LOGW(TAG, "esp_wifi_connect: %s", esp_err_to_name(err));
+        }
+    }
+}
+
 void NetworkManager::checkApInactivityTimeout() {
     uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
 
@@ -1126,6 +1278,8 @@ void NetworkManager::checkEthernetFallback() {
 void NetworkManager::tickWatchdog() {
     checkNtpWatchdog();
     checkDisconWatchdog();
+    checkFastLinkHealth();
+    checkWifiDisconRetry();
     checkApInactivityTimeout();
     checkDailyRestart();
     checkEthernetFallback();

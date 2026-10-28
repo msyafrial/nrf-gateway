@@ -58,6 +58,7 @@ Dokumentasi ini dibagi ke dalam modul-modul spesifik sesuai standar operasional 
 | **[5. Database NVS & Konfigurasi](nvs_and_configuration.md)** | Skema namespace NVS, mekanisme Dual-Tier protection (`cfg_*` vs Master), skrip sinkronisasi otomatis, dan prosedur factory reset. | Teknisi Lapangan / System Admin |
 | **[6. Carrier-Grade Dual OTA](carrier_grade_ota.md)** | Proteksi partisi dual OTA `app0`/`app1`, validasi pre-flight signature `MODEL@BOARD_VERSION`, LittleFS OTA, dan hardware anti-brick rollback. | DevOps & Maintenance Engineers |
 | **[7. Panduan Flashing & Produksi Massal](flashing_and_production.md)** | Peta memori 6 file `.bin`, offset alamat memori, panduan GUI Espressif Flash Tool, serta perintah 1-baris CLI untuk chip kosong. | Tim Produksi & Quality Control |
+| **[8. Panduan Git Trial & Restore](../PANDUAN_GIT_TRIAL_DAN_RESTORE.md)** | Alur kerja branch eksperimen (trial), isolasi kode lokal, cara beralih/merge/rollback kembali ke branch `main`, dan restore tag rilis. | Software & Firmware Engineers |
 
 ---
 

@@ -5,9 +5,9 @@ adm_pass,data,string,admin
 tek_user,data,string,user
 tek_pass,data,string,user
 network,namespace,,
-mode,data,u32,1
-w_ssid,data,string,C43
-w_pass,data,string,Eyro1234
+mode,data,u32,0
+w_ssid,data,string,Ismail
+w_pass,data,string,Safrizal01
 w_dhcp,data,u32,1
 w_ip,data,string,192.168.1.100
 w_gw,data,string,192.168.1.1

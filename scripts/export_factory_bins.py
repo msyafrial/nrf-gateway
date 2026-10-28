@@ -194,13 +194,13 @@ if "%PORT%"=="" (
 )
 
 echo.
-echo Memulai proses flashing ke %PORT% pada baudrate 921600...
+echo Memulai proses flashing ke %PORT% pada baudrate 460800...
 echo Tekan tombol BOOT pada ESP32 jika proses koneksi menunggu (Connecting...)...
 echo.
 
 if exist "%~dp0esptool.exe" (
-    echo [INFO] Menggunakan standalone esptool.exe portable (tanpa butuh install Python)...
-    "%~dp0esptool.exe" --chip esp32 --port %PORT% --baud 921600 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 80m --flash_size 4MB ^
+    echo [INFO] Menggunakan standalone esptool.exe portable...
+    "%~dp0esptool.exe" --chip esp32 --port %PORT% --baud 460800 --before default-reset --after hard-reset write-flash -z --flash-mode dio --flash-freq 80m --flash-size 4MB ^
       0x1000 "%~dp0bootloader.bin" ^
       0x8000 "%~dp0partitions.bin" ^
       0x9000 "%~dp0nvs.bin" ^
@@ -210,7 +210,7 @@ if exist "%~dp0esptool.exe" (
       0x300000 "%~dp0filesystem.bin"
 ) else (
     echo [INFO] esptool.exe lokal tidak ditemukan, mencoba via Python esptool module...
-    python -m esptool --chip esp32 --port %PORT% --baud 921600 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 80m --flash_size 4MB ^
+    python -m esptool --chip esp32 --port %PORT% --baud 460800 --before default-reset --after hard-reset write-flash -z --flash-mode dio --flash-freq 80m --flash-size 4MB ^
       0x1000 bootloader.bin ^
       0x8000 partitions.bin ^
       0x9000 nvs.bin ^

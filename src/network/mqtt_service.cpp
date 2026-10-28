@@ -178,6 +178,7 @@ static char s_topicCmd[128]       = "";
 static char s_topicRes[128]       = "";
 static char s_topicHeartbeat[64]  = "CRHC3048";
 static uint32_t s_lastHeartbeatMs = 0;
+static std::atomic<uint32_t> s_lastInboundActivityMs{0};
 static char s_lastError[64]       = "None";
 
 static uint8_t s_batchBuffer[MQTT_BATCH_BUFFER_SIZE];
@@ -426,6 +427,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
     switch ((esp_mqtt_event_id_t)id) {
         case MQTT_EVENT_CONNECTED: {
             s_mqttConnected = true;
+            s_lastInboundActivityMs.store((uint32_t)(esp_timer_get_time() / 1000));
             strlcpy(s_lastError, "Connected", sizeof(s_lastError));
             ESP_LOGI(TAG, "Terhubung ke broker MQTT!");
             Bsp::LedManager::setComState(ComLedState::NORMAL);
@@ -478,6 +480,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
         }
 
         case MQTT_EVENT_PUBLISHED:
+            s_lastInboundActivityMs.store((uint32_t)(esp_timer_get_time() / 1000));
             // Broker berhasil menerima data dan mengirimkan PUBACK (QoS 1 Ack downlink feedback)
             if (g_config.mqtt_qos == 1) {
                 ESP_LOGD(TAG, "PUBACK diterima dari broker untuk MsgID=%d", event->msg_id);
@@ -486,11 +489,13 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
             break;
 
         case MQTT_EVENT_SUBSCRIBED:
+            s_lastInboundActivityMs.store((uint32_t)(esp_timer_get_time() / 1000));
             ESP_LOGD(TAG, "SUBACK diterima dari broker untuk MsgID=%d", event->msg_id);
             recordWireBytes(calculateSubackWireBytes());
             break;
 
         case MQTT_EVENT_DATA: {
+            s_lastInboundActivityMs.store((uint32_t)(esp_timer_get_time() / 1000));
             if (event->topic && event->topic_len > 0) {
                 // Catat downlink wire bytes dari broker (termasuk TCP/IP dan MAC overhead)
                 size_t varLen = 2 + event->topic_len + event->data_len;
@@ -679,6 +684,9 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                                                             (const char*)s_batchBuffer,
                                                             batchLen, qos, 0);
                         if (msgId >= 0) {
+                            if (qos == 0) {
+                                s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
+                            }
                             recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
                             Bsp::LedManager::triggerTrafficBlip();
                             Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
@@ -714,6 +722,9 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                                                         (const char*)s_batchBuffer,
                                                         batchLen, qos, 0);
                     if (msgId >= 0) {
+                        if (qos == 0) {
+                            s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
+                        }
                         recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
                         Bsp::LedManager::triggerTrafficBlip();
                         Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
@@ -804,6 +815,10 @@ void MqttService::init() {
 }
 
 bool MqttService::isConnected() { return s_mqttConnected; }
+
+uint32_t MqttService::getLastInboundActivityMs() {
+    return s_lastInboundActivityMs.load(std::memory_order_relaxed);
+}
 
 void MqttService::forceReconnect() {
     if (s_mqttClient != nullptr) {
