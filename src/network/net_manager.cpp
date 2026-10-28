@@ -521,6 +521,10 @@ void NetworkManager::ensureWifiDriverInitialized() {
     if (!s_wifiDriverInitialized) {
         if (s_staNetif == nullptr) {
             s_staNetif = esp_netif_create_default_wifi_sta();
+            char hostname[64];
+            getMdnsHostname(hostname, sizeof(hostname));
+            esp_netif_set_hostname(s_staNetif, hostname);
+            ESP_LOGI(TAG, "Wi-Fi Station Hostname (DHCP Option 12) diset ke: %s", hostname);
         }
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -540,6 +544,11 @@ void NetworkManager::ensureWifiDriverInitialized() {
 
 void NetworkManager::initWifiStation() {
     ensureWifiDriverInitialized();
+
+    char hostname[64];
+    getMdnsHostname(hostname, sizeof(hostname));
+    esp_netif_set_hostname(s_staNetif, hostname);
+
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
 
     wifi_config_t wifi_config = {};
