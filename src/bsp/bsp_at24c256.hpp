@@ -49,9 +49,11 @@ public:
     static esp_err_t readSlotHeader(size_t slotIdx, uint32_t* outMagic, uint32_t* outSeqId);
     static esp_err_t writePage(uint16_t memAddr, const uint8_t* data, size_t len);
     static esp_err_t readBuffer(uint16_t memAddr, uint8_t* outBuf, size_t len);
+    static void recoverBus();
 
 private:
     static bool probe();
+    static esp_err_t waitForWriteComplete(uint32_t timeoutMs = 15);
 };
 
 } // namespace Iotaru::Bsp

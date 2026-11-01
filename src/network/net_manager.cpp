@@ -24,6 +24,7 @@
 #include <cstring>
 #include <cstdio>
 #include <ctime>
+#include <fcntl.h>
 
 static const char *TAG = "NET_MGR";
 
@@ -66,6 +67,8 @@ static uint32_t s_lastApActivityTime = 0;
 static uint8_t  s_gatewayRtoCount = 0;
 static uint32_t s_lastReassociateTimeMs = 0;
 static uint32_t s_lastDisconRetryMs = 0;
+static uint32_t s_fastLinkBackoffIntervalMs = 15000;
+static uint32_t s_lastFastLinkCheckMs = 0;
 static const uint32_t AP_INACTIVITY_TIMEOUT_MS = 60000; // 60 Detik
 static uint32_t s_pendingApStopMillis = 0;
 
@@ -367,6 +370,7 @@ void NetworkManager::onIpEvent(void* arg, esp_event_base_t base, int32_t id, voi
         if (id == IP_EVENT_STA_GOT_IP) {
             s_wifiHasIp = true;
             restoreWifiDnsAndDefaultRoute();
+            resetFastLinkBackoff();
         }
         s_disconStartTime = 0; // Reset watchdog timer
         Bsp::LedManager::autoSync(true, true, MqttService::isConnected(), s_apActive);
@@ -791,6 +795,19 @@ void NetworkManager::getWifiIp(char* outBuf, size_t maxLen) {
     snprintf(outBuf, maxLen, "-");
 }
 
+bool NetworkManager::getWifiIpRaw(char* outBuf, size_t maxLen) {
+    if (!outBuf || maxLen == 0) return false;
+    outBuf[0] = '\0';
+    if (s_staNetif != nullptr) {
+        esp_netif_ip_info_t ip_info;
+        if (esp_netif_get_ip_info(s_staNetif, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
+            esp_ip4addr_ntoa(&ip_info.ip, outBuf, maxLen);
+            return true;
+        }
+    }
+    return false;
+}
+
 void NetworkManager::getWifiMac(char* outBuf, size_t maxLen) {
     if (!outBuf || maxLen == 0) return;
     outBuf[0] = '\0';
@@ -819,6 +836,19 @@ void NetworkManager::getEthernetIp(char* outBuf, size_t maxLen) {
         return;
     }
     snprintf(outBuf, maxLen, "-");
+}
+
+bool NetworkManager::getEthernetIpRaw(char* outBuf, size_t maxLen) {
+    if (!outBuf || maxLen == 0) return false;
+    outBuf[0] = '\0';
+    if (s_ethDriver && s_ethDriver->isHardwareDetected() && s_ethDriver->isConnected()) {
+        s_ethDriver->getIp(outBuf, maxLen);
+        if (outBuf[0] != '\0' && strcmp(outBuf, "0.0.0.0") != 0) {
+            return true;
+        }
+        outBuf[0] = '\0';
+    }
+    return false;
 }
 
 void NetworkManager::getEthernetMac(char* outBuf, size_t maxLen) {
@@ -902,53 +932,78 @@ void NetworkManager::checkDisconWatchdog() {
     }
 }
 
-static bool probeGateway(uint32_t gw_ip) {
+static bool isGatewayRouterAlive(uint32_t gw_ip) {
     if (gw_ip == 0) return false;
 
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sock < 0) return false;
 
-    // Timeout 400ms agar responsif dan tidak memblokir supervisor task
-    struct timeval tv = {};
-    tv.tv_sec = 0;
-    tv.tv_usec = 400000;
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-    struct sockaddr_in dest = {};
-    dest.sin_family = AF_INET;
-    dest.sin_port = htons(53); // Port 53 DNS internal Gateway Router
-    dest.sin_addr.s_addr = gw_ip;
-
-    // Paket DNS kueri minimal Unicast (17 bytes: ID 0x1234, Opcode 0, Root Query '.')
-    static const uint8_t dns_probe[] = {
-        0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01
-    };
-
-    ssize_t sent = sendto(sock, dns_probe, sizeof(dns_probe), 0, (struct sockaddr*)&dest, sizeof(dest));
-    if (sent < 0) {
+    // Set non-blocking socket agar connect tidak memblokir supervisor task
+    int flags = fcntl(sock, F_GETFL, 0);
+    if (flags < 0 || fcntl(sock, F_SETFL, flags | O_NONBLOCK) < 0) {
         close(sock);
         return false;
     }
 
-    uint8_t rx_buf[64];
-    ssize_t r = recvfrom(sock, rx_buf, sizeof(rx_buf), 0, nullptr, nullptr);
-    int err = (r < 0) ? errno : 0;
-    close(sock);
+    struct sockaddr_in dest = {};
+    dest.sin_family = AF_INET;
+    dest.sin_port = htons(80); // HTTP Port Web Management Gateway Router
+    dest.sin_addr.s_addr = gw_ip;
 
-    // Jika router merespons kueri DNS (r > 0), ATAU jika port 53 router tidak aktif tapi router mengirim ICMP Port Unreachable (ECONNREFUSED / 111):
-    // Keduanya membuktikan router aktif merespons paket ESP32 di Layer 2/3!
-    if (r > 0 || err == ECONNREFUSED) {
+    int res = connect(sock, (struct sockaddr*)&dest, sizeof(dest));
+    if (res == 0) {
+        // Terhubung seketika
+        close(sock);
         return true;
     }
 
+    if (errno != EINPROGRESS) {
+        // Jika langsung ECONNREFUSED (RST dari stack TCP/IP router), router terbukti hidup di LAN!
+        if (errno == ECONNREFUSED) {
+            close(sock);
+            return true;
+        }
+        close(sock);
+        return false;
+    }
+
+    // Tunggu respon dengan timeout 300ms via select
+    fd_set readfds, writefds;
+    FD_ZERO(&readfds);
+    FD_ZERO(&writefds);
+    FD_SET(sock, &readfds);
+    FD_SET(sock, &writefds);
+
+    struct timeval tv = {};
+    tv.tv_sec = 0;
+    tv.tv_usec = 300000; // 300 ms
+
+    int sel = select(sock + 1, &readfds, &writefds, nullptr, &tv);
+    if (sel > 0) {
+        int so_error = 0;
+        socklen_t len = sizeof(so_error);
+        if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &so_error, &len) == 0) {
+            close(sock);
+            // so_error == 0: TCP SYN-ACK diterima (Port 80 aktif)
+            // so_error == ECONNREFUSED (111): TCP RST diterima dari router (Port tertutup tapi router aktif merespon di L2/L3)
+            return (so_error == 0 || so_error == ECONNREFUSED);
+        }
+    }
+
+    close(sock);
     return false;
+}
+
+void NetworkManager::resetFastLinkBackoff() {
+    s_fastLinkBackoffIntervalMs = 15000;
+    s_gatewayRtoCount = 0;
+    s_lastFastLinkCheckMs = 0;
 }
 
 void NetworkManager::forceWifiReassociate(const char* reason) {
     ESP_LOGW(TAG, "Memicu rekoneksi paksa Wi-Fi Station! Alasan: %s", reason ? reason : "-");
     char det[80];
-    snprintf(det, sizeof(det), "Link Zombie (%s) -> Reconnect Paksa", reason ? reason : "5s RTO");
+    snprintf(det, sizeof(det), "Link Zombie (%s) -> Reconnect Paksa", reason ? reason : "Gateway RTO");
     NetLogService::log(NetCategory::WIFI, NetEvent::ERROR_EVT, det);
 
     s_wifiConnected = false;
@@ -998,39 +1053,52 @@ void NetworkManager::checkFastLinkHealth() {
         return;
     }
 
-    // 3. PASSIVE SNOOPING: Cek apakah ada trafik downlink masuk dalam 2 detik terakhir
-    uint32_t lastInbound = MqttService::getLastInboundActivityMs();
-    if (MqttService::isConnected() && lastInbound > 0 && (now - lastInbound) < 2000) {
-        // Trafik data riil mengalir lancar dari router! 0 beban probe ke router.
+    // 3. BYPASS TOTAL: Jika MQTT terhubung, koneksi 100% sehat!
+    // Nol probe ke router, nol overhead, zero false positive.
+    if (MqttService::isConnected()) {
         s_gatewayRtoCount = 0;
+        s_fastLinkBackoffIntervalMs = 15000;
         return;
     }
 
-    // 4. ACTIVE UNICAST PROBE: Jika tidak ada trafik masuk dalam 2s (atau MQTT terputus), probe Gateway
+    // 4. JITTER BERBASIS MAC (Pencegah thundering herd pada puluhan device)
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    uint32_t jitterMs = (mac[5] % 10) * 1000; // 0 - 9 detik
+
+    // 5. Evaluasi interval backoff adaptif
+    if (s_lastFastLinkCheckMs > 0 && (now - s_lastFastLinkCheckMs) < (s_fastLinkBackoffIntervalMs + jitterMs)) {
+        return;
+    }
+    s_lastFastLinkCheckMs = now;
+
+    // 6. PROBE GATEWAY VIA UNICAST TCP 80
     esp_netif_ip_info_t ip_info = {};
     if (esp_netif_get_ip_info(s_staNetif, &ip_info) != ESP_OK || ip_info.gw.addr == 0) {
         return;
     }
 
-    // Jitter pencegah spike bersamaan jika banyak device ESP di satu router (0 - 150 ms berbasis MAC)
-    uint8_t mac[6] = {0};
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    uint32_t jitter = (mac[5] % 4) * 50; // 0, 50, 100, 150 ms
-    if (jitter > 0) {
-        vTaskDelay(pdMS_TO_TICKS(jitter));
-    }
-
-    bool alive = probeGateway(ip_info.gw.addr);
+    bool alive = isGatewayRouterAlive(ip_info.gw.addr);
     if (alive) {
+        // KASUS A: Router lokal hidup! (Kemungkinan kuota internet habis atau ISP WAN padam)
+        // Wi-Fi lokal tetap sehat -> JANGAN PUTUSKAN WI-FI agar Web UI tetap bisa dibuka!
         s_gatewayRtoCount = 0;
-    } else {
-        s_gatewayRtoCount++;
-        ESP_LOGW(TAG, "Gateway Router tidak merespons! (RTO %d/5)", s_gatewayRtoCount);
 
-        if (s_gatewayRtoCount >= 5) {
+        // Terapkan exponential backoff agar tidak membebani router: 15s -> 30s -> 60s -> 120s -> 300s (maks 5 menit)
+        if (s_fastLinkBackoffIntervalMs < 300000) {
+            s_fastLinkBackoffIntervalMs = (s_fastLinkBackoffIntervalMs * 2 > 300000) ? 300000 : (s_fastLinkBackoffIntervalMs * 2);
+            ESP_LOGI(TAG, "Gateway Router aktif di LAN (ISP/WAN offline). Backoff interval naik ke %u ms", (unsigned int)s_fastLinkBackoffIntervalMs);
+        }
+    } else {
+        // Router tidak merespons
+        s_gatewayRtoCount++;
+        ESP_LOGW(TAG, "Gateway Router tidak merespons di LAN! (Percobaan %d/2)", s_gatewayRtoCount);
+
+        if (s_gatewayRtoCount >= 2) {
             s_gatewayRtoCount = 0;
+            s_fastLinkBackoffIntervalMs = 15000;
             s_lastReassociateTimeMs = now;
-            forceWifiReassociate("Gateway RTO 5 Detik");
+            forceWifiReassociate("Router Unreachable / Zombie Link");
         }
     }
 }

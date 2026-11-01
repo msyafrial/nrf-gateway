@@ -1658,8 +1658,132 @@ Pemisahan arsitektur versioning gateway agar setiap layer dapat di-update secara
   - `Node.js` (Aktif secara default) &rarr; `Python` &rarr; `Go` &rarr; `Rust` &rarr; `Node-RED` &rarr; `cURL`.
   - Seluruh contoh kode bahasa pemrograman pendukung diperbarui untuk membaca struktur paket biner telemetri iBeacon secara akurat.
 
+## 63. Standarisasi Format Topik MQTT Dinamis (Dynamic Model Prefix)
+- **1. Aturan Ekstraksi Prefix Model**:
+  - Topik MQTT gateway diekstraksi secara dinamis dari konfigurasi NVS `dev_model` (`g_config.device_model`).
+  - **Karakter Sebelum Dash (`-`)**: Mengambil substring sebelum tanda hubung `-` dan mengonversinya menjadi huruf kecil (*lowercase*).
+    - Contoh: `AR-27` &rarr; prefix `ar`
+    - Contoh: `SGD-268` &rarr; prefix `sgd`
+  - **Fail-safe Tanpa Dash**: Jika nilai model tidak memiliki tanda hubung `-`, sistem mengambil maksimal 5 karakter alfanumerik pertama dalam format huruf kecil (*lowercase*).
+    - Contoh: `GATEWAY` &rarr; prefix `gatew`
+    - Contoh: `SG10` &rarr; prefix `sg10`
+  - **Fail-safe Kosong**: Jika string model kosong atau tidak valid, sistem menggunakan default `ar`.
+- **2. Format Topik Operasional Aktif**:
+  - **Data Telemetri**: `<prefix>/data/<device_id>` (contoh: `ar/data/f5145c3c`)
+  - **Status Operasional (Birth & LWT)**: `<prefix>/info/<device_id>/status` (contoh: `ar/info/f5145c3c/status`)
+  - **Penerima Perintah (Command Inbound)**: `<prefix>/cmd/<device_id>` (contoh: `ar/cmd/f5145c3c`)
+  - **Respon Perintah (Response Outbound)**: `<prefix>/res/<device_id>` (contoh: `ar/res/f5145c3c`)
+
+## 64. Standarisasi Format Payload Status MQTT (Birth Message & LWT)
+- **1. Skema JSON Terpadu (Unified Status Schema)**:
+  - Digunakan secara konsisten baik saat koneksi awal berhasil (*Birth Message* `status: "online"`) maupun saat perangkat terputus tiba-tiba (*Last Will & Testament* `status: "offline"`).
+  - Dikirimkan ke topik status operasional: `<prefix>/info/<device_id>/status` dengan flag `QoS 1` & `Retain 1`.
+  - **Daftar Field JSON**:
+    - `"status"`: `"online"` atau `"offline"`
+    - `"device_id"`: ID perangkat unik berbasis MAC chip (contoh: `"f5145c3c"`)
+    - `"model"`: Model perangkat dari NVS `dev_model` (contoh: `"AR-27"`)
+    - `"mode"`: Mode koneksi aktif (`"wifi"` atau `"ethernet"`)
+    - `"ipwlan"`: Alamat IP antarmuka Wi-Fi Station (atau `""` jika tidak terhubung)
+    - `"ipeth"`: Alamat IP antarmuka Ethernet W5500 (atau `""` jika tidak terhubung/kabel lepas)
+    - `"firm_ver"`: Versi firmware C++ ESP-IDF (contoh: `"v1.2.1"`)
+    - `"ui_ver"`: Versi antarmuka web LittleFS (contoh: `"v1.2.1"`)
+    - `"dev_ver"`: Versi board/hardware NVS `dev_ver` (contoh: `"v1.0.0"`)
+  - **Contoh Payload**:
+    ```json
+    {
+      "status": "online",
+      "device_id": "f5145c3c",
+      "model": "AR-27",
+      "mode": "wifi",
+      "ipwlan": "192.168.8.167",
+      "ipeth": "",
+      "firm_ver": "v1.2.1",
+      "ui_ver": "v1.2.1",
+      "dev_ver": "v1.0.0"
+    }
+    ```
 
 
+## 65. Arsitektur Ketahanan Wi-Fi & Auto-Recovery Zombie Link (Enterprise Resilience)
+- **1. Latar Belakang & Eliminasi False Positive**:
+  - Pada lingkungan router komersial atau modem 4G/LTE, kueri DNS UDP port 53 sering kali di-drop oleh firewall lokal router tanpa memberikan respons. Logika lama yang menganggap ketiadaan respons port 53 sebagai link putus memicu gateway melakukan pemutusan radio paksa (`ASSOC_LEAVE: 8`) setiap 1–2 menit (*false positive*).
+  - Kasus *silent drop* atau *zombie link* (di mana AP mencoret asosiasi station tanpa mengirimkan frame 802.11 Deauth) di lapangan merupakan anomali langka (rata-rata 1 kali dalam 3 hari).
+- **2. Prinsip Kerja & Alur Keputusan Resilien**:
+  - **Bypass Total Saat MQTT Online**:
+    - Selama koneksi MQTT aktif (`MqttService::isConnected() == true`), fungsi `checkFastLinkHealth()` langsung me-*reset* counter RTO dan keluar (*return*) seketika.
+    - Zero probe, nol beban komputasi soket, dan nol transmisi paket ke router gateway selama operasional normal.
+  - **Pencegahan Thundering Herd & Broadcast Storm (Multi-Device Matrix)**:
+    - **Unicast Layer 2/3 TCP Port 80**: Pemeriksaan integritas router dilakukan langsung ke alamat IP Gateway (`ip_info.gw.addr`) pada TCP port 80 dengan *socket non-blocking* dan *timeout* singkat 300 ms.
+    - Jika port 80 terbuka (`so_error == 0` / SYN-ACK) ATAU jika port ditutup oleh firewall router (`so_error == ECONNREFUSED` / RST), kedua respon membuktikan bahwa router lokal hidup dan berkomunikasi lancar di LAN.
+    - **MAC-Based Jitter**: Interval pengecekan diacak berbasis octet MAC unik: `(mac[5] % 10) * 1000` ms (rentang 0–9 detik). Mencegah puluhan perangkat di jaringan yang sama mengetuk gateway secara serentak.
+    - **Exponential Backoff Saat Kuota Habis / ISP Padam**:
+      - Jika router lokal terbukti hidup namun MQTT belum terhubung (kasus kuota seluler modem habis atau ISP pusat padam), gateway **DILARANG MEMUTUSKAN WI-FI**.
+      - Web Dashboard tetap 100% dapat diakses oleh teknisi/administrator di IP lokal (`192.168.8.x`).
+      - Interval probe secara adaptif digandakan (*exponential backoff*): 15s &rarr; 30s &rarr; 60s &rarr; 120s &rarr; 300s (maksimal 5 menit).
+    - **Vonis Zombie Link Nyata**:
+      - Hanya jika router gateway gagal merespons selama 2 kali percobaan berturut-turut pada interval terjadwal (menandakan Wi-Fi radio benar-benar terisolasi / *zombie link*), gateway memanggil `forceWifiReassociate("Router Unreachable / Zombie Link")`.
+      - Pemutusan sesi radio bersih dilakukan di level driver (`esp_wifi_disconnect()`) dan langsung menyambung kembali dengan memanfaatkan *channel cache* (`WIFI_FAST_SCAN` ~1.5 detik) tanpa restart perangkat keras.
+  - **Reset Otomatis Status Backoff**:
+    - Ketika Wi-Fi memperoleh IP (`IP_EVENT_STA_GOT_IP`) atau ketika koneksi MQTT berhasil terjalin (`MQTT_EVENT_CONNECTED`), interval backoff dan counter RTO di-reset ke nilai awal (15.000 ms).
 
 
+## 66. Standarisasi Keandalan EEPROM AT24C256 & Net Log Service (Industrial Grade)
+- **1. Pemulihan Bus I2C Otomatis Pasca-Reboot Lunak (`recoverBus`)**:
+  - Menyelesaikan fenomena *false RAM-only fallback* saat ESP32 melakukan *soft restart* atau *watchdog reboot* ketika jalur I2C SDA sedang tertahan LOW oleh EEPROM.
+  - Sebelum inisialisasi I2C master bus, pin SCL dipulsa hingga 9 kali dan diakhiri kondisi STOP I2C untuk membebaskan bus kembali ke kondisi IDLE (HIGH).
+  - Dilengkapi *multi-attempt probe* (3 kali percobaan dengan interval 15 ms) untuk mengakomodasi waktu stabilisasi daya (*power rail settling time*).
+- **2. Penguncian Atomik Dua Halaman & Acknowledge Polling (`writeSlot`)**:
+  - Penulisan 1 slot log (128 byte) terdiri dari 2 halaman (Page 1: 64B, Page 2: 64B).
+  - Mutex `s_i2cMutex` dikunci secara menyeluruh mencakup transmisi Page 1, siklus tulis internal EEPROM ($t_{WR}$ via active *Acknowledge Polling*), transmisi Page 2, dan siklus tulis Page 2.
+  - Menghilangkan *race condition* antar-task (MQTT / Web Server) yang sebelumnya memicu kegagalan penulisan Halaman 2 dan korupsi checksum (offset 118).
+- **3. Toleransi Jitter Baca (`readBuffer`) & Re-Probe Dinamis Runtime (`isDetected`)**:
+  - `readBuffer()` kini menyertakan 1 kali percobaan ulang (*retry*) jika menerima NACK sesaat akibat *noise* atau jitter bus I2C.
+  - `At24c256::isDetected()` melakukan *re-probe* dinamis di latar belakang jika EEPROM sempat tidak terdeteksi saat boot awal, memungkinkan pemulihan otomatis dari mode RAM ke EEPROM tanpa restart fisik.
+- **4. Jaminan Non-Zero Snapshot Fallback pada Web Dashboard (`getLogs`)**:
+  - Web UI mengambil data log 100% dari buffer RAM `s_logs` (cepat, hemat komputasi, dan zero flash/EEPROM wear).
+  - Timeout mutex dinaikkan dari 100 ms ke 500 ms.
+  - Jika mutex sedang digunakan oleh penulisan EEPROM, fungsi `getLogs()` langsung menyalin memori RAM `s_logs` (RAM snapshot fallback) dan **DILARANG mengembalikan 0 log kosong**. Memastikan tabel log di browser web selalu terisi dan tidak pernah tampak kosong sesaat.
 
+
+## 67. Standarisasi UI/UX System & Data Logs (`log.html`) - Cybernetic Dark Bento Grid (2026)
+- **1. Harmonisasi Visual Hierarchy dengan Overview (`index.html`)**:
+  - Container `.content` kini menggunakan konfigurasi industrial standar `max-width: 1440px !important`, dengan padding desktop `24px 28px 28px 28px` dan padding mobile `16px 16px 90px 16px`.
+  - Mengadopsi palet warna dan token Bento Grid:
+    - Base Dark Background: `#080c14`
+    - Card Container: `#0d121f` dengan border `1px solid #1a2333`, border-radius `14px`, dan box-shadow `0 4px 20px rgba(0, 0, 0, 0.35)`.
+    - Subcards & Inset Controls: Background `#090e18` dengan border `1px solid #1a2333`.
+    - Typography & Monospace: Tipografi UI menggunakan `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto` dan semua nilai metrik, timestamp, IP, MAC, RSSI, dan counter menggunakan `ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`.
+- **2. Slim Top Header Card (`.sg-header-card`)**:
+  - Menggantikan judul `.net-log-header` lama dengan Bento Header Card ramping yang identik dengan Overview:
+    - Chip icon 42x42px berlatar `rgba(30, 58, 138, 0.25)` dengan border `rgba(59, 130, 246, 0.35)` dan icon SVG terminal berwarna `#60a5fa`.
+    - Judul tebal `SYSTEM & DATA LOGS` (`1.08rem`, font-weight 700, warna `#ffffff`), titik pemisah dot separator (`.sg-title-dot`), dan subtitle deskriptif `"Dual-Engine Realtime Auditor: LittleFS Network Audit Trail & RAM Ring Buffer"`.
+    - Capsule badge pill (`.sg-badge-pill`) dengan pulse dot dan label `"ROLLING FIFO (2x50)"`.
+- **3. Master Segmented Tab Selector (`.master-tabs`)**:
+  - Segmented control bergaya cybernetic bento dengan container `#090e18`, border `1px solid #1a2333`, border-radius `12px`, dan padding `5px`.
+  - Tab "Log Jaringan & Sistem" menggunakan pulse dot cyan (`#38bdf8`) dan active glow `rgba(56, 189, 248, 0.14)`.
+  - Tab "Log Drop Data Beacon" menggunakan pulse dot rose (`#fb7185`) dan active glow `rgba(244, 63, 94, 0.14)`.
+  - Capsule pill counter monospace (`badgeCountNet`, `badgeCountDrop`) untuk status volume log real-time.
+- **4. Bento KPI Cards (Dual 4-Column Responsive Grid)**:
+  - Grid 4 kolom responsif (`repeat(4, 1fr)` pada desktop, 2 kolom pada tablet, 1 kolom pada mobile).
+  - Setiap card dilengkapi Bento Icon Box 34x34px (`#141c2c`, border `#233148`, border-radius `8px`) dengan warna ikon semantik:
+    - Wi-Fi Station: Emerald (`#10b981`)
+    - Ethernet W5500: Blue (`#60a5fa`)
+    - MQTT Broker: Violet (`#c084fc`)
+    - ESP32 Reboot: Cyan (`#38bdf8`)
+    - Total Drop: Rose (`#fb7185`)
+    - Filter RSSI: Amber (`#fbbf24`)
+    - Filter Target: Orange (`#fb923c`)
+    - MQTT Fail: Red/Rose (`#ef4444`)
+  - Nilai metrik angka besar monospace (`1.35rem`, font-weight 700, `#ffffff`).
+  - Baris informasi sub-metrik bergaris batas halus `border-top: 1px solid rgba(255, 255, 255, 0.04)` dengan teks tebal monospace kontras tinggi.
+  - Mempertahankan 100% ID DOM elemen untuk sinkronisasi JavaScript (`log.js`): `cardKpiWifi`, `kpiWifiBadge`, `dotWifi`, `textWifiStatus`, `kpiWifiSsid`, `kpiWifiIp`, `kpiWifiDc`, `cardKpiEth`, `kpiEthBadge`, `dotEth`, `textEthStatus`, `kpiEthLink`, `kpiEthIp`, `kpiEthDc`, `cardKpiMqtt`, `kpiMqttTitle`, `kpiMqttBadge`, `dotMqtt`, `textMqttStatus`, `kpiMqttHost`, `kpiMqttState`, `kpiMqttPort`, `kpiMqttDc`, `kpiBootStorageBadge`, `kpiBootCount`, `kpiResetReason`, `kpiDropTotal`, `kpiDropTtl`, `kpiDropOvr`, `kpiDropRssi`, `kpiDropFilter`, `kpiDropUuid`, `kpiDropMajor`, `kpiDropMqtt`.
+- **5. Toolbar & Action Controls (`.log-toolbar-card`)**:
+  - Container Bento `#0d121f` dengan pemisah bersih antara bilah filter/aksi atas dan bilah pencarian bawah.
+  - Filter pills bertema segmented control `#090e18` untuk filter kategori jaringan (`Wi-Fi`, `Ethernet`, `MQTT`, `SoftAP`, `System`) dan filter drop beacon (`RSSI Min`, `UUID`, `Major`, `Overflow`, `TTL`, `MQTT Fail`).
+  - Action button cluster (`#btnAutoRefresh`, `#btnManualRefresh`, `#btnExportCsv`, `#btnClearLogs`) dengan tombol `#141c2c`, border `#233148`, dan efek hover glowing.
+  - Form pencarian terintegrasi dengan ikon search SVG dan counter record real-time.
+- **6. Cybernetic Log Table Card (`.net-log-table-wrap`)**:
+  - Container bento rapi dengan info header bar `#090e18`.
+  - Header kolom berlatar `#090e18` dengan teks uppercase `#64748b` (`0.78rem`, font-weight 700, letter-spacing `0.05em`).
+  - Efek hover baris tabel `rgba(56, 189, 248, 0.03)` dengan garis pemisah tipis `rgba(255, 255, 255, 0.04)`.
+  - Baris footer pagination modern dengan navigasi halaman monospace (`.btn-page`).

@@ -309,10 +309,17 @@ size_t NetLogService::getLogs(NetLogEntry* outEntries, size_t maxCount) {
     if (!outEntries || maxCount == 0) return 0;
     size_t count = 0;
 
-    if (s_logMutex && xSemaphoreTake(s_logMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    // Coba ambil mutex dengan timeout 500 ms (cukup untuk menunggu penulisan EEPROM selesai)
+    if (s_logMutex && xSemaphoreTake(s_logMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
         count = (s_logCount < maxCount) ? s_logCount : maxCount;
         std::memcpy(outEntries, s_logs, count * sizeof(NetLogEntry));
         xSemaphoreGive(s_logMutex);
+    } else {
+        // JAMINAN NON-ZERO SNAPSHOT FALLBACK:
+        // Jika mutex sedang sibuk menulis EEPROM, DILARANG me-return 0 kosong!
+        // Langsung salin snapshot memori RAM s_logs yang sudah ada ke outEntries.
+        count = (s_logCount < maxCount) ? s_logCount : maxCount;
+        std::memcpy(outEntries, s_logs, count * sizeof(NetLogEntry));
     }
     return count;
 }
@@ -381,6 +388,9 @@ bool NetLogService::loadFromEeprom() {
                     headIdx = static_cast<int>(i);
                 }
             }
+        }
+        if ((i % 25) == 0) {
+            vTaskDelay(pdMS_TO_TICKS(1)); // Cooperative yield to FreeRTOS scheduler & watchdog
         }
     }
 

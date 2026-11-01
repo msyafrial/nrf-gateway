@@ -26,8 +26,10 @@ public:
     static void getActiveIp(char* outBuf, size_t maxLen);
     static void getActiveMac(char* outBuf, size_t maxLen);
     static void getWifiIp(char* outBuf, size_t maxLen);
+    static bool getWifiIpRaw(char* outBuf, size_t maxLen);
     static void getWifiMac(char* outBuf, size_t maxLen);
     static void getEthernetIp(char* outBuf, size_t maxLen);
+    static bool getEthernetIpRaw(char* outBuf, size_t maxLen);
     static void getEthernetMac(char* outBuf, size_t maxLen);
     static ConnectionMode getActiveConnectionMode();
     static void getActiveWifiSsid(char* outBuf, size_t maxLen);
@@ -56,6 +58,7 @@ public:
     static void initMdns();
     static void getMdnsHostname(char* outBuf, size_t maxLen);
     static void updateSntpServer(const char* server);
+    static void resetFastLinkBackoff();
 
 private:
     static void initWifiStation();

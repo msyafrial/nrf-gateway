@@ -1,3 +1,10 @@
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <sys/stat.h>
+#include <esp_wifi.h>
+#include <esp_timer.h>
+
 #include "web_template.hpp"
 #include "emergency_page.hpp"
 #include "web_server.hpp"
@@ -6,12 +13,6 @@
 #include "net_manager.hpp"
 #include "mqtt_service.hpp"
 #include "IEthernetDriver.hpp"
-#include <esp_wifi.h>
-#include <esp_timer.h>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <sys/stat.h>
 
 namespace Iotaru::Web::Template {
 

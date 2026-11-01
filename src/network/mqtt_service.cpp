@@ -299,27 +299,78 @@ bool MqttService::buildBinaryPayload(const BeaconPacket& p, uint8_t* outBuf, siz
 }
 
 void MqttService::updateTopicNames() {
-    char dev_model[32];
+    char dev_prefix[32] = {0};
     char device_id[32];
 
     char raw_dev_id[16];
     Core::ConfigStore::getDeviceId(raw_dev_id, sizeof(raw_dev_id));
 
-    sanitizeToken(g_config.device_model[0] ? g_config.device_model : "SG-10", dev_model, sizeof(dev_model));
+    // Ekstraksi Prefix Topik:
+    // 1. Jika ada dash '-': ambil karakter sebelum dash, ubah ke lowercase.
+    // 2. Jika tidak ada dash: fail-safe ambil maksimal 5 karakter, ubah ke lowercase.
+    const char* raw_model = g_config.device_model[0] ? g_config.device_model : "ar";
+    const char* dash_pos = strchr(raw_model, '-');
+    size_t max_chars = (dash_pos != nullptr) ? static_cast<size_t>(dash_pos - raw_model) : 5;
+    if (max_chars > sizeof(dev_prefix) - 1) {
+        max_chars = sizeof(dev_prefix) - 1;
+    }
+
+    size_t pIdx = 0;
+    for (size_t i = 0; raw_model[i] != '\0' && raw_model[i] != '-' && pIdx < max_chars; ++i) {
+        char c = raw_model[i];
+        if (c >= 'A' && c <= 'Z') {
+            dev_prefix[pIdx++] = static_cast<char>(c + ('a' - 'A'));
+        } else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+            dev_prefix[pIdx++] = c;
+        }
+    }
+    dev_prefix[pIdx] = '\0';
+    if (pIdx == 0) {
+        strlcpy(dev_prefix, "ar", sizeof(dev_prefix));
+    }
+
     sanitizeToken(raw_dev_id, device_id, sizeof(device_id), true /* force lowercase */);
 
-    snprintf(s_topicData,      sizeof(s_topicData),      "%s/data/%s",        dev_model, device_id);
-    snprintf(s_topicStatus,    sizeof(s_topicStatus),    "%s/info/%s/status", dev_model, device_id);
-    snprintf(s_topicCmd,       sizeof(s_topicCmd),       "%s/cmd/%s",         dev_model, device_id);
-    snprintf(s_topicRes,       sizeof(s_topicRes),       "%s/res/%s",         dev_model, device_id);
+    snprintf(s_topicData,      sizeof(s_topicData),      "%s/data/%s",        dev_prefix, device_id);
+    snprintf(s_topicStatus,    sizeof(s_topicStatus),    "%s/info/%s/status", dev_prefix, device_id);
+    snprintf(s_topicCmd,       sizeof(s_topicCmd),       "%s/cmd/%s",         dev_prefix, device_id);
+    snprintf(s_topicRes,       sizeof(s_topicRes),       "%s/res/%s",         dev_prefix, device_id);
     snprintf(s_topicHeartbeat, sizeof(s_topicHeartbeat), "CRHC3048");
 
-    ESP_LOGI(TAG, "Topik MQTT Dikonfigurasi (dev_model='%s', device_id='%s'):", dev_model, device_id);
+    ESP_LOGI(TAG, "Topik MQTT Dikonfigurasi (model='%s' -> prefix='%s', device_id='%s'):",
+             raw_model, dev_prefix, device_id);
     ESP_LOGI(TAG, "  -> Data      : %s", s_topicData);
     ESP_LOGI(TAG, "  -> Status    : %s", s_topicStatus);
     ESP_LOGI(TAG, "  -> Cmd       : %s", s_topicCmd);
     ESP_LOGI(TAG, "  -> Res       : %s", s_topicRes);
     ESP_LOGI(TAG, "  -> Heartbeat : %s", s_topicHeartbeat);
+}
+
+static char s_lwtPayload[384] = {0};
+
+static void buildStatusPayload(const char* status, char* outBuf, size_t maxLen) {
+    if (!outBuf || maxLen == 0) return;
+
+    char device_id[32];
+    Core::ConfigStore::getDeviceId(device_id, sizeof(device_id));
+
+    // Mode saat ini: "ethernet" atau "wifi"
+    const char* mode = NetworkManager::isEthernetActive() ? "ethernet" :
+                       (g_config.connection_mode == 1 ? "ethernet" : "wifi");
+
+    char ipwlan[16] = {0};
+    NetworkManager::getWifiIpRaw(ipwlan, sizeof(ipwlan));
+
+    char ipeth[16] = {0};
+    NetworkManager::getEthernetIpRaw(ipeth, sizeof(ipeth));
+
+    const char* model = g_config.device_model[0] ? g_config.device_model : "AR-27";
+    const char* dev_ver = g_config.device_version[0] ? g_config.device_version : "v1.0.0";
+
+    snprintf(outBuf, maxLen,
+             "{\"status\":\"%s\",\"device_id\":\"%s\",\"model\":\"%s\",\"mode\":\"%s\","
+             "\"ipwlan\":\"%s\",\"ipeth\":\"%s\",\"firm_ver\":\"%s\",\"ui_ver\":\"%s\",\"dev_ver\":\"%s\"}",
+             status, device_id, model, mode, ipwlan, ipeth, FIRMWARE_VERSION, g_uiVersion, dev_ver);
 }
 
 static void formatMqttDisconnectDetail(esp_mqtt_event_handle_t event, char* outBuf, size_t maxLen) {
@@ -432,19 +483,15 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
             ESP_LOGI(TAG, "Terhubung ke broker MQTT!");
             Bsp::LedManager::setComState(ComLedState::NORMAL);
 
+            // Reset backoff interval network manager karena koneksi MQTT telah pulih sempurna
+            NetworkManager::resetFastLinkBackoff();
+
             // Bersihkan antrean lama saat booting/offline agar tidak menimbulkan drop TTL palsu
             Core::BeaconPipeline::flushQueue();
 
             // 1. Kirim Birth Message (QoS 1, Retain 1)
-            char ip_str[16];
-            NetworkManager::getActiveIp(ip_str, sizeof(ip_str));
-            char birth_payload[256];
-            char device_id[32];
-            Core::ConfigStore::getDeviceId(device_id, sizeof(device_id));
-
-            snprintf(birth_payload, sizeof(birth_payload),
-                     "{\"status\":\"online\",\"device_id\":\"%s\",\"model\":\"%s\",\"ip\":\"%s\",\"firmware\":\"%s\"}",
-                     device_id, g_config.device_model, ip_str, FIRMWARE_VERSION);
+            char birth_payload[384];
+            buildStatusPayload("online", birth_payload, sizeof(birth_payload));
 
             int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicStatus, birth_payload, strlen(birth_payload), 1, 1);
             if (msgId >= 0) {
@@ -459,6 +506,8 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
             s_lastHeartbeatMs = (uint32_t)(esp_timer_get_time() / 1000);
             publishHeartbeat();
 
+            char device_id[32];
+            Core::ConfigStore::getDeviceId(device_id, sizeof(device_id));
             char det[128];
             const char* scheme = g_config.mqtt_use_ssl ? "mqtts" : "mqtt";
             snprintf(det, sizeof(det), "Broker: %s://%s:%d | ID: %s", scheme, g_config.mqtt_host, g_config.mqtt_port, device_id);
@@ -781,9 +830,10 @@ void MqttService::init() {
             mqtt_cfg.broker.verification.crt_bundle_attach = esp_crt_bundle_attach;
         }
 
+        buildStatusPayload("offline", s_lwtPayload, sizeof(s_lwtPayload));
         mqtt_cfg.session.last_will.topic = s_topicStatus;
-        mqtt_cfg.session.last_will.msg = "{\"status\":\"offline\"}";
-        mqtt_cfg.session.last_will.msg_len = 20;
+        mqtt_cfg.session.last_will.msg = s_lwtPayload;
+        mqtt_cfg.session.last_will.msg_len = strlen(s_lwtPayload);
         mqtt_cfg.session.last_will.qos = 1;
         mqtt_cfg.session.last_will.retain = 1;
         mqtt_cfg.session.keepalive = (g_config.mqtt_keepalive >= 5 && g_config.mqtt_keepalive <= 65535) ? g_config.mqtt_keepalive : 30;
