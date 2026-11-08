@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <sys/stat.h>
 #include <esp_wifi.h>
 #include <esp_timer.h>
@@ -13,6 +14,7 @@
 #include "net_manager.hpp"
 #include "mqtt_service.hpp"
 #include "IEthernetDriver.hpp"
+#include "session_mgr.hpp"
 
 namespace Iotaru::Web::Template {
 
@@ -80,7 +82,7 @@ static void html_escape(const char *src, char *dst, size_t max_len) {
     dst[out_idx] = '\0';
 }
 
-bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) {
+bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len, UserRole role) {
     if (!out_buf || max_len == 0) return false;
     out_buf[0] = '\0';
 
@@ -390,8 +392,10 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
         snprintf(out_buf, max_len, Network::MqttService::isConnected() ? "emerald" : "slate");
     } else if (key == "mqtt_role_label") {
         snprintf(out_buf, max_len, Network::MqttService::isConnected() ? "Broker Connected — Beacon Uplink Active" : "Waiting for IoT Broker Connection");
+    } else if (key == "user_role" || key == "role") {
+        snprintf(out_buf, max_len, (role == UserRole::ENGINEER) ? "engineer" : "admin");
     } else if (key == "user") {
-        snprintf(out_buf, max_len, "Administrator");
+        snprintf(out_buf, max_len, (role == UserRole::ENGINEER) ? "Engineer" : "Administrator");
     } else if (key == "admin_user") {
         html_escape(g_config.admin_user, out_buf, max_len);
     } else if (key == "admin_pass") {
@@ -464,6 +468,22 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
         snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_BATT) ? "checked" : "");
     } else if (key == "telem_time_checked") {
         snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_TIME) ? "checked" : "");
+    } else if (key == "scan_mode") {
+        snprintf(out_buf, max_len, "%d", (g_config.scan_mode == 2) ? 2 : 1);
+    } else if (key == "scan_mode_passive_checked") {
+        snprintf(out_buf, max_len, "%s", (g_config.scan_mode != 2) ? "checked" : "");
+    } else if (key == "scan_mode_active_checked") {
+        snprintf(out_buf, max_len, "%s", (g_config.scan_mode == 2) ? "checked" : "");
+    } else if (key == "scan_mode_passive_active") {
+        snprintf(out_buf, max_len, "%s", (g_config.scan_mode != 2) ? "active" : "");
+    } else if (key == "scan_mode_active_active") {
+        snprintf(out_buf, max_len, "%s", (g_config.scan_mode == 2) ? "active" : "");
+    } else if (key == "scan_mode_text") {
+        snprintf(out_buf, max_len, "%s", (g_config.scan_mode == 2) ? "Active" : "Passive");
+    } else if (key == "scan_mode_color") {
+        snprintf(out_buf, max_len, "%s", (g_config.scan_mode == 2) ? "#38bdf8" : "#34d399");
+    } else if (key == "queue_max" || key == "beacon_queue_max") {
+        snprintf(out_buf, max_len, "%u", (unsigned int)BEACON_QUEUE_MAX);
     } else if (key == "filter_uuid_en") {
         snprintf(out_buf, max_len, "%s", g_config.filter_uuid_en ? "1" : "0");
     } else if (key == "filter_uuid_checked") {
@@ -482,6 +502,14 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
         if (ulen == 32) snprintf(out_buf, max_len, "32/32 Hex Valid");
         else if (ulen == 0) snprintf(out_buf, max_len, "0/32 Hex");
         else snprintf(out_buf, max_len, "%u/32 Hex", static_cast<unsigned>(ulen));
+    } else if (key == "filter_unknown_en") {
+        snprintf(out_buf, max_len, "%s", g_config.filter_unknown_en ? "1" : "0");
+    } else if (key == "filter_unknown_checked") {
+        snprintf(out_buf, max_len, "%s", g_config.filter_unknown_en ? "checked" : "");
+    } else if (key == "unknown_badge_class") {
+        snprintf(out_buf, max_len, "%s", g_config.filter_unknown_en ? "valid" : "neutral");
+    } else if (key == "unknown_badge_text") {
+        snprintf(out_buf, max_len, "%s", g_config.filter_unknown_en ? "Active" : "Disabled");
     } else if (key == "filter_major_en") {
         snprintf(out_buf, max_len, "%s", g_config.filter_major_en ? "1" : "0");
     } else if (key == "filter_major_checked") {
@@ -545,6 +573,40 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len) 
         snprintf(out_buf, max_len, "%d", g_config.batch_flush);
     } else if (key == "data_ttl") {
         snprintf(out_buf, max_len, "%d", g_config.data_ttl);
+    } else if (key == "hb_interval") {
+        snprintf(out_buf, max_len, "%d", (g_config.hb_interval >= 1 && g_config.hb_interval <= 300) ? g_config.hb_interval : 5);
+    } else if (key == "mqtt_topic_prefix") {
+        char dev_prefix[32] = {0};
+        const char* raw_model = g_config.device_model[0] ? g_config.device_model : "ar";
+        const char* dash_pos = strchr(raw_model, '-');
+        size_t max_chars = (dash_pos != nullptr) ? static_cast<size_t>(dash_pos - raw_model) : 5;
+        if (max_chars > sizeof(dev_prefix) - 1) max_chars = sizeof(dev_prefix) - 1;
+        size_t pIdx = 0;
+        for (size_t i = 0; raw_model[i] != '\0' && raw_model[i] != '-' && pIdx < max_chars; ++i) {
+            char c = raw_model[i];
+            if (c >= 'A' && c <= 'Z') dev_prefix[pIdx++] = static_cast<char>(c + ('a' - 'A'));
+            else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) dev_prefix[pIdx++] = c;
+        }
+        dev_prefix[pIdx] = '\0';
+        if (pIdx == 0) strlcpy(dev_prefix, "ar", sizeof(dev_prefix));
+        snprintf(out_buf, max_len, "%s/data/", dev_prefix);
+    } else if (key == "mqtt_topic_data") {
+        char dev_prefix[32] = {0};
+        char dev_id[16] = {0};
+        Core::ConfigStore::getDeviceId(dev_id, sizeof(dev_id));
+        const char* raw_model = g_config.device_model[0] ? g_config.device_model : "ar";
+        const char* dash_pos = strchr(raw_model, '-');
+        size_t max_chars = (dash_pos != nullptr) ? static_cast<size_t>(dash_pos - raw_model) : 5;
+        if (max_chars > sizeof(dev_prefix) - 1) max_chars = sizeof(dev_prefix) - 1;
+        size_t pIdx = 0;
+        for (size_t i = 0; raw_model[i] != '\0' && raw_model[i] != '-' && pIdx < max_chars; ++i) {
+            char c = raw_model[i];
+            if (c >= 'A' && c <= 'Z') dev_prefix[pIdx++] = static_cast<char>(c + ('a' - 'A'));
+            else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) dev_prefix[pIdx++] = c;
+        }
+        dev_prefix[pIdx] = '\0';
+        if (pIdx == 0) strlcpy(dev_prefix, "ar", sizeof(dev_prefix));
+        snprintf(out_buf, max_len, "%s/data/%s", dev_prefix, dev_id);
     } else if (key == "restart_schedule") {
         html_escape(g_config.restart_schedule, out_buf, max_len);
     } else if (key == "restart_sch_checked") {
@@ -567,7 +629,7 @@ esp_err_t stream_emergency_page(httpd_req_t *req) {
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
 
     const char *src = EMERGENCY_RECOVERY_HTML;
-    char chunk[2048];
+    char chunk[512];
     size_t chunk_idx = 0;
 
     char ip_str[32] = {0};
@@ -579,7 +641,7 @@ esp_err_t stream_emergency_page(httpd_req_t *req) {
     html_escape(g_deviceId, escaped_dev_id, sizeof(escaped_dev_id));
 
     const char *net_mode = (g_config.connection_mode == 1) ? "Ethernet" : "Wi-Fi";
-    const char *mqtt_stat = Network::MqttService::isConnected() ? "Terhubung (Online)" : "Terputus (Offline)";
+    const char *mqtt_stat = Network::MqttService::isConnected() ? "Connected (Online)" : "Disconnected (Offline)";
 
     auto flush_chunk = [&](bool is_final = false) -> esp_err_t {
         if (chunk_idx > 0) {
@@ -667,8 +729,22 @@ esp_err_t stream_template_file(httpd_req_t *req, const char *filepath) {
     httpd_resp_set_type(req, "text/html");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
 
-    char in_buf[1024];
-    char out_buf[2048];
+    // Alokasikan buffer streaming di heap agar task stack httpd tetap ramping dan bebas stack-overflow
+    struct StreamBuffer {
+        char in_buf[512];
+        char out_buf[1024];
+        char val[1024];
+    };
+    std::unique_ptr<StreamBuffer> sbuf(new (std::nothrow) StreamBuffer());
+    if (!sbuf) {
+        fclose(f);
+        return stream_emergency_page(req);
+    }
+
+    UserRole req_role = Session::validate(req, nullptr, 0, false);
+    char *in_buf = sbuf->in_buf;
+    char *out_buf = sbuf->out_buf;
+    char *val = sbuf->val;
     size_t out_idx = 0;
 
     auto flush_out = [&](bool is_final = false) -> esp_err_t {
@@ -687,7 +763,7 @@ esp_err_t stream_template_file(httpd_req_t *req, const char *filepath) {
         size_t slen = strlen(s);
         for (size_t i = 0; i < slen; i++) {
             out_buf[out_idx++] = s[i];
-            if (out_idx >= sizeof(out_buf) - 128) {
+            if (out_idx >= 1024 - 128) {
                 esp_err_t err = flush_out();
                 if (err != ESP_OK) return err;
             }
@@ -700,7 +776,7 @@ esp_err_t stream_template_file(httpd_req_t *req, const char *filepath) {
     size_t flush_count = 0;
 
     while (true) {
-        size_t bytes_read = fread(in_buf, 1, sizeof(in_buf), f);
+        size_t bytes_read = fread(in_buf, 1, 512, f);
         if (bytes_read == 0) break;
 
         for (size_t i = 0; i < bytes_read; i++) {
@@ -708,8 +784,7 @@ esp_err_t stream_template_file(httpd_req_t *req, const char *filepath) {
             if (lookahead_len > 0) {
                 if (c == '%') {
                     lookahead[lookahead_len] = '\0';
-                    char val[512];
-                    if (get_placeholder_value(std::string_view(lookahead + 1), val, sizeof(val))) {
+                    if (get_placeholder_value(std::string_view(lookahead + 1), val, sizeof(sbuf->val), req_role)) {
                         append_val(val);
                     } else {
                         // Not a placeholder, output verbatim
@@ -736,7 +811,7 @@ esp_err_t stream_template_file(httpd_req_t *req, const char *filepath) {
                 out_buf[out_idx++] = c;
             }
 
-            if (out_idx >= sizeof(out_buf) - 128) {
+            if (out_idx >= 1024 - 128) {
                 esp_err_t err = flush_out();
                 if (err != ESP_OK) {
                     fclose(f);

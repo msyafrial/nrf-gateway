@@ -32,7 +32,7 @@ function initWebSocket() {
   try {
     ws = new WebSocket(getWsUrl());
     ws.onopen = () => {
-      console.log("[WS] Terhubung ke ESP32 OTA telemetry.");
+      console.log("[WS] Connected to OTA telemetry socket.");
     };
     ws.onmessage = (event) => {
       try {
@@ -48,13 +48,13 @@ function initWebSocket() {
       console.warn("[WS] Error pada kanal telemetry OTA:", err);
     };
     ws.onclose = () => {
-      console.log("[WS] Sambungan telemetri OTA ditutup.");
+      console.log("[WS] OTA telemetry socket closed.");
       if (isOtaInProgress && !isOtaCompleted) {
         setTimeout(initWebSocket, 2000);
       }
     };
   } catch (err) {
-    console.error("[WS] Gagal menginisialisasi WebSocket:", err);
+    console.error("[WS] Failed to initialize WebSocket:", err);
   }
 }
 
@@ -76,9 +76,9 @@ function updateOtaHardwareProgress(written, total, percent) {
   }
 
   if (safePercent < 100) {
-    statusDesc.innerHTML = `<span style="color:#38bdf8;font-weight:600;">Menulis ke Flash (${safePercent}%):</span> Jangan mematikan daya perangkat...`;
+    statusDesc.innerHTML = `<span style="color:#38bdf8;font-weight:600;">Writing to Flash (${safePercent}%):</span> Do not power off the gateway...`;
   } else {
-    // 100% dari Telemetri Hardware ESP32
+    // 100% from Gateway Hardware Telemetry
     isOtaCompleted = true;
     const spinner = document.getElementById("otaSpinner");
     const resultIcon = document.getElementById("otaResultIcon");
@@ -99,7 +99,7 @@ function updateOtaHardwareProgress(written, total, percent) {
       </svg>
     `;
 
-    statusDesc.innerHTML = `<strong style="color:#4ade80;">Update Berhasil!</strong> Flash terverifikasi 100%. Gateway me-reboot dalam <span id="otaCountdown">10</span> detik...`;
+    statusDesc.innerHTML = `<strong style="color:#4ade80;">Update Successful!</strong> Flash verified 100%. Gateway rebooting in <span id="otaCountdown">10</span>s...`;
 
     closeBtn.style.display = "none";
     actionsBox.style.display = "flex";
@@ -112,7 +112,7 @@ function updateOtaHardwareProgress(written, total, percent) {
 
 /**
  * VALIDATOR TERPADU BINARY PRE-FLIGHT
- * Membaca 256 byte pertama berkas binary untuk memverifikasi struktur header ESP32 secara instan:
+ * Membaca 256 byte pertama berkas binary untuk memverifikasi struktur header binary secara instan:
  * 1. partitions.bin (Magic 0x50AA di byte 0-1) -> Tolak di Firmware & Filesystem
  * 2. bootloader.bin (Byte 0 = 0xE9, tapi offset 0x20 != 0xABCD5432) -> Tolak di Firmware & Filesystem
  * 3. firmware.bin (Byte 0 = 0xE9, offset 0x20 = 0xABCD5432 esp_app_desc_t):
@@ -127,8 +127,8 @@ function validateBinaryFile(file, type, onSuccess, onError) {
   if (!file.name.toLowerCase().endsWith(".bin")) {
     Swal.fire({
       icon: "warning",
-      title: "Format Berkas Salah",
-      text: "Berkas yang dipilih harus berekstensi .bin!"
+      title: "Invalid File Format",
+      text: "Selected file must have a .bin extension!"
     });
     if (onError) onError();
     return;
@@ -140,8 +140,8 @@ function validateBinaryFile(file, type, onSuccess, onError) {
     if (bytes.length < 36) {
       Swal.fire({
         icon: "error",
-        title: "Ukuran Berkas Tidak Valid",
-        text: "Ukuran berkas terlalu kecil untuk dianalisis sebagai binary ESP32 valid."
+        title: "Invalid File Size",
+        text: "File size is too small to be a valid binary image."
       });
       if (onError) onError();
       return;
@@ -154,7 +154,7 @@ function validateBinaryFile(file, type, onSuccess, onError) {
     const activeModel = (typeof CURRENT_DEVICE_MODEL !== "undefined" && CURRENT_DEVICE_MODEL && CURRENT_DEVICE_MODEL !== "%device_model%") ? CURRENT_DEVICE_MODEL : "SG-10";
     const activeBoardVer = (typeof CURRENT_DEVICE_VERSION !== "undefined" && CURRENT_DEVICE_VERSION && CURRENT_DEVICE_VERSION !== "%device_version%") ? CURRENT_DEVICE_VERSION : "v1.0.0";
 
-    // Cek LittleFS Magic String di offset 8..15 ("littlefs")
+    // Cek Filesystem Magic String di offset 8..15 ("littlefs")
     let lfsSig = "";
     for (let i = 8; i < 16; i++) {
       lfsSig += String.fromCharCode(bytes[i]);
@@ -173,11 +173,11 @@ function validateBinaryFile(file, type, onSuccess, onError) {
       if (isPartitionTable) {
         Swal.fire({
           icon: "error",
-          title: "Bukan Berkas Firmware!",
+          title: "Not a Firmware Binary!",
           html: `<div style="text-align:left;font-size:0.9rem;line-height:1.5;">
-            Berkas <strong>${escapeHtml(file.name)}</strong> terdeteksi sebagai <strong>Tabel Partisi ESP32 (partitions.bin)</strong> (Magic <code>0x50AA</code>).<br><br>
-            <span style="color:#ef4444;font-weight:600;">Tabel partisi tidak dapat diunggah melalui menu OTA ini!</span><br>
-            Silakan pilih berkas <strong>firmware.bin</strong> aplikasi yang benar.
+            File <strong>${escapeHtml(file.name)}</strong> detected as an <strong>Partition Table (partitions.bin)</strong> (Magic <code>0x50AA</code>).<br><br>
+            <span style="color:#ef4444;font-weight:600;">Partition tables cannot be flashed through this OTA menu!</span><br>
+            Please select the correct application <strong>firmware.bin</strong> file.
           </div>`
         });
         if (onError) onError();
@@ -187,10 +187,10 @@ function validateBinaryFile(file, type, onSuccess, onError) {
       if (isLittleFS) {
         Swal.fire({
           icon: "error",
-          title: "Bukan Berkas Firmware!",
+          title: "Not a Firmware Binary!",
           html: `<div style="text-align:left;font-size:0.9rem;line-height:1.5;">
-            Berkas <strong>${escapeHtml(file.name)}</strong> terdeteksi sebagai berkas <strong>Filesystem LittleFS (littlefs.bin)</strong>.<br><br>
-            <span style="color:#38bdf8;font-weight:600;">Silakan unggah pada kotak "Update Filesystem Web Dashboard" di bawah.</span>
+            File <strong>${escapeHtml(file.name)}</strong> detected as a <strong>Web Filesystem Image (.bin)</strong>.<br><br>
+            <span style="color:#38bdf8;font-weight:600;">Please upload in the "Filesystem Update (.bin)" card below.</span>
           </div>`
         });
         if (onError) onError();
@@ -236,11 +236,11 @@ function validateBinaryFile(file, type, onSuccess, onError) {
       if (!isKnownValidModel) {
         Swal.fire({
           icon: "error",
-          title: "Model Perangkat Tidak Cocok!",
+          title: "Hardware Model Incompatible!",
           html: `<div style="text-align:left;font-size:0.9rem;line-height:1.5;">
-            Berkas <strong>${escapeHtml(file.name)}</strong> dirancang untuk model <code>${escapeHtml(fileModel)}</code>.<br><br>
-            Perangkat saat ini adalah model <code>${escapeHtml(activeModel)}</code>.<br><br>
-            <span style="color:#ef4444;font-weight:600;">Flashing dibatalkan untuk mencegah kerusakan sistem akibat ketidakcocokan model!</span>
+            File <strong>${escapeHtml(file.name)}</strong> designed for model <code>${escapeHtml(fileModel)}</code>.<br><br>
+            Current gateway model is <code>${escapeHtml(activeModel)}</code>.<br><br>
+            <span style="color:#ef4444;font-weight:600;">Flashing aborted to prevent system damage from model incompatibility!</span>
           </div>`
         });
         if (onError) onError();
@@ -251,11 +251,11 @@ function validateBinaryFile(file, type, onSuccess, onError) {
       if (fileBoardVer && activeBoardVer && activeBoardVer !== "EMPTY" && fileBoardVer !== activeBoardVer) {
         Swal.fire({
           icon: "error",
-          title: "Versi Board Tidak Kompatibel!",
+          title: "Incompatible Board Version!",
           html: `<div style="text-align:left;font-size:0.9rem;line-height:1.5;">
-            Berkas firmware ini dikompilasi khusus untuk revisi Board <code>${escapeHtml(fileBoardVer)}</code>.<br><br>
-            Perangkat fisik Anda memiliki revisi Board <code>${escapeHtml(activeBoardVer)}</code>.<br><br>
-            <span style="color:#ef4444;font-weight:600;">Flashing dibatalkan demi keamanan hardware! Perbedaan revisi board dapat merusak sirkuit peripheral.</span>
+            This firmware binary was compiled specifically for Board revision <code>${escapeHtml(fileBoardVer)}</code>.<br><br>
+            Physical gateway has board revision <code>${escapeHtml(activeBoardVer)}</code>.<br><br>
+            <span style="color:#ef4444;font-weight:600;">Flashing aborted for hardware safety! Board revision mismatch detected.</span>
           </div>`
         });
         if (onError) onError();
@@ -277,11 +277,11 @@ function validateBinaryFile(file, type, onSuccess, onError) {
       if (isPartitionTable) {
         Swal.fire({
           icon: "error",
-          title: "Bukan Berkas Filesystem!",
+          title: "Invalid Filesystem Binary!",
           html: `<div style="text-align:left;font-size:0.9rem;line-height:1.5;">
-            Berkas <strong>${escapeHtml(file.name)}</strong> terdeteksi sebagai <strong>Tabel Partisi ESP32 (partitions.bin)</strong> (Magic <code>0x50AA</code>).<br><br>
-            <span style="color:#ef4444;font-weight:600;">Tabel partisi tidak dapat diunggah melalui menu OTA ini!</span><br>
-            Silakan pilih berkas <strong>littlefs.bin</strong> yang benar.
+            File <strong>${escapeHtml(file.name)}</strong> detected as an <strong>Partition Table (partitions.bin)</strong> (Magic <code>0x50AA</code>).<br><br>
+            <span style="color:#ef4444;font-weight:600;">Partition tables cannot be flashed through this OTA menu!</span><br>
+            Please select a valid <strong>filesystem.bin</strong> file.
           </div>`
         });
         if (onError) onError();
@@ -293,17 +293,17 @@ function validateBinaryFile(file, type, onSuccess, onError) {
       if (!isLittleFS) {
         Swal.fire({
           icon: "error",
-          title: "Bukan Berkas LittleFS!",
+          title: "Invalid Filesystem Binary!",
           html: `<div style="text-align:left;font-size:0.9rem;line-height:1.5;">
-            Berkas <strong>${escapeHtml(file.name)}</strong> bukan citra partisi LittleFS yang valid (signature teks <code>littlefs</code> tidak ditemukan pada offset 0x08).<br><br>
-            <span style="color:#38bdf8;font-weight:600;">Hanya berkas littlefs.bin resmi hasil build filesystem PlatformIO yang dapat diunggah!</span>
+            File <strong>${escapeHtml(file.name)}</strong> is not a valid Filesystem image (valid filesystem signature not found at offset 0x08).<br><br>
+            <span style="color:#38bdf8;font-weight:600;">Only official filesystem binary images generated by PlatformIO filesystem builds can be uploaded!</span>
           </div>`
         });
         if (onError) onError();
         return;
       }
 
-      // Ekstraksi Metadata LittleFS dari version.json di dalam binary
+      // Ekstraksi Metadata Filesystem dari version.json di dalam binary
       let fsMetadata = null;
       try {
         const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
@@ -318,7 +318,7 @@ function validateBinaryFile(file, type, onSuccess, onError) {
           };
         }
       } catch (err) {
-        console.warn("Gagal parse metadata LittleFS:", err);
+        console.warn("Failed to parse Filesystem metadata:", err);
       }
 
       if (fsMetadata) {
@@ -332,11 +332,11 @@ function validateBinaryFile(file, type, onSuccess, onError) {
         if (!isKnownFsModel) {
           Swal.fire({
             icon: "error",
-            title: "Model Perangkat Tidak Cocok!",
+            title: "Hardware Model Incompatible!",
             html: `<div style="text-align:left;font-size:0.9rem;line-height:1.5;">
-              Berkas Filesystem ini dibuat khusus untuk model <code>${escapeHtml(fsMetadata.model)}</code>.<br><br>
-              Perangkat Anda adalah model <code>${escapeHtml(activeModel)}</code>.<br><br>
-              <span style="color:#ef4444;font-weight:600;">Flashing dibatalkan demi keamanan! Filesystem model lain tidak kompatibel dengan antarmuka perangkat ini.</span>
+              This filesystem image was built specifically for model <code>${escapeHtml(fsMetadata.model)}</code>.<br><br>
+              Your gateway is model <code>${escapeHtml(activeModel)}</code>.<br><br>
+              <span style="color:#ef4444;font-weight:600;">Flashing aborted for safety! Incompatible filesystem image.</span>
             </div>`
           });
           if (onError) onError();
@@ -347,11 +347,11 @@ function validateBinaryFile(file, type, onSuccess, onError) {
         if (fsMetadata.boardVer && activeBoardVer && activeBoardVer !== "EMPTY" && fsMetadata.boardVer !== activeBoardVer) {
           Swal.fire({
             icon: "error",
-            title: "Versi Board Tidak Kompatibel!",
+            title: "Incompatible Board Version!",
             html: `<div style="text-align:left;font-size:0.9rem;line-height:1.5;">
-              Berkas Filesystem ini dibuat untuk revisi Board <code>${escapeHtml(fsMetadata.boardVer)}</code>.<br><br>
-              Perangkat fisik Anda memiliki revisi Board <code>${escapeHtml(activeBoardVer)}</code>.<br><br>
-              <span style="color:#ef4444;font-weight:600;">Flashing dibatalkan demi keamanan hardware!</span>
+              This filesystem image was built for Board revision <code>${escapeHtml(fsMetadata.boardVer)}</code>.<br><br>
+              Physical gateway has board revision <code>${escapeHtml(activeBoardVer)}</code>.<br><br>
+              <span style="color:#ef4444;font-weight:600;">Flashing aborted for hardware safety!</span>
             </div>`
           });
           if (onError) onError();
@@ -367,7 +367,7 @@ function validateBinaryFile(file, type, onSuccess, onError) {
   };
 
   reader.onerror = function() {
-    Swal.fire("Gagal Membaca", "Gagal membaca berkas dari penyimpanan lokal.", "error");
+    Swal.fire("Read Failed", "Failed to read binary file from local storage.", "error");
     if (onError) onError();
   };
 
@@ -376,13 +376,13 @@ function validateBinaryFile(file, type, onSuccess, onError) {
 
 function uploadOTA(fileInputId, typeName, queryType) {
   if (isOtaInProgress) {
-    Swal.fire("Proses Berjalan", "Update OTA sedang berlangsung. Mohon tunggu.", "info");
+    Swal.fire("Operation in Progress", "OTA update is running. Please wait...", "info");
     return;
   }
 
   const fileInput = document.getElementById(fileInputId);
   if (!fileInput || !fileInput.files.length) {
-    Swal.fire("Peringatan", `Silakan pilih file ${typeName} (.bin) terlebih dahulu!`, "warning");
+    Swal.fire("Warning", `Please select a ${typeName} (.bin) file first!`, "warning");
     return;
   }
 
@@ -426,7 +426,7 @@ function startUploadExecution(file, typeName, queryType) {
   const actionBtn = document.getElementById("btnOtaAction");
 
   // Reset modal UI to upload start state
-  modalTitle.textContent = `Proses Update ${typeName}`;
+  modalTitle.textContent = `${typeName} Flashing Progress`;
   fileNameEl.textContent = file.name;
   fileSizeEl.textContent = `0 B / ${formatBytes(file.size)}`;
   progressFill.style.width = "0%";
@@ -435,14 +435,14 @@ function startUploadExecution(file, typeName, queryType) {
   percentBadge.style.color = "#38bdf8";
   percentBadge.style.borderColor = "rgba(56, 189, 248, 0.3)";
   percentBadge.style.background = "rgba(56, 189, 248, 0.12)";
-  statusDesc.textContent = "Menghubungkan ke gateway & mengirim berkas...";
+  statusDesc.textContent = "Connecting to gateway and initiating upload stream...";
   spinner.style.display = "block";
   resultIcon.style.display = "none";
   actionsBox.style.display = "none";
 
   // Modal can NOT be dismissed during active upload
   closeBtn.style.display = "none";
-  modal.style.display = "flex";
+  modal.style.setProperty("display", "flex", "important");
 
   const xhr = new XMLHttpRequest();
   xhr.open("POST", `/api/v1/ota/upload?type=${queryType}&size=${file.size}`, true);
@@ -455,7 +455,7 @@ function startUploadExecution(file, typeName, queryType) {
         progressFill.style.width = `${percent}%`;
         percentBadge.textContent = `${percent}%`;
         fileSizeEl.textContent = `${formatBytes(e.loaded)} / ${formatBytes(e.total)}`;
-        statusDesc.textContent = `Mengunggah berkas (${percent}%)...`;
+        statusDesc.textContent = `Uploading binary image (${percent}%)...`;
       }
     }
   };
@@ -480,7 +480,7 @@ function startUploadExecution(file, typeName, queryType) {
           </svg>
         `;
 
-        statusDesc.innerHTML = `<strong style="color:#4ade80;">Update Berhasil!</strong> Gateway me-reboot dalam <span id="otaCountdown">10</span> detik...`;
+        statusDesc.innerHTML = `<strong style="color:#4ade80;">Update Successful!</strong> Gateway rebooting in <span id="otaCountdown">10</span>s...`;
 
         closeBtn.style.display = "none";
         actionsBox.style.display = "flex";
@@ -508,13 +508,13 @@ function startUploadExecution(file, typeName, queryType) {
         </svg>
       `;
 
-      statusDesc.innerHTML = `<strong style="color:#f87171;">Update Ditolak:</strong> ${escapeHtml(xhr.responseText || "Format atau header file binary tidak cocok.")}`;
+      statusDesc.innerHTML = `<strong style="color:#f87171;">Update Rejected:</strong> ${escapeHtml(xhr.responseText || "Binary header or image format mismatch.")}`;
 
       closeBtn.style.display = "block";
       actionsBox.style.display = "flex";
-      actionBtn.textContent = "Tutup & Coba Lagi";
-      actionBtn.onclick = () => { modal.style.display = "none"; };
-      closeBtn.onclick = () => { modal.style.display = "none"; };
+      actionBtn.textContent = "Close & Retry";
+      actionBtn.onclick = () => { modal.style.setProperty("display", "none", "important"); };
+      closeBtn.onclick = () => { modal.style.setProperty("display", "none", "important"); };
     }
   };
 
@@ -535,13 +535,13 @@ function startUploadExecution(file, typeName, queryType) {
       </svg>
     `;
 
-    statusDesc.innerHTML = `<strong style="color:#f87171;">Koneksi Terputus:</strong> Gagal mengunggah file ke gateway. Periksa sambungan jaringan Anda.`;
+    statusDesc.innerHTML = `<strong style="color:#f87171;">Connection Lost:</strong> Failed to upload file to gateway. Check network connection.`;
 
     closeBtn.style.display = "block";
     actionsBox.style.display = "flex";
-    actionBtn.textContent = "Tutup & Coba Lagi";
-    actionBtn.onclick = () => { modal.style.display = "none"; };
-    closeBtn.onclick = () => { modal.style.display = "none"; };
+    actionBtn.textContent = "Close & Retry";
+    actionBtn.onclick = () => { modal.style.setProperty("display", "none", "important"); };
+    closeBtn.onclick = () => { modal.style.setProperty("display", "none", "important"); };
   };
 
   xhr.send(file);
@@ -556,7 +556,7 @@ function startCountdownAndRedirect(seconds) {
     if (remain <= 0) {
       clearInterval(timer);
       const isAp = location.hostname.startsWith("192.168.4");
-      location.href = isAp ? "http://192.168.4.1/auth_teknisi.html" : "/auth_teknisi.html";
+      location.href = isAp ? "http://192.168.4.1/auth" : "/auth";
     }
   }, 1000);
 }
@@ -676,13 +676,13 @@ function clearDropzone(type) {
 
 function uploadFirmware() {
   if (isOtaInProgress) {
-    Swal.fire("Proses Berjalan", "Update OTA sedang berlangsung. Mohon tunggu.", "info");
+    Swal.fire("Operation in Progress", "OTA update is running. Please wait...", "info");
     return;
   }
 
   const fileInput = document.getElementById("fileFirmware");
   if (!fileInput || !fileInput.files.length) {
-    Swal.fire("Peringatan", "Silakan pilih file Firmware (.bin) terlebih dahulu!", "warning");
+    Swal.fire("Warning", "Please select a Firmware (.bin) file first!", "warning");
     return;
   }
 
@@ -701,23 +701,23 @@ function uploadFirmware() {
       const showDate = meta ? meta.date : "-";
 
       Swal.fire({
-        title: "Konfirmasi Update Firmware",
+        title: "Confirm Firmware Flash",
         icon: "question",
         html: `<div style="text-align:left;font-size:0.9rem;line-height:1.6;background:rgba(15,23,42,0.6);padding:14px 18px;border-radius:10px;border:1px solid rgba(56,189,248,0.25);">
-          <div style="margin-bottom:6px;"><span style="color:#94a3b8;">Berkas:</span> <strong style="color:#f8fafc;">${escapeHtml(file.name)}</strong> <span style="color:#64748b;font-size:0.8rem;">(${formatBytes(file.size)})</span></div>
+          <div style="margin-bottom:6px;"><span style="color:#94a3b8;">File:</span> <strong style="color:#f8fafc;">${escapeHtml(file.name)}</strong> <span style="color:#64748b;font-size:0.8rem;">(${formatBytes(file.size)})</span></div>
           <div style="margin-bottom:6px;"><span style="color:#94a3b8;">Device Model:</span> <strong style="color:#38bdf8;">${escapeHtml(showModel)}</strong></div>
           <div style="margin-bottom:6px;"><span style="color:#94a3b8;">Board Version:</span> <strong style="color:#38bdf8;">${escapeHtml(showBoard)}</strong></div>
           <div style="margin-bottom:6px;"><span style="color:#94a3b8;">Firmware Version:</span> <strong style="color:#4ade80;">${escapeHtml(showVersion)}</strong></div>
-          <div><span style="color:#94a3b8;">Tanggal Firmware:</span> <strong style="color:#e2e8f0;">${escapeHtml(showDate)}</strong></div>
-        </div><br><span style="font-size:0.85rem;color:#94a3b8;">Pastikan catu daya gateway stabil selama proses update. Lanjutkan pengunggahan?</span>`,
+          <div><span style="color:#94a3b8;">Firmware Date:</span> <strong style="color:#e2e8f0;">${escapeHtml(showDate)}</strong></div>
+        </div><br><span style="font-size:0.85rem;color:#94a3b8;">Ensure gateway power supply is stable during OTA flashing. Proceed with upload?</span>`,
         showCancelButton: true,
         confirmButtonColor: "#0284c7",
         cancelButtonColor: "#475569",
-        confirmButtonText: "Lanjutkan Update",
-        cancelButtonText: "Batal"
+        confirmButtonText: "Proceed with Update",
+        cancelButtonText: "Cancel"
       }).then((result) => {
         if (result.isConfirmed) {
-          startUploadExecution(file, "Firmware ESP32", "firmware");
+          startUploadExecution(file, "Gateway Firmware", "firmware");
         }
       });
     },
@@ -729,13 +729,13 @@ function uploadFirmware() {
 
 function uploadFS() {
   if (isOtaInProgress) {
-    Swal.fire("Proses Berjalan", "Update OTA sedang berlangsung. Mohon tunggu.", "info");
+    Swal.fire("Operation in Progress", "OTA update is running. Please wait...", "info");
     return;
   }
 
   const fileInput = document.getElementById("filesystem");
   if (!fileInput || !fileInput.files.length) {
-    Swal.fire("Peringatan", "Silakan pilih file Filesystem (.bin) terlebih dahulu!", "warning");
+    Swal.fire("Warning", "Please select a Filesystem (.bin) file first!", "warning");
     return;
   }
 
@@ -754,20 +754,20 @@ function uploadFS() {
       const showDate = (meta && meta.buildDate) ? meta.buildDate : "-";
 
       Swal.fire({
-        title: "Konfirmasi Update Filesystem",
+        title: "Confirm Filesystem Flash",
         icon: "question",
         html: `<div style="text-align:left;font-size:0.9rem;line-height:1.6;background:rgba(15,23,42,0.6);padding:14px 18px;border-radius:10px;border:1px solid rgba(56,189,248,0.25);">
-          <div style="margin-bottom:6px;"><span style="color:#94a3b8;">Berkas:</span> <strong style="color:#f8fafc;">${escapeHtml(file.name)}</strong> <span style="color:#64748b;font-size:0.8rem;">(${formatBytes(file.size)})</span></div>
+          <div style="margin-bottom:6px;"><span style="color:#94a3b8;">File:</span> <strong style="color:#f8fafc;">${escapeHtml(file.name)}</strong> <span style="color:#64748b;font-size:0.8rem;">(${formatBytes(file.size)})</span></div>
           <div style="margin-bottom:6px;"><span style="color:#94a3b8;">Device Model:</span> <strong style="color:#38bdf8;">${escapeHtml(showModel)}</strong></div>
           <div style="margin-bottom:6px;"><span style="color:#94a3b8;">Board Version:</span> <strong style="color:#38bdf8;">${escapeHtml(showBoard)}</strong></div>
-          <div style="margin-bottom:6px;"><span style="color:#94a3b8;">Versi Web UI:</span> <strong style="color:#4ade80;">${escapeHtml(showUiVer)}</strong></div>
-          <div><span style="color:#94a3b8;">Tanggal Build FS:</span> <strong style="color:#e2e8f0;">${escapeHtml(showDate)}</strong></div>
-        </div><br><span style="font-size:0.85rem;color:#94a3b8;">Pembaruan Filesystem akan memperbarui tampilan dan aset web dashboard. Lanjutkan pengunggahan?</span>`,
+          <div style="margin-bottom:6px;"><span style="color:#94a3b8;">Web UI Version:</span> <strong style="color:#4ade80;">${escapeHtml(showUiVer)}</strong></div>
+          <div><span style="color:#94a3b8;">FS Build Date:</span> <strong style="color:#e2e8f0;">${escapeHtml(showDate)}</strong></div>
+        </div><br><span style="font-size:0.85rem;color:#94a3b8;">Filesystem update will refresh web dashboard assets. Proceed with upload?</span>`,
         showCancelButton: true,
         confirmButtonColor: "#0284c7",
         cancelButtonColor: "#475569",
-        confirmButtonText: "Lanjutkan Update",
-        cancelButtonText: "Batal"
+        confirmButtonText: "Proceed with Update",
+        cancelButtonText: "Cancel"
       }).then((result) => {
         if (result.isConfirmed) {
           startUploadExecution(file, "Filesystem Web Dashboard", "filesystem");

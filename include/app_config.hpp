@@ -45,6 +45,7 @@ struct AppConfig {
     uint32_t telem_mask; // Bitmask flags seleksi field telemetri dinamis (Default: 0x9E)
 
     // Gateway Namespace ("gateway" / "cfg_gate")
+    int     scan_mode;        // 1: Passive (Default), 2: Active
     char    device_model[16];
     char    device_version[16];
     int     filter_uuid_en;   // 0 or 1
@@ -52,10 +53,12 @@ struct AppConfig {
     uint8_t filter_uuid_bytes[16];
     int     filter_major_en;  // 0 or 1
     char    filter_major[32]; // Comma-separated list e.g. "1, 65535"
+    int     filter_unknown_en;// 0 or 1 (Reject unknown BLE formats)
     int     rssi_min;         // e.g. -100 dBm
     int     batch_max;        // e.g. 100 packets
     int     batch_flush;      // e.g. 300 ms
     int     data_ttl;         // e.g. 5000 ms
+    int     hb_interval;      // Heartbeat interval in seconds (default 5s)
     char    restart_schedule[8]; // "HH:MM"
     int     discon_rst;       // Minutes before auto-reboot, 0 = disabled
     char    ntp_server[64];   // e.g. "pool.ntp.org"

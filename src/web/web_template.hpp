@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app_types.hpp"
 #include <esp_http_server.h>
 #include <string_view>
 
@@ -15,6 +16,6 @@ esp_err_t stream_template_file(httpd_req_t *req, const char *filepath);
 esp_err_t stream_emergency_page(httpd_req_t *req);
 
 // Get placeholder value by key
-bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len);
+bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len, UserRole role = UserRole::ADMIN);
 
 } // namespace Iotaru::Web::Template

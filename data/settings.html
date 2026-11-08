@@ -1,19 +1,212 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IOTARU %model% - Device Settings</title>
-  <link rel="stylesheet" href="assets/css/app.css">
-  <script src="assets/js/swal-lite.js"></script>
+  <title>Cubeacon %model% - Device Settings</title>
+  <style>
+    /* Critical Pre-paint CSS: Eliminates White Canvas Flash */
+    html, body {
+      background-color: #070c14 !important;
+      color: #f8fafc;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+    }
+    /* Instant Banner Suppression before external CSS loads */
+    .pending-reboot-banner,
+    .ap-banner-card,
+    .wifi-modal-backdrop,
+    .session-expired-banner {
+      display: none;
+    }
+  
+  /* RSSI Component & Unified Pill Alignment */
+  .rssi {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+  }
+
+  .rv {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    min-width: 96px !important;
+    height: 38px !important;
+    padding: 0 12px !important;
+    border: 1px solid var(--input-border, #1a2333) !important;
+    border-radius: 8px !important;
+    background: var(--input-bg, #090d16) !important;
+    font-family: ui-monospace, "IBM Plex Mono", Consolas, monospace !important;
+    font-weight: 600 !important;
+    font-size: 15px !important;
+    color: var(--text-main, #f8fafc) !important;
+    box-sizing: border-box !important;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+    cursor: text !important;
+    flex-shrink: 0 !important;
+  }
+
+  .rv:focus-within {
+    border-color: #38bdf8 !important;
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25) !important;
+  }
+
+  .rv span {
+    color: #38bdf8 !important;
+    font-family: ui-monospace, "IBM Plex Mono", Consolas, monospace !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    line-height: 1 !important;
+    user-select: none !important;
+  }
+
+  .rv input,
+  .rv input[type="text"],
+  #rssi_input_abs {
+    all: unset !important;
+    display: inline-block !important;
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 3ch !important;
+    min-width: 0 !important;
+    height: auto !important;
+    text-align: center !important;
+    font-family: ui-monospace, "IBM Plex Mono", Consolas, monospace !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    line-height: 1 !important;
+    color: var(--text-main, #f8fafc) !important;
+    box-sizing: border-box !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: textfield !important;
+  }
+
+  .rv input:focus,
+  .rv input[type="text"]:focus,
+  #rssi_input_abs:focus {
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  .rv small {
+    font-family: system-ui, -apple-system, sans-serif !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    color: var(--text-muted, #94a3b8) !important;
+    margin-left: 2px !important;
+    user-select: none !important;
+    line-height: 1 !important;
+  }
+
+  .rssi-slider-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .rssi-slider-wrap input[type="range"],
+  #rssi_slider {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    width: 100% !important;
+    height: 8px !important;
+    border-radius: 4px !important;
+    border: none !important;
+    outline: none !important;
+    padding: 0 !important;
+    margin: 8px 0 4px 0 !important;
+    cursor: pointer;
+    box-shadow: none !important;
+    box-sizing: border-box !important;
+  }
+
+  .rssi-slider-wrap input[type="range"]::-webkit-slider-runnable-track,
+  #rssi_slider::-webkit-slider-runnable-track {
+    height: 8px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+  }
+
+  .rssi-slider-wrap input[type="range"]::-webkit-slider-thumb,
+  #rssi_slider::-webkit-slider-thumb {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    width: 20px !important;
+    height: 20px !important;
+    border-radius: 50% !important;
+    background: #38bdf8 !important;
+    border: 2px solid #ffffff !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), 0 0 8px rgba(56, 189, 248, 0.5) !important;
+    cursor: grab;
+    margin-top: -6px;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+  }
+
+  .rssi-slider-wrap input[type="range"]::-webkit-slider-thumb:active,
+  #rssi_slider::-webkit-slider-thumb:active {
+    cursor: grabbing;
+    transform: scale(1.15);
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.8) !important;
+  }
+
+  .rssi-slider-wrap input[type="range"]::-moz-range-track,
+  #rssi_slider::-moz-range-track {
+    height: 8px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+  }
+
+  .rssi-slider-wrap input[type="range"]::-moz-range-thumb,
+  #rssi_slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #38bdf8;
+    border: 2px solid #ffffff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), 0 0 8px rgba(56, 189, 248, 0.5);
+    cursor: grab;
+  }
+
+  .rssi-slider-wrap .ticks {
+    display: flex;
+    justify-content: space-between;
+    font-family: ui-monospace, "IBM Plex Mono", Consolas, monospace;
+    font-size: 11px;
+    color: var(--text-dim, #64748b);
+    padding: 0 4px;
+    margin-top: 4px;
+  }
+
+      body[data-role="engineer"] .role-admin-only,
+    body[data-role="engineer"] #mqtt,
+    body[data-role="engineer"] .nav-docs {
+      display: none !important;
+    }
+  </style>
+  <link rel="stylesheet" href="assets/css/app.css?v=%firmware_version%">
+  <script src="assets/js/swal-lite.js?v=%firmware_version%" defer></script>
 </head>
-<body>
+<body data-role="%user_role%">
   <div class="wrapper">
-    <!-- Sidebar (Desktop) -->
+        <!-- Sidebar (Desktop) -->
     <aside class="sidebar">
       <div class="sidebar-wrapper">
         <div class="logo">
-          <img src="assets/img/logo.png" alt="IOTARU" class="sidebar-logo-img">
+          <img src="assets/img/logo.png" alt="Cubeacon" class="sidebar-logo-img">
         </div>
         <div class="user">
           <div class="user-avatar">
@@ -35,12 +228,6 @@
             </a>
           </li>
           <li>
-            <a href="/docs">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-              <span>Integration Docs</span>
-            </a>
-          </li>
-          <li>
             <a href="/log">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
               <span>System Logs</span>
@@ -58,6 +245,12 @@
               <span>Device Settings</span>
             </a>
           </li>
+<li class="nav-docs role-admin-only"><a href="/docs">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>Docs</span>
+            </a>
+          </li>
+
           <li>
             <a href="/firmware">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
@@ -91,30 +284,30 @@
       <header class="navbar">
         <div class="navbar-left">
           <a href="/" class="mobile-logo-link">
-            <img src="assets/img/logo.png" alt="IOTARU" class="mobile-logo-img">
+            <img src="assets/img/logo.png" alt="Cubeacon" class="mobile-logo-img">
           </a>
           <span class="navbar-brand">Device Settings</span>
         </div>
         <a href="/logout" class="mobile-logout-btn" id="mobileLogoutBtn" title="Logout">
           <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          <span>Keluar</span>
+          <span>Logout</span>
         </a>
       </header>
 
-      <section class="content">
+      <section class="content settings-container">
       <!-- PENDING REBOOT FLOATING BANNER (INDUSTRIAL SAFETY) -->
-      <div id="pendingRebootBanner" class="pending-reboot-banner">
+      <div id="pendingRebootBanner" class="pending-reboot-banner" style="display:none;">
         <div class="pending-banner-text">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
             <line x1="12" y1="9" x2="12" y2="13"/>
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
-          <span>Perubahan jaringan tersimpan di NVS. Reboot diperlukan untuk mengaktifkan ke hardware.</span>
+          <span>Network changes saved in NVS. Reboot required to apply to hardware.</span>
         </div>
         <div class="pending-banner-actions">
-          <button type="button" class="btn-banner-reboot" onclick="triggerRebootNow()">Reboot Sekarang</button>
-          <button type="button" class="btn-banner-discard" onclick="discardPendingNetworkChanges()">Batalkan</button>
+          <button type="button" class="btn-banner-reboot" onclick="triggerRebootNow()">Reboot Now</button>
+          <button type="button" class="btn-banner-discard" onclick="discardPendingNetworkChanges()">Discard</button>
         </div>
       </div>
 
@@ -205,14 +398,14 @@
   <div class="ap-banner-left">
     <div class="ap-pulse-ring"><span class="ap-pulse-dot"></span></div>
     <div class="ap-banner-text">
-      <div class="ap-banner-title">Hotspot Mode Konfigurasi Aktif</div>
+      <div class="ap-banner-title">Config Hotspot Mode Active</div>
       <div class="ap-banner-subtitle">
         SSID: <strong id="apBannerSsid">%ap_ssid%</strong> &bull; Auto-off idle: <span id="apBannerTimer" class="ap-timer-pill">60s</span>
       </div>
     </div>
   </div>
   <div class="ap-banner-right">
-    <button type="button" id="btnStopAp" class="btn-ap-stop" title="Matikan Hotspot Konfigurasi">
+    <button type="button" id="btnStopAp" class="btn-ap-stop" title="Stop AP Hotspot">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <line x1="1" y1="1" x2="23" y2="23"/>
         <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
@@ -222,7 +415,7 @@
         <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
         <line x1="12" y1="20" x2="12.01" y2="20"/>
       </svg>
-      <span>Nonaktifkan AP</span>
+      <span>Disable AP</span>
     </button>
   </div>
 </div>
@@ -234,238 +427,296 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 }
 </script>
 <!-- ================= END AP MODE CONFIG BANNER COMPONENT ================= -->
-        <form id="settingsValidation" onsubmit="return handleFormSubmit('settingsValidation', '/api/v1/config/settings', 'Pengaturan gateway berhasil diperbarui.')">
+                <!-- Page Header -->
+        <div class="head">
+          <div>
+            <h1>Device Settings</h1>
+            <p>Gateway hardware, BLE filtering and system parameters.</p>
+          </div>
+        </div>
+
+        <form id="settingsValidation" onsubmit="return handleFormSubmit('settingsValidation', '/api/v1/config/settings', 'Gateway settings updated successfully.')">
           
-          <!-- BENTO CARD 1: BLE Scanner & Sensitivitas Sinyal -->
-          <div class="bento-card">
-            <div class="bento-header">
-              <div class="bento-icon cyan">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
-                  <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/>
-                  <path d="M12 6v6l4 2"/>
+          <!-- CARD 1: BLE Radio Scanner & Signal Filtering -->
+          <section class="card" id="ble">
+            <div class="ch">
+              <div class="ci cyan">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="2"/>
+                  <path d="M16.2 7.8a6 6 0 0 1 0 8.4m-8.4 0a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5"/>
                 </svg>
               </div>
-              <div class="bento-title">Filter BLE Scanner & Sinyal</div>
+              <div>
+                <h2>BLE Radio Scanner &amp; Signal Filtering</h2>
+                <p>Scan mode, target UUID / Major filter and RSSI threshold</p>
+              </div>
             </div>
 
-            <div class="bento-grid single">
-              <!-- Switch Filter UUID -->
-              <div class="item full">
-                <div class="toggle-card-row">
-                  <div class="toggle-card-info">
-                    <label class="toggle-card-title" for="filterUuidToggle">Filter UUID Target</label>
-                  </div>
-                  <label class="ios-switch">
-                    <input type="checkbox" id="filterUuidToggle" %filter_uuid_checked%>
-                    <span class="ios-slider"></span>
-                  </label>
-                  <input type="hidden" id="filter_uuid_en" name="filter_uuid_en" value="%filter_uuid_en%">
-                </div>
+            <!-- Row 1: Radio Scan Mode -->
+            <div class="row">
+              <div>
+                <div class="lab">Radio scan mode</div>
+                <div class="hint">Applied after reboot.</div>
               </div>
-
-              <!-- Target UUID dengan Live Hex Counter & Quick Paste -->
-              <div class="item full %uuid_container_dimmed%" id="uuidContainer">
-                <div class="label-row">
-                  <label for="filter_uuid">Target UUID iBeacon</label>
-                  <span class="%uuid_badge_class%" id="uuidBadge">%uuid_badge_text%</span>
+              <div class="ctl">
+                <div class="seg" role="group" aria-label="Scan mode">
+                  <button type="button" data-mode="1" id="btnScanPassive" class="%scan_mode_passive_active%" onclick="selectScanMode(1)">Passive</button>
+                  <button type="button" data-mode="2" id="btnScanActive" class="%scan_mode_active_active%" onclick="selectScanMode(2)">Active</button>
                 </div>
-                <div class="input-action-wrap">
-                  <input type="text" id="filter_uuid" name="filter_uuid" value="%filter_uuid%" placeholder="FDA50693A4E24FB1AFCFC6EB07647825" maxlength="36" spellcheck="false" autocomplete="off" required %filter_uuid_disabled%>
-                  <button type="button" class="btn-input-action" id="btnPasteUuid" title="Tempel dari Clipboard">
+                <input type="hidden" id="scan_mode" name="scan_mode" value="%scan_mode%">
+              </div>
+            </div>
+
+            <!-- Row 2: Reject Unknown BLE Format (Inline Switch + Dynamic Badge) -->
+            <div class="row" id="unknownBleRow">
+              <div>
+                <div class="lab">
+                  <label for="filterUnknownToggle">Filter unknown BLE format</label>
+                  <span class="badge %unknown_badge_class%" id="unknownBadge">%unknown_badge_text%</span>
+                </div>
+                <div class="hint">Reject raw and non-standard advertisements. Only forward recognized beacons to MQTT.</div>
+              </div>
+              <div class="ctl ctl-t" style="justify-content: flex-end;">
+                <label class="sw" title="Filter unknown BLE formats">
+                  <input type="checkbox" id="filterUnknownToggle" %filter_unknown_checked% aria-label="Filter unknown BLE formats">
+                  <i></i>
+                </label>
+              </div>
+              <input type="hidden" id="filter_unknown_en" name="filter_unknown_en" value="%filter_unknown_en%">
+            </div>
+
+            <!-- Row 3: Target UUID Filter (Inline Switch + Input + Paste) -->
+            <div class="row %uuid_container_dimmed%" id="uuidRow">
+              <div>
+                <div class="lab">
+                  <label for="filter_uuid">Target UUID filter</label>
+                  <span class="badge %uuid_badge_class%" id="uuidBadge">%uuid_badge_text%</span>
+                </div>
+                <div class="hint">32-character hex.</div>
+              </div>
+              <div class="ctl ctl-t">
+                <div class="fld pw">
+                  <input class="mono" type="text" id="filter_uuid" name="filter_uuid" value="%filter_uuid%" maxlength="36" spellcheck="false" autocomplete="off" placeholder="FDA50693A4E24FB1AFCFC6EB07647825" aria-label="iBeacon target UUID" %filter_uuid_disabled% required>
+                  <button type="button" class="paste" id="btnPasteUuid" title="Paste from clipboard" aria-label="Paste from clipboard" %filter_uuid_disabled%>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
+                      <rect width="8" height="4" x="8" y="2" rx="1"/>
                       <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
                     </svg>
-                    <span>Tempel</span>
                   </button>
                 </div>
+                <label class="sw" title="Enable UUID filter">
+                  <input type="checkbox" id="filterUuidToggle" %filter_uuid_checked% aria-label="Enable UUID filter">
+                  <i></i>
+                </label>
               </div>
+              <input type="hidden" id="filter_uuid_en" name="filter_uuid_en" value="%filter_uuid_en%">
+            </div>
 
-              <!-- Switch Filter Major Tag (Default OFF) -->
-              <div class="item full">
-                <div class="toggle-card-row">
-                  <div class="toggle-card-info">
-                    <label class="toggle-card-title" for="filterMajorToggle">Filter Major Tag</label>
+            <!-- Row 4: Target Major Filter (Inline Switch + Input) -->
+            <div class="row %major_container_dimmed%" id="majorRow">
+              <div>
+                <div class="lab">
+                  <label for="filter_major">Target Major filter</label>
+                  <span class="badge %major_badge_class%" id="majorBadge">%major_badge_text%</span>
+                </div>
+                <div class="hint">Up to 5 digits.</div>
+              </div>
+              <div class="ctl ctl-t">
+                <div class="fld">
+                  <input class="mono" type="text" id="filter_major" name="filter_major" value="%filter_major%" maxlength="5" inputmode="numeric" placeholder="65535" autocomplete="off" aria-label="iBeacon target Major" %filter_major_disabled%>
+                </div>
+                <label class="sw" title="Enable Major filter">
+                  <input type="checkbox" id="filterMajorToggle" %filter_major_checked% aria-label="Enable Major filter">
+                  <i></i>
+                </label>
+              </div>
+              <input type="hidden" id="filter_major_en" name="filter_major_en" value="%filter_major_en%">
+            </div>
+
+            <!-- Row 5: Minimum RSSI Threshold (Merged Minus Box + Slider + Ticks) -->
+            <div class="row">
+              <div>
+                <div class="lab">
+                  <label for="rssi_input_abs">Minimum RSSI threshold</label>
+                </div>
+                <div class="hint">Weaker signals are ignored.</div>
+              </div>
+              <div class="ctl">
+                <div class="rssi">
+                  <div class="rv" id="rssiPill">
+                    <span>&minus;</span>
+                    <input type="text" inputmode="numeric" id="rssi_input_abs" value="%rssi_val_abs%" aria-label="RSSI absolute value" placeholder="80">
+                    <small>dBm</small>
                   </div>
-                  <label class="ios-switch">
-                    <input type="checkbox" id="filterMajorToggle" %filter_major_checked%>
-                    <span class="ios-slider"></span>
-                  </label>
-                  <input type="hidden" id="filter_major_en" name="filter_major_en" value="%filter_major_en%">
-                </div>
-              </div>
-
-              <!-- Target Major Tag dengan Validasi 5 Digit & 65535 -->
-              <div class="item full %major_container_dimmed%" id="majorContainer">
-                <div class="label-row">
-                  <label for="filter_major">Target Major Tag</label>
-                  <span class="%major_badge_class%" id="majorBadge">%major_badge_text%</span>
-                </div>
-                <div class="input-action-wrap">
-                  <input type="text" id="filter_major" name="filter_major" value="%filter_major%" placeholder="65535" maxlength="5" inputmode="numeric" spellcheck="false" autocomplete="off" %filter_major_disabled%>
-                </div>
-                <span style="font-size:0.75rem;color:var(--text-dim);margin-top:4px;display:block;">Maksimal 5 digit (0 s/d 65535). Dapat diisi tanpa angka 0 di depan (misal: 1).</span>
-              </div>
-
-              <!-- Input Angka Bebas Minus & Slider Sensitivitas Presisi -->
-              <div class="item full">
-                <div class="rssi-title-center">
-                  <label for="rssi_input_abs">Batas Minimum RSSI</label>
-                </div>
-                <div class="rssi-center-wrap">
-                  <div class="rssi-merged-pill" id="rssiPill">
-                    <span class="rssi-minus">&minus;</span><input type="number" id="rssi_input_abs" min="30" max="100" step="1" value="%rssi_val_abs%" placeholder="80" required><span class="rssi-unit">dBm</span>
+                  <div class="rssi-slider-wrap">
+                    <input type="range" id="rssi_slider" min="30" max="100" step="1" value="%rssi_slider_val%" aria-label="RSSI slider" style="background: %rssi_slider_bg%;">
+                    <div class="ticks">
+                      <span>&minus;30</span>
+                      <span>&minus;65</span>
+                      <span>&minus;100</span>
+                    </div>
                   </div>
                 </div>
-                <div class="range-slider-wrap">
-                  <input type="range" id="rssi_slider" min="30" max="100" step="1" value="%rssi_slider_val%" style="background: %rssi_slider_bg%;">
-                  <input type="hidden" id="rssi_min" name="rssi_min" value="%rssi_min%">
-                </div>
-                <script>
-                  (function(){
-                    var s = document.getElementById('rssi_slider');
-                    var inp = document.getElementById('rssi_input_abs');
-                    var v = parseInt(inp && inp.value ? inp.value : (s && s.value ? s.value : 80), 10);
-                    if (!isNaN(v) && s) {
-                      if (v < 30) v = 30; if (v > 100) v = 100;
-                      var p = ((v - 30) / 70) * 100;
-                      s.style.background = 'linear-gradient(to right, #0284c7 0%, #38bdf8 ' + p + '%, #1e293b ' + p + '%, #1e293b 100%)';
-                    }
-                  })();
-                </script>
-                <div class="range-ticks">
-                  <span>-30 dBm</span>
-                  <span>-65 dBm</span>
-                  <span>-100 dBm</span>
-                </div>
+                <input type="hidden" id="rssi_min" name="rssi_min" value="%rssi_min%">
               </div>
             </div>
-          </div>
+          </section>
 
-          <!-- BENTO CARD 2: Batching & Antrean MQTT -->
-          <div class="bento-card">
-            <div class="bento-header">
-              <div class="bento-icon emerald">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+          <!-- CARD 2: MQTT Batching & Ingress Queue -->
+          <section class="card role-admin-only" id="mqtt">
+            <div class="ch">
+              <div class="ci emerald">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect width="18" height="18" x="3" y="3" rx="2"/>
                   <path d="M3 9h18"/><path d="M9 21V9"/>
                 </svg>
               </div>
-              <div class="bento-title">Batching & Antrean MQTT</div>
-            </div>
-
-            <div class="bento-grid">
-              <div class="item full">
-                <label>Topik Publish MQTT Gateway</label>
-                <div class="subtopic-display-pill">
-                  <span class="subtopic-prefix">beacon/</span><span class="subtopic-id">%device_id%</span>
-                </div>
-              </div>
-
-              <div class="item">
-                <label for="batch_max">Maksimal Beacon per Batch</label>
-                <div class="stepper-control enhanced-stepper">
-                  <button type="button" class="stepper-btn" data-action="minus" aria-label="Kurangi">&minus;</button>
-                  <input type="number" class="stepper-input" min="10" max="200" id="batch_max" name="batch_max" value="%batch_max%" readonly required>
-                  <button type="button" class="stepper-btn" data-action="plus" aria-label="Tambah">&plus;</button>
-                </div>
-              </div>
-
-              <div class="item">
-                <label for="batch_flush">Batas Waktu Buffer Flush</label>
-                <div class="unit-box">
-                  <input type="number" id="batch_flush" name="batch_flush" value="%batch_flush%" placeholder="300" min="50" max="2000" required>
-                  <span class="unit-text">Milidetik</span>
-                </div>
-              </div>
-
-              <div class="item full">
-                <label for="data_ttl">Masa Kadaluarsa Antrean (TTL)</label>
-                <div class="unit-box">
-                  <input type="number" id="data_ttl" name="data_ttl" value="%data_ttl%" placeholder="5000" min="1000" max="30000" required>
-                  <span class="unit-text">Milidetik</span>
-                </div>
+              <div>
+                <h2>MQTT Batching &amp; Ingress Queue</h2>
+                <p>Payload batch size, flush interval and queue retention</p>
               </div>
             </div>
-          </div>
 
-          <!-- BENTO CARD 3: Server Waktu (NTP) & Sinkronisasi -->
-          <div class="bento-card">
-            <div class="bento-header">
-              <div class="bento-icon amber">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
-                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                </svg>
+            <!-- Row 1: Publish Topic Read-Only -->
+            <div class="row">
+              <div>
+                <div class="lab">Publish topic</div>
+                <div class="hint">Read-only.</div>
               </div>
-              <div class="bento-title">Server Waktu (NTP)</div>
-            </div>
-
-            <div class="bento-grid single">
-              <div class="item full">
-                <div class="label-row">
-                  <label for="ntp_server">Alamat NTP Server</label>
-                  <span class="uuid-badge neutral" id="ntpTestBadge">Siap diuji</span>
-                </div>
-                <div class="input-action-wrap">
-                  <input type="text" id="ntp_server" name="ntp_server" value="%ntp_server%" placeholder="pool.ntp.org" maxlength="63" spellcheck="false" autocomplete="off" required>
-                  <button type="button" class="btn-input-action" id="btnTestNtp" title="Uji Koneksi Server NTP">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                    </svg>
-                    <span>Uji Server</span>
-                  </button>
-                </div>
-                <div id="ntpResultBox" class="ntp-result-feedback" style="display:none;"></div>
-                <span style="font-size:0.75rem;color:var(--text-dim);margin-top:6px;display:block;">
-                  Default: <code>pool.ntp.org</code>. Mendukung hostname publik atau IP lokal (misal: <code>192.168.1.1</code>). Port UDP: 123.
-                </span>
+              <div class="ctl topic">
+                <span class="subtopic-prefix">%mqtt_topic_prefix%</span><b class="subtopic-id">%device_id%</b>
               </div>
             </div>
-          </div>
 
-          <!-- BENTO CARD 4: Jadwal Reboot & Watchdog -->
-          <div class="bento-card">
-            <div class="bento-header">
-              <div class="bento-icon slate">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
-                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                </svg>
-              </div>
-              <div class="bento-title">Jadwal Reboot & Watchdog</div>
-            </div>
-
-            <div class="bento-grid">
-              <div class="item full">
-                <div class="toggle-card-row">
-                  <div class="toggle-card-info">
-                    <label class="toggle-card-title" for="restartScheduleToggle">Jadwal Reboot Otomatis Harian</label>
+            <!-- Row 2: 2x2 Field Grid (.fgrid) -->
+            <div class="fgrid">
+              <div class="cell">
+                <label class="lab" for="batch_max">Max beacons per batch</label>
+                <div class="hint">10 &ndash; 150 per payload.</div>
+                <div class="ctl">
+                  <div class="step">
+                    <button type="button" class="stepper-btn" data-d="-1" data-action="minus" aria-label="Decrease">&minus;</button>
+                    <input type="number" id="batch_max" name="batch_max" min="10" max="150" value="%batch_max%" readonly required>
+                    <button type="button" class="stepper-btn" data-d="1" data-action="plus" aria-label="Increase">&plus;</button>
                   </div>
-                  <label class="ios-switch">
-                    <input type="checkbox" id="restartScheduleToggle" %restart_sch_checked%>
-                    <span class="ios-slider"></span>
+                </div>
+              </div>
+
+              <div class="cell">
+                <label class="lab" for="batch_flush">Buffer flush interval</label>
+                <div class="hint">50 &ndash; 2000 ms.</div>
+                <div class="ctl addon">
+                  <input type="number" id="batch_flush" name="batch_flush" min="50" max="2000" value="%batch_flush%" placeholder="300" required>
+                  <span>ms</span>
+                </div>
+              </div>
+
+              <div class="cell">
+                <label class="lab" for="data_ttl">Queue retention timeout (TTL)</label>
+                <div class="hint">1000 &ndash; 30000 ms.</div>
+                <div class="ctl addon">
+                  <input type="number" id="data_ttl" name="data_ttl" min="1000" max="30000" value="%data_ttl%" placeholder="5000" required>
+                  <span>ms</span>
+                </div>
+              </div>
+
+              <div class="cell">
+                <label class="lab" for="hb_interval">Heartbeat interval</label>
+                <div class="hint">1 &ndash; 300 seconds.</div>
+                <div class="ctl addon">
+                  <input type="number" id="hb_interval" name="hb_interval" min="1" max="300" value="%hb_interval%" placeholder="5" required>
+                  <span>sec</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- CARD 3: Network Time Protocol (NTP) -->
+          <section class="card" id="ntp">
+            <div class="ch">
+              <div class="ci amber">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+              </div>
+              <div>
+                <h2>Network Time Protocol (NTP)</h2>
+                <p>Clock synchronization for telemetry timestamps</p>
+              </div>
+            </div>
+
+            <div class="row">
+              <div>
+                <div class="lab">
+                  <label for="ntp_server">NTP server hostname</label>
+                  <span class="badge" id="ntpBadge">Ready</span>
+                </div>
+                <div class="hint">Hostname or LAN IP &middot; UDP 123.</div>
+              </div>
+              <div class="ctl">
+                <div class="grp">
+                  <input class="mono" type="text" id="ntp_server" name="ntp_server" value="%ntp_server%" maxlength="63" spellcheck="false" autocomplete="off" placeholder="pool.ntp.org" required>
+                  <button type="button" class="btn" id="btnTestNtp" style="padding:0 14px;font-weight:600;font-size:13px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);color:var(--text-main);cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all 0.15s;">Test probe</button>
+                </div>
+                <div class="probe" id="probe"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- CARD 4: Reboot Schedule & System Watchdog -->
+          <section class="card" id="sys">
+            <div class="ch">
+              <div class="ci slate">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+                  <line x1="12" y1="2" x2="12" y2="12"/>
+                </svg>
+              </div>
+              <div>
+                <h2>Reboot Schedule &amp; System Watchdog</h2>
+                <p>Automated maintenance and offline-link recovery</p>
+              </div>
+            </div>
+
+            <div class="fgrid">
+              <div class="cell" id="restartRow">
+                <label class="lab" for="restart_schedule">Daily scheduled reboot</label>
+                <div class="hint">Restart daily at this time.</div>
+                <div class="ctl ctl-t">
+                  <div class="fld">
+                    <input type="time" class="time-input native-time" id="restart_schedule" name="restart_schedule" value="%restart_schedule%">
+                  </div>
+                  <label class="sw" title="Enable daily reboot">
+                    <input type="checkbox" id="restartScheduleToggle" %restart_sch_checked% aria-label="Enable daily reboot">
+                    <i></i>
                   </label>
                 </div>
               </div>
 
-              <div class="item %restart_sch_container_dimmed%" id="restartScheduleContainer">
-                <label for="restart_schedule">Waktu Reboot Harian (HH:MM)</label>
-                <input type="time" class="time-input native-time" id="restart_schedule" name="restart_schedule" value="%restart_schedule%">
-              </div>
-
-              <div class="item">
-                <label for="discon_rst">Reboot saat Terputus (Watchdog)</label>
-                <div class="unit-box">
-                  <input type="number" id="discon_rst" name="discon_rst" value="%discon_rst%" placeholder="5" min="1" max="60" required>
-                  <span class="unit-text">Menit</span>
+              <div class="cell">
+                <label class="lab" for="discon_rst">Connection-loss watchdog</label>
+                <div class="hint">Reboot if offline longer than this.</div>
+                <div class="ctl addon">
+                  <input type="number" id="discon_rst" name="discon_rst" min="1" max="60" value="%discon_rst%" placeholder="5" required>
+                  <span>min</span>
                 </div>
               </div>
             </div>
+          </section>
+
+          <!-- Bottom Form Actions Bar (Always Visible) -->
+          <div class="form-actions-bottom" style="margin-top:24px;display:flex;justify-content:flex-end;gap:12px;padding:0 2px;">
+            <button type="submit" class="btn btn-info" id="btnMainSave" style="padding:12px 30px;font-size:0.95rem;font-weight:700;display:inline-flex;align-items:center;gap:10px;border-radius:12px;cursor:pointer;border:none;box-shadow:0 4px 18px rgba(37, 99, 235, 0.4);background:#2563eb;color:#fff;letter-spacing:0.02em;transition:all 0.2s ease;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
+              <span>Save Configuration</span>
+            </button>
           </div>
         </form>
       </section>
 
       <footer>
-        &copy; <span id="year"></span> IOTARU ESP32 Gateway (%model%).
+        &copy; <span id="year"></span> Cubeacon Gateway (%model%).
       </footer>
     </main>
 
@@ -474,13 +725,13 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
       <div class="floating-save-box">
         <div class="floating-save-info">
           <span class="dirty-indicator-dot"></span>
-          <span class="floating-save-text">Belum disimpan</span>
+          <span class="floating-save-text">You have unsaved changes</span>
         </div>
         <div class="floating-save-actions">
-          <button type="button" class="btn-dock-cancel" id="btnCancelChanges">Batal</button>
+          <button type="button" class="btn-dock-cancel" id="btnCancelChanges">Discard</button>
           <button type="submit" form="settingsValidation" class="btn-dock-save" id="btnDockSave">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
-            <span>Simpan</span>
+            <span>Save</span>
           </button>
         </div>
       </div>

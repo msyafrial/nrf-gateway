@@ -52,6 +52,7 @@ public:
     static size_t getLogs(NetLogEntry* outEntries, size_t maxCount);
     static size_t getLogCount();
     static void clearLogs();
+    static void onEepromWiped();
     
     // Konversi enum ke string representatif
     static const char* categoryToString(NetCategory cat);
@@ -60,6 +61,9 @@ public:
 
     // Telemetri Stabilitas & Jaringan (Tersimpan di AT24C256 EEPROM / RAM)
     static uint32_t getBootCount();
+    static uint64_t getLifetimeUptimeSec();
+    static void     syncLifetimeUptimeToEeprom();
+    static void     tickPeriodicCommit();
     static const char* getLastResetReasonString();
     static uint32_t getWifiDisconnectCount();
     static uint32_t getEthDisconnectCount();

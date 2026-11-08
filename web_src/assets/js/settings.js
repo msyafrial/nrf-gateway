@@ -1,6 +1,6 @@
 /**
- * IOTARU ESP32 Gateway (SG-10) - Device Settings Controller
- * Modern 2026 Ergonomics: Centered Attached Minus RSSI, Instant Clamping, Exact Slider Bounds
+ * Cubeacon Gateway - Harmonized Device Settings Controller
+ * Modern 2026 Ergonomics: 2-Column Responsive Layout, Inline Toggles, Auto Clamping
  */
 
 document.addEventListener("DOMContentLoaded", function () {
@@ -8,16 +8,18 @@ document.addEventListener("DOMContentLoaded", function () {
   if (!form) return;
 
   // Form Elements
+  const filterUnknownToggle = document.getElementById("filterUnknownToggle");
+  const filterUnknownEnHidden = document.getElementById("filter_unknown_en");
+  const unknownBadge = document.getElementById("unknownBadge");
+
   const filterUuidToggle = document.getElementById("filterUuidToggle");
   const filterUuidEnHidden = document.getElementById("filter_uuid_en");
-  const uuidContainer = document.getElementById("uuidContainer");
   const filterUuidInput = document.getElementById("filter_uuid");
   const uuidBadge = document.getElementById("uuidBadge");
   const btnPasteUuid = document.getElementById("btnPasteUuid");
 
   const filterMajorToggle = document.getElementById("filterMajorToggle");
   const filterMajorEnHidden = document.getElementById("filter_major_en");
-  const majorContainer = document.getElementById("majorContainer");
   const filterMajorInput = document.getElementById("filter_major");
   const majorBadge = document.getElementById("majorBadge");
 
@@ -27,11 +29,10 @@ document.addEventListener("DOMContentLoaded", function () {
   const rssiMinHidden = document.getElementById("rssi_min");
 
   const restartScheduleToggle = document.getElementById("restartScheduleToggle");
-  const restartScheduleContainer = document.getElementById("restartScheduleContainer");
   const restartScheduleInput = document.getElementById("restart_schedule");
 
-  const floatingSaveDock = document.getElementById("floatingSaveDock");
-  const btnCancelChanges = document.getElementById("btnCancelChanges");
+  const floatingSaveDock = document.getElementById("floatingSaveDock") || document.getElementById("dock");
+  const btnCancelChanges = document.getElementById("btnCancelChanges") || document.getElementById("btnCancel");
 
   let lastSavedSchedule = restartScheduleInput ? restartScheduleInput.value : "";
   const initialValues = {};
@@ -49,22 +50,49 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // 1. Filter UUID Toggle Switch Sync
+  // 0. Filter Unknown BLE Toggle Switch Sync (Inline)
+  function syncUnknownToggle(fromUser) {
+    if (!filterUnknownToggle || !filterUnknownEnHidden) return;
+    if (fromUser) {
+      filterUnknownEnHidden.value = filterUnknownToggle.checked ? "1" : "0";
+    }
+    const enabled = filterUnknownToggle.checked;
+    if (unknownBadge) {
+      unknownBadge.textContent = enabled ? "Active" : "Disabled";
+      unknownBadge.className = enabled ? "badge valid" : "badge neutral";
+    }
+  }
+
+  if (filterUnknownToggle) {
+    filterUnknownToggle.addEventListener("change", function () {
+      syncUnknownToggle(true);
+      checkDirty();
+    });
+  }
+
+  // 1. Filter UUID Toggle Switch Sync (Inline)
   function syncUuidToggle(fromUser) {
     if (!filterUuidToggle || !filterUuidEnHidden) return;
     if (fromUser) {
       filterUuidEnHidden.value = filterUuidToggle.checked ? "1" : "0";
     }
     const enabled = filterUuidToggle.checked;
+    const uuidRow = document.getElementById("uuidRow") || document.getElementById("uuidContainer");
     if (enabled) {
-      if (uuidContainer) uuidContainer.classList.remove("dimmed");
+      if (uuidRow) {
+        uuidRow.classList.remove("dimmed");
+        uuidRow.classList.remove("off");
+      }
       if (filterUuidInput) {
         filterUuidInput.disabled = false;
         filterUuidInput.required = true;
       }
       if (btnPasteUuid) btnPasteUuid.disabled = false;
     } else {
-      if (uuidContainer) uuidContainer.classList.add("dimmed");
+      if (uuidRow) {
+        uuidRow.classList.add("dimmed");
+        uuidRow.classList.add("off");
+      }
       if (filterUuidInput) {
         filterUuidInput.disabled = true;
         filterUuidInput.required = false;
@@ -88,13 +116,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const len = val.length;
     if (len === 32) {
-      uuidBadge.className = "uuid-badge valid";
-      uuidBadge.textContent = "32/32 Hex Valid";
+      uuidBadge.className = "badge ok";
+      uuidBadge.textContent = "32/32 Hex ✓";
     } else if (len === 0) {
-      uuidBadge.className = "uuid-badge neutral";
+      uuidBadge.className = "badge";
       uuidBadge.textContent = "0/32 Hex";
     } else {
-      uuidBadge.className = "uuid-badge invalid";
+      uuidBadge.className = "badge bad";
       uuidBadge.textContent = len + "/32 Hex";
     }
   }
@@ -121,7 +149,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 toast: true,
                 position: "top-end",
                 icon: "success",
-                title: "UUID ditempel dari clipboard",
+                title: "UUID pasted from clipboard",
                 showConfirmButton: false,
                 timer: 1500
               });
@@ -133,7 +161,7 @@ document.addEventListener("DOMContentLoaded", function () {
         console.warn("Clipboard access:", err);
       }
 
-      const manual = prompt("Tempel teks UUID di sini:");
+      const manual = prompt("Paste UUID text here:");
       if (manual) {
         const clean = manual.replace(/[^0-9A-Fa-f]/g, "").toUpperCase().slice(0, 32);
         filterUuidInput.value = clean;
@@ -143,21 +171,28 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // 2.5 Filter Major Toggle & Validator (Max 5 Digits & Max 65535)
+  // 2.5 Filter Major Toggle & Validator (Inline)
   function syncMajorToggle(fromUser) {
     if (!filterMajorToggle || !filterMajorEnHidden) return;
     if (fromUser) {
       filterMajorEnHidden.value = filterMajorToggle.checked ? "1" : "0";
     }
     const enabled = filterMajorToggle.checked;
+    const majorRow = document.getElementById("majorRow") || document.getElementById("majorContainer");
     if (enabled) {
-      if (majorContainer) majorContainer.classList.remove("dimmed");
+      if (majorRow) {
+        majorRow.classList.remove("dimmed");
+        majorRow.classList.remove("off");
+      }
       if (filterMajorInput) {
         filterMajorInput.disabled = false;
         filterMajorInput.required = true;
       }
     } else {
-      if (majorContainer) majorContainer.classList.add("dimmed");
+      if (majorRow) {
+        majorRow.classList.add("dimmed");
+        majorRow.classList.add("off");
+      }
       if (filterMajorInput) {
         filterMajorInput.disabled = true;
         filterMajorInput.required = false;
@@ -184,12 +219,12 @@ document.addEventListener("DOMContentLoaded", function () {
         num = 65535;
       }
       filterMajorInput.value = val;
-      majorBadge.className = "uuid-badge valid";
+      majorBadge.className = "badge ok";
       majorBadge.textContent = "Major " + num + " Valid";
     } else {
       filterMajorInput.value = "";
-      majorBadge.className = "uuid-badge neutral";
-      majorBadge.textContent = "0 - 65535";
+      majorBadge.className = "badge";
+      majorBadge.textContent = "0 – 65535";
     }
   }
 
@@ -204,7 +239,7 @@ document.addEventListener("DOMContentLoaded", function () {
   function syncInputWidth(el) {
     if (!el) return;
     const len = (el.value || "80").length;
-    el.style.width = len + "ch";
+    el.style.width = Math.max(2, len) + "ch";
   }
 
   function updateRssiState(absVal, source) {
@@ -213,7 +248,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (val < 30) val = 30;
     if (val > 100) val = 100;
 
-    // ESP32 backend expects negative RSSI
+    // Backend expects negative RSSI
     if (rssiMinHidden) rssiMinHidden.value = -val;
 
     // Update input box if source was slider
@@ -248,7 +283,6 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   let clampTimer = null;
-
   function clampRssiInput(el) {
     let rawStr = el.value.replace(/[^0-9]/g, "");
     let num = parseInt(rawStr, 10);
@@ -324,17 +358,24 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // 4. Daily Reboot Schedule Toggle
+  // 4. Daily Reboot Schedule Toggle (Inline)
   function syncRestartToggle(fromUser) {
     if (!restartScheduleToggle || !restartScheduleInput) return;
     const enabled = restartScheduleToggle.checked;
+    const restartRow = document.getElementById("restartRow") || document.getElementById("restartScheduleContainer");
     if (enabled) {
-      if (restartScheduleContainer) restartScheduleContainer.classList.remove("dimmed");
+      if (restartRow) {
+        restartRow.classList.remove("dimmed");
+        restartRow.classList.remove("off");
+      }
       if (!restartScheduleInput.value) {
         restartScheduleInput.value = lastSavedSchedule || "03:00";
       }
     } else {
-      if (restartScheduleContainer) restartScheduleContainer.classList.add("dimmed");
+      if (restartRow) {
+        restartRow.classList.add("dimmed");
+        restartRow.classList.add("off");
+      }
       if (restartScheduleInput.value) {
         lastSavedSchedule = restartScheduleInput.value;
       }
@@ -349,10 +390,25 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // Stepper buttons
-  document.querySelectorAll(".stepper-btn").forEach(btn => {
+  // Stepper buttons (+10 / -10)
+  document.querySelectorAll(".stepper-btn, .step button").forEach(btn => {
     btn.addEventListener("click", function () {
-      setTimeout(checkDirty, 50);
+      const batchInput = document.getElementById("batch_max");
+      if (!batchInput) return;
+      let cur = parseInt(batchInput.value, 10) || 50;
+      let delta = 10;
+      if (this.dataset.d) {
+        delta = parseInt(this.dataset.d, 10) * 10;
+      } else if (this.dataset.action === "minus") {
+        delta = -10;
+      } else if (this.dataset.action === "plus") {
+        delta = 10;
+      }
+      let next = cur + delta;
+      if (next < 10) next = 10;
+      if (next > 150) next = 150;
+      batchInput.value = next;
+      checkDirty();
     });
   });
 
@@ -376,8 +432,10 @@ document.addEventListener("DOMContentLoaded", function () {
     if (!floatingSaveDock) return;
     if (isFormDirty()) {
       floatingSaveDock.style.display = "block";
+      floatingSaveDock.classList.add("show");
     } else {
       floatingSaveDock.style.display = "none";
+      floatingSaveDock.classList.remove("show");
     }
   }
 
@@ -398,7 +456,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       });
 
-      syncUuidToggle(false);
+      syncUnknownToggle(false);
+      syncUnknownToggle(false);
+  syncUuidToggle(false);
       validateUuidHex();
       syncMajorToggle(false);
       validateMajorFilter();
@@ -408,12 +468,14 @@ document.addEventListener("DOMContentLoaded", function () {
       syncRestartToggle(false);
       checkDirty();
 
-      if (ntpTestBadge) {
-        ntpTestBadge.className = "uuid-badge neutral";
-        ntpTestBadge.textContent = "Siap diuji";
+      const ntpBadgeEl = document.getElementById("ntpBadge") || document.getElementById("ntpTestBadge");
+      const probeEl = document.getElementById("probe") || document.getElementById("ntpResultBox");
+      if (ntpBadgeEl) {
+        ntpBadgeEl.className = "badge";
+        ntpBadgeEl.textContent = "Ready";
       }
-      if (ntpResultBox) {
-        ntpResultBox.style.display = "none";
+      if (probeEl) {
+        probeEl.style.display = "none";
       }
 
       if (typeof Swal !== "undefined") {
@@ -421,7 +483,7 @@ document.addEventListener("DOMContentLoaded", function () {
           toast: true,
           position: "top-end",
           icon: "info",
-          title: "Perubahan dibatalkan",
+          title: "Changes discarded",
           showConfirmButton: false,
           timer: 1500
         });
@@ -432,8 +494,8 @@ document.addEventListener("DOMContentLoaded", function () {
   // 6. NTP Server Probe Tester
   const btnTestNtp = document.getElementById("btnTestNtp");
   const ntpServerInput = document.getElementById("ntp_server");
-  const ntpTestBadge = document.getElementById("ntpTestBadge");
-  const ntpResultBox = document.getElementById("ntpResultBox");
+  const ntpTestBadge = document.getElementById("ntpBadge") || document.getElementById("ntpTestBadge");
+  const ntpResultBox = document.getElementById("probe") || document.getElementById("ntpResultBox");
 
   if (btnTestNtp && ntpServerInput) {
     btnTestNtp.addEventListener("click", function () {
@@ -445,11 +507,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
       btnTestNtp.disabled = true;
       const originalHtml = btnTestNtp.innerHTML;
-      btnTestNtp.innerHTML = '<span class="spinner-inline"></span><span>Menguji...</span>';
+      btnTestNtp.innerHTML = '<span class="spin"></span><span>Testing…</span>';
 
       if (ntpTestBadge) {
-        ntpTestBadge.className = "uuid-badge testing";
-        ntpTestBadge.textContent = "Menguji...";
+        ntpTestBadge.className = "badge run";
+        ntpTestBadge.textContent = "Testing…";
       }
       if (ntpResultBox) {
         ntpResultBox.style.display = "none";
@@ -470,14 +532,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (data.success) {
           if (ntpTestBadge) {
-            ntpTestBadge.className = "uuid-badge valid";
+            ntpTestBadge.className = "badge ok";
             ntpTestBadge.textContent = (data.rtt_ms !== undefined ? data.rtt_ms + " ms" : "OK");
           }
           if (ntpResultBox) {
-            ntpResultBox.className = "ntp-result-feedback success";
+            ntpResultBox.className = "probe ok";
             ntpResultBox.innerHTML =
-              '<strong>✓ Terhubung</strong> &bull; IP: <code>' + (data.ip || '-') + '</code> &bull; RTT: <code>' + data.rtt_ms + ' ms</code><br>' +
-              '<span style="font-size:0.78rem;opacity:0.9;">Waktu Server: ' + (data.server_time || '-') + '</span>';
+              '<strong>✓ Connected</strong> &bull; IP: <code>' + (data.ip || '-') + '</code> &bull; RTT: <code>' + data.rtt_ms + ' ms</code><br>' +
+              '<span style="font-size:0.78rem;opacity:0.9;">Server Time: ' + (data.server_time || '-') + '</span>';
             ntpResultBox.style.display = "block";
           }
           if (typeof Swal !== "undefined") {
@@ -485,19 +547,19 @@ document.addEventListener("DOMContentLoaded", function () {
               toast: true,
               position: "top-end",
               icon: "success",
-              title: "NTP Aktif (" + data.rtt_ms + " ms)",
+              title: "NTP Synchronized (" + data.rtt_ms + " ms)",
               showConfirmButton: false,
               timer: 2500
             });
           }
         } else {
           if (ntpTestBadge) {
-            ntpTestBadge.className = "uuid-badge invalid";
-            ntpTestBadge.textContent = "Gagal";
+            ntpTestBadge.className = "badge bad";
+            ntpTestBadge.textContent = "Failed";
           }
           if (ntpResultBox) {
-            ntpResultBox.className = "ntp-result-feedback error";
-            ntpResultBox.innerHTML = '<strong>✗ Uji Gagal:</strong> ' + (data.message || "Server tidak merespons");
+            ntpResultBox.className = "probe bad";
+            ntpResultBox.innerHTML = '<strong>✗ Test Failed:</strong> ' + (data.message || "Server unreachable or unresponsive");
             ntpResultBox.style.display = "block";
           }
           if (typeof Swal !== "undefined") {
@@ -505,7 +567,7 @@ document.addEventListener("DOMContentLoaded", function () {
               toast: true,
               position: "top-end",
               icon: "error",
-              title: data.message || "Uji NTP Gagal",
+              title: data.message || "NTP Probe Failed",
               showConfirmButton: false,
               timer: 3500
             });
@@ -516,12 +578,12 @@ document.addEventListener("DOMContentLoaded", function () {
         btnTestNtp.disabled = false;
         btnTestNtp.innerHTML = originalHtml;
         if (ntpTestBadge) {
-          ntpTestBadge.className = "uuid-badge invalid";
+          ntpTestBadge.className = "badge bad";
           ntpTestBadge.textContent = "Error";
         }
         if (ntpResultBox) {
-          ntpResultBox.className = "ntp-result-feedback error";
-          ntpResultBox.innerHTML = '<strong>✗ Terjadi Kesalahan:</strong> ' + (err.message || "Koneksi gateway terputus");
+          ntpResultBox.className = "probe bad";
+          ntpResultBox.innerHTML = '<strong>✗ Communication Error:</strong> ' + (err.message || "Gateway communication failure");
           ntpResultBox.style.display = "block";
         }
         if (typeof Swal !== "undefined") {
@@ -529,7 +591,7 @@ document.addEventListener("DOMContentLoaded", function () {
             toast: true,
             position: "top-end",
             icon: "error",
-            title: "Gagal memproses pengujian",
+            title: "NTP Probe Failed",
             showConfirmButton: false,
             timer: 2500
           });
@@ -538,7 +600,48 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  // Scanner Mode Segmented Controller (Passive: 1, Active: 2)
+  window.selectScanMode = function(mode) {
+    const input = document.getElementById("scan_mode");
+    const btnPassive = document.getElementById("btnScanPassive");
+    const btnActive = document.getElementById("btnScanActive");
+    if (input) input.value = mode;
+
+    if (mode === 2) {
+      if (btnActive) {
+        btnActive.classList.add("on");
+        btnActive.classList.add("active");
+      }
+      if (btnPassive) {
+        btnPassive.classList.remove("on");
+        btnPassive.classList.remove("active");
+      }
+    } else {
+      if (btnPassive) {
+        btnPassive.classList.add("on");
+        btnPassive.classList.add("active");
+      }
+      if (btnActive) {
+        btnActive.classList.remove("on");
+        btnActive.classList.remove("active");
+      }
+    }
+    checkDirty();
+  };
+
+  // Click listener for .seg buttons
+  document.querySelectorAll(".seg button").forEach(b => {
+    b.addEventListener("click", function() {
+      if (this.dataset.mode) {
+        window.selectScanMode(parseInt(this.dataset.mode, 10));
+      }
+    });
+  });
+
   // Initial sync for toggles & inputs
+  const curScanMode = parseInt(document.getElementById("scan_mode")?.value || "1", 10);
+  window.selectScanMode(curScanMode);
+
   syncUuidToggle(false);
   validateUuidHex();
   syncMajorToggle(false);

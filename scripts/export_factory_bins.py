@@ -336,9 +336,28 @@ def sync_git_and_tag(project_dir, dev_model, fw_ver):
         except Exception:
             pass
 
-    # 3. Input Catatan Rilis Baru (Multi-Poin Interaktif)
+    # 3. Input Catatan Rilis Baru (Multi-Poin Interaktif atau File)
     new_points = []
-    if sys.stdin.isatty():
+
+    # Cek apakah disediakan file catatan rilis via argumen --notes-file
+    notes_file_path = None
+    for i, arg in enumerate(sys.argv):
+        if arg == "--notes-file" and i + 1 < len(sys.argv):
+            notes_file_path = sys.argv[i + 1]
+            break
+
+    if notes_file_path and os.path.exists(notes_file_path):
+        print(f"  [INFO] Membaca catatan rilis dari file: {notes_file_path}")
+        with open(notes_file_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line_s = line.strip()
+                if line_s.startswith("- "):
+                    line_s = line_s[2:].strip()
+                if line_s and line_s not in old_points and line_s not in new_points:
+                    new_points.append(line_s)
+        print(f"  -> {len(new_points)} poin catatan rilis berhasil dimuat dari file.")
+
+    elif sys.stdin.isatty():
         if old_points:
             print(f"\n  [INFO] Tag '{fw_ver}' sudah memiliki {len(old_points)} catatan sebelumnya:")
             for idx, pt in enumerate(old_points, 1):
@@ -390,12 +409,18 @@ def sync_git_and_tag(project_dir, dev_model, fw_ver):
 
     # 5. Cek perubahan file lokal dan commit
     try:
-        res_s = subprocess.run(["git", "status", "--porcelain"], cwd=project_dir, capture_output=True, text=True, timeout=10)
+        res_s = subprocess.run(["git", "status", "--porcelain"], cwd=project_dir, capture_output=True, text=True, timeout=15)
         if res_s.returncode == 0 and res_s.stdout.strip():
             print(f"  -> Menyimpan perubahan berkas ke Git (git add . & commit)...")
-            subprocess.run(["git", "add", "."], cwd=project_dir, check=True, timeout=15)
-            commit_msg = f"release: {dev_model} {fw_ver} - {commit_desc}"
-            subprocess.run(["git", "commit", "-m", commit_msg], cwd=project_dir, check=True, timeout=15)
+            subprocess.run(["git", "add", "."], cwd=project_dir, check=True, timeout=60)
+            if new_points:
+                commit_header = f"release: {dev_model} {fw_ver} - perbaikan dan optimasi komprehensif"
+                commit_msg = f"{commit_header}\n\nCatatan Perubahan:\n{formatted_notes}"
+            elif old_points:
+                commit_msg = f"release: {dev_model} {fw_ver} - {commit_desc}"
+            else:
+                commit_msg = f"release: {dev_model} {fw_ver} - build & export firmware"
+            subprocess.run(["git", "commit", "-m", commit_msg], cwd=project_dir, check=True, timeout=30)
             log_success(f"Perubahan kode berhasil di-commit (branch: {branch}).")
         else:
             print("  -> Tidak ada perubahan kode baru yang perlu di-commit.")
@@ -405,11 +430,11 @@ def sync_git_and_tag(project_dir, dev_model, fw_ver):
     # 6. Pembuatan / Pembaruan Tag Lokal
     if tag_exists:
         print(f"  -> Tag '{fw_ver}' sudah ada. Memperbarui tag lokal ke commit terbaru (git tag -f)...")
-        subprocess.run(["git", "tag", "-f", "-a", fw_ver, "-m", tag_msg], cwd=project_dir, check=True, timeout=10)
+        subprocess.run(["git", "tag", "-f", "-a", fw_ver, "-m", tag_msg], cwd=project_dir, check=True, timeout=15)
         log_success(f"Tag lokal '{fw_ver}' berhasil diperbarui (total {len(all_points)} poin akumulasi rilis).")
     else:
         print(f"  -> Tag '{fw_ver}' belum ada. Membuat tag rilis baru (git tag -a)...")
-        subprocess.run(["git", "tag", "-a", fw_ver, "-m", tag_msg], cwd=project_dir, check=True, timeout=10)
+        subprocess.run(["git", "tag", "-a", fw_ver, "-m", tag_msg], cwd=project_dir, check=True, timeout=15)
         log_success(f"Tag lokal '{fw_ver}' berhasil dibuat ({len(all_points)} poin catatan rilis).")
 
     # 5. Pre-flight check koneksi internet (Timeout 3 Detik Anti-Stuck)
@@ -422,20 +447,20 @@ def sync_git_and_tag(project_dir, dev_model, fw_ver):
         return
     log_success("Koneksi ke github.com aktif dan siap.")
 
-    # 6. Push commit dan tag ke GitHub (dengan timeout ketat 20 detik)
+    # 6. Push commit dan tag ke GitHub (dengan timeout 60 detik)
     try:
         print(f"  -> Mendorong commit ke branch '{branch}' (git push origin {branch})...")
-        subprocess.run(["git", "-c", "http.timeout=15", "push", "origin", branch], cwd=project_dir, check=True, timeout=20)
+        subprocess.run(["git", "-c", "http.timeout=30", "push", "origin", branch], cwd=project_dir, check=True, timeout=60)
         log_success(f"Branch '{branch}' berhasil di-push ke GitHub.")
 
-        tag_cmd = ["git", "-c", "http.timeout=15", "push", "origin", fw_ver]
+        tag_cmd = ["git", "-c", "http.timeout=30", "push", "origin", fw_ver]
         if tag_exists:
             tag_cmd.append("--force")
             print(f"  -> Memperbarui tag '{fw_ver}' di GitHub (git push origin {fw_ver} --force)...")
         else:
             print(f"  -> Mengunggah tag '{fw_ver}' ke GitHub (git push origin {fw_ver})...")
 
-        subprocess.run(tag_cmd, cwd=project_dir, check=True, timeout=20)
+        subprocess.run(tag_cmd, cwd=project_dir, check=True, timeout=60)
         log_success(f"Tag '{fw_ver}' berhasil disinkronkan ke GitHub.")
     except subprocess.TimeoutExpired:
         print(f"\n  [TIMEOUT] Operasi git push melebihi batas waktu 20 detik (koneksi internet lambat/terputus).")

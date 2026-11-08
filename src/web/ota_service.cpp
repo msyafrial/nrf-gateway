@@ -368,8 +368,9 @@ bool finalize(char *out_err, size_t err_len) {
         bool verify_ok = false;
         if (m_ret == ESP_OK) {
             struct stat st_idx = {}, st_js = {};
-            if (stat("/storage_verify/index.html", &st_idx) == 0 && st_idx.st_size > 512 &&
-                stat("/storage_verify/assets/js/app.js", &st_js) == 0 && st_js.st_size > 512) {
+            bool js_exists = (stat("/storage_verify/assets/js/app.js", &st_js) == 0 && st_js.st_size > 512) ||
+                             (stat("/storage_verify/assets/js/app.js.gz", &st_js) == 0 && st_js.st_size > 256);
+            if (stat("/storage_verify/index.html", &st_idx) == 0 && st_idx.st_size > 512 && js_exists) {
                 verify_ok = true;
             }
             esp_vfs_littlefs_unregister("storage");

@@ -28,8 +28,9 @@ static void supervisorTask(void *pvParameters) {
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
 
-        // 1. Tick network & watchdog timers
+        // 1. Tick network & watchdog timers & EEPROM lifetime stats
         Network::NetworkManager::tickWatchdog();
+        Network::NetLogService::tickPeriodicCommit();
 
         // 2. Update throughput metrics & bersihkan paket kadaluarsa saat offline (Zero-Loss Pruning)
         Core::BeaconPipeline::updateMetrics();
@@ -57,6 +58,16 @@ static void supervisorTask(void *pvParameters) {
                      Network::MqttService::getBandwidthKBps(),
                      (unsigned int)Network::MqttService::getBatchBufferLoad(),
                      (unsigned int)Core::BeaconPipeline::getQueueLoad());
+        }
+
+        // 5. Health monitor nRF52840 (jika nRF masih di mode STOPPED / restart)
+        uint8_t currentNrfState = Core::BeaconPipeline::getNrfScanState();
+        if (currentNrfState == 0) {
+            if (loopCount % 3 == 0) {
+                uint8_t targetScanMode = (g_config.scan_mode == 2) ? 0x02 : 0x01;
+                ESP_LOGI(TAG, "nRF52840 masih di mode STOPPED. Mengirim ulang perintah scan (Mode %u)...", targetScanMode);
+                Bsp::UartManager::sendScanCommand(targetScanMode);
+            }
         }
     }
 }
@@ -114,6 +125,23 @@ extern "C" void app_main(void) {
 
     // 6. Inisialisasi UART2 nRF52840 (1 Mbps, Task di Core 0)
     ESP_ERROR_CHECK(Bsp::UartManager::init());
+
+    // Seluruh subsistem internal ESP32 siap sebelum terhubung ke jaringan.
+    // Kirim perintah scan ke nRF52840 sesuai scan_mode dari NVS (1: Passive [Default], 2: Active)
+    uint8_t startupScanMode = (g_config.scan_mode == 2) ? 0x02 : 0x01;
+    ESP_LOGI(TAG, "Seluruh setup lokal ESP32 siap. Mengirim perintah scan (Mode %u: %s) ke nRF52840 sebelum koneksi jaringan...",
+             startupScanMode, (startupScanMode == 2) ? "ACTIVE" : "PASSIVE");
+
+    // Handshake pre-network: coba kirim dan tunggu respon ACK nRF52840 (maks ~3 detik jika nRF sedang booting)
+    for (int retry = 0; retry < 12; ++retry) {
+        Bsp::UartManager::sendScanCommand(startupScanMode);
+        vTaskDelay(pdMS_TO_TICKS(250));
+        if (Core::BeaconPipeline::getNrfScanState() == startupScanMode) {
+            ESP_LOGI(TAG, "nRF52840 terverifikasi aktif & sinkron di mode %u setelah %d ms.",
+                     startupScanMode, (retry + 1) * 250);
+            break;
+        }
+    }
 
     // 7. Inisialisasi Network Stack (Ethernet W5500 SPI DMA / Wi-Fi STA / SNTP)
     Network::NetworkManager::init(&s_ethW5500);

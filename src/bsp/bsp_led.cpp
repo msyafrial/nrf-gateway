@@ -83,8 +83,8 @@ IRAM_ATTR void LedManager::writeRawPixels(uint32_t color0, uint32_t color1, uint
     constexpr uint32_t CYCLES_T1H = (800 * CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ) / 1000;
     constexpr uint32_t CYCLES_T1L = (380 * CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ) / 1000;
 
-    portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
-    portENTER_CRITICAL(&mux);
+    static portMUX_TYPE s_ledMux = portMUX_INITIALIZER_UNLOCKED;
+    portENTER_CRITICAL(&s_ledMux);
 
     for (int byteIdx = 0; byteIdx < 6; ++byteIdx) {
         uint8_t b = grb[byteIdx];
@@ -105,7 +105,7 @@ IRAM_ATTR void LedManager::writeRawPixels(uint32_t color0, uint32_t color1, uint
         }
     }
 
-    portEXIT_CRITICAL(&mux);
+    portEXIT_CRITICAL(&s_ledMux);
 
     // Latch delay > 300 us agar WS2812 me-reset shift register
     esp_rom_delay_us(350);
@@ -129,7 +129,8 @@ void LedManager::init(int pin, uint8_t brightness) {
 }
 
 void LedManager::startTask() {
-    // Buat Task LED di Core 1 (Priority 3 agar tidak tercekik oleh background tasks)
+    // Buat Task LED di Core 0 (Priority 3) terisolasi dari beban Core 1 (Wi-Fi, HTTPD & MQTTS)
+    // agar kedipan indikator LED berjalan mulus tanpa risiko freeze saat web diakses
     if (s_ledTaskHandle == nullptr) {
         xTaskCreatePinnedToCore(
             [](void*) {
@@ -139,11 +140,11 @@ void LedManager::startTask() {
                 }
             },
             "WS2812_Task",
-            2048,
+            3072, // 3 KB stack (Aman untuk timing bitbang & esp_rom_delay)
             nullptr,
             3,
             &s_ledTaskHandle,
-            1 // Core 1
+            0 // Core 0 (Terisolasi dari beban Core 1)
         );
     }
 }

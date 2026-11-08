@@ -462,31 +462,37 @@ void ConfigStore::initNvsConfiguration() {
     if (nvs_open("cfg_gate", NVS_READWRITE, &hDest) == ESP_OK) {
         nvs_erase_all(hDest);
         if (hasMasterGate) {
+            nvsCopyU32(hMaster, hDest, "scan_mode", 1);
             nvsCopyStr(hMaster, hDest, "dev_model", CONFIG_DEVICE_MODEL);
             nvsCopyStr(hMaster, hDest, "dev_ver", CONFIG_DEVICE_BOARD_VER);
             nvsCopyU32(hMaster, hDest, "uuid_en", 0);
             nvsCopyStr(hMaster, hDest, "uuid", "FDA50693A4E24FB1AFCFC6EB07647825");
             nvsCopyU32(hMaster, hDest, "major_en", 0);
             nvsCopyStr(hMaster, hDest, "major", "");
+            nvsCopyU32(hMaster, hDest, "unk_en", 0);
             nvsCopyI32(hMaster, hDest, "rssi_min", -100);
-            nvsCopyU32(hMaster, hDest, "batch_max", 100);
+            nvsCopyU32(hMaster, hDest, "batch_max", 50);
             nvsCopyU32(hMaster, hDest, "batch_flush", 300);
             nvsCopyU32(hMaster, hDest, "data_ttl", 1000);
+            nvsCopyU32(hMaster, hDest, "hb_interval", 5);
             nvsCopyStr(hMaster, hDest, "restart_sch", "03:00");
             nvsCopyU32(hMaster, hDest, "discon_rst", 30);
             nvsCopyStr(hMaster, hDest, "ntp_server", "pool.ntp.org");
             nvs_close(hMaster);
         } else {
+            nvs_set_u32(hDest, "scan_mode", 1);
             nvs_set_str(hDest, "dev_model", CONFIG_DEVICE_MODEL);
             nvs_set_str(hDest, "dev_ver", CONFIG_DEVICE_BOARD_VER);
             nvs_set_u32(hDest, "uuid_en", 0);
             nvs_set_str(hDest, "uuid", "FDA50693A4E24FB1AFCFC6EB07647825");
             nvs_set_u32(hDest, "major_en", 0);
             nvs_set_str(hDest, "major", "");
+            nvs_set_u32(hDest, "unk_en", 0);
             nvs_set_i32(hDest, "rssi_min", -100);
-            nvs_set_u32(hDest, "batch_max", 100);
+            nvs_set_u32(hDest, "batch_max", 50);
             nvs_set_u32(hDest, "batch_flush", 300);
             nvs_set_u32(hDest, "data_ttl", 1000);
+            nvs_set_u32(hDest, "hb_interval", 5);
             nvs_set_str(hDest, "restart_sch", "03:00");
             nvs_set_u32(hDest, "discon_rst", 30);
             nvs_set_str(hDest, "ntp_server", "pool.ntp.org");
@@ -546,7 +552,7 @@ void ConfigStore::loadConfig() {
         strlcpy(g_config.user_user, "user", sizeof(g_config.user_user));
         strlcpy(g_config.user_pass, "user", sizeof(g_config.user_pass));
     }
-    ESP_LOGI(TAG, "Auth Config Aktif: Admin='%s', Teknisi='%s'", g_config.admin_user, g_config.user_user);
+    ESP_LOGI(TAG, "Auth Config Aktif: Admin='%s', Engineer='%s'", g_config.admin_user, g_config.user_user);
 
     // cfg_net
     if (nvs_open("cfg_net", NVS_READONLY, &h) == ESP_OK) {
@@ -594,6 +600,7 @@ void ConfigStore::loadConfig() {
 
     // cfg_gate
     if (nvs_open("cfg_gate", NVS_READONLY, &h) == ESP_OK) {
+        g_config.scan_mode = (int)nvsGetU32(h, "scan_mode", 1);
         nvsGetStr(h, "dev_model", g_config.device_model, sizeof(g_config.device_model), CONFIG_DEVICE_MODEL);
         nvsGetStr(h, "dev_ver", g_config.device_version, sizeof(g_config.device_version), CONFIG_DEVICE_BOARD_VER);
         g_config.filter_uuid_en = (int)nvsGetU32(h, "uuid_en", 0);
@@ -601,10 +608,14 @@ void ConfigStore::loadConfig() {
         parseHexUUID(g_config.filter_uuid, g_config.filter_uuid_bytes);
         g_config.filter_major_en = (int)nvsGetU32(h, "major_en", 0);
         nvsGetStr(h, "major", g_config.filter_major, sizeof(g_config.filter_major), "");
+        g_config.filter_unknown_en = (int)nvsGetU32(h, "unk_en", 0);
         g_config.rssi_min = (int)nvsGetI32(h, "rssi_min", -100);
-        g_config.batch_max = (int)nvsGetU32(h, "batch_max", 100);
+        g_config.batch_max = (int)nvsGetU32(h, "batch_max", 50);
+        if (g_config.batch_max < 10) g_config.batch_max = 10;
+        if (g_config.batch_max > 150) g_config.batch_max = 150;
         g_config.batch_flush = (int)nvsGetU32(h, "batch_flush", 300);
         g_config.data_ttl = (int)nvsGetU32(h, "data_ttl", 1000);
+        g_config.hb_interval = (int)nvsGetU32(h, "hb_interval", 5);
         nvsGetStr(h, "restart_sch", g_config.restart_schedule, sizeof(g_config.restart_schedule), "03:00");
         g_config.discon_rst = (int)nvsGetU32(h, "discon_rst", 30);
         nvsGetStr(h, "ntp_server", g_config.ntp_server, sizeof(g_config.ntp_server), "pool.ntp.org");
@@ -679,14 +690,17 @@ void ConfigStore::saveConfigAuth() {
 void ConfigStore::saveConfigSettings() {
     nvs_handle_t h;
     if (nvs_open("cfg_gate", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u32(h, "scan_mode", g_config.scan_mode);
         nvs_set_u32(h, "uuid_en", g_config.filter_uuid_en);
         nvs_set_str(h, "uuid", g_config.filter_uuid);
         nvs_set_u32(h, "major_en", g_config.filter_major_en);
         nvs_set_str(h, "major", g_config.filter_major);
+        nvs_set_u32(h, "unk_en", g_config.filter_unknown_en);
         nvs_set_i32(h, "rssi_min", g_config.rssi_min);
         nvs_set_u32(h, "batch_max", g_config.batch_max);
         nvs_set_u32(h, "batch_flush", g_config.batch_flush);
         nvs_set_u32(h, "data_ttl", g_config.data_ttl);
+        nvs_set_u32(h, "hb_interval", g_config.hb_interval);
         nvs_set_str(h, "restart_sch", g_config.restart_schedule);
         nvs_set_u32(h, "discon_rst", g_config.discon_rst);
         nvs_set_str(h, "ntp_server", g_config.ntp_server);

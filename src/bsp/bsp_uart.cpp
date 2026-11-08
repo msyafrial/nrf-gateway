@@ -15,7 +15,7 @@ static TaskHandle_t  s_uartTaskHandle = nullptr;
 
 static void uartEventTask(void *pvParameters) {
     uart_event_t event;
-    uint8_t dtmp[1024];
+    static uint8_t dtmp[1024];
 
     for (;;) {
         // Task terblokir (tidur tanpa memakan CPU) sampai ada data masuk via interrupt
@@ -90,6 +90,25 @@ esp_err_t UartManager::init() {
 
 void* UartManager::getEventQueue() {
     return s_uartEventQueue;
+}
+
+esp_err_t UartManager::sendScanCommand(uint8_t mode_cmd) {
+    ControlCmdFrame frame = {};
+    frame.header = 0x55; // CMD_HEADER_BYTE
+    frame.cmd_id = 0x01; // CMD_SET_SCAN_MODE
+    frame.param  = mode_cmd; // 1 = Passive, 2 = Active, 0 = Stop
+    frame.reserved = 0x00;
+    frame.crc = frame.cmd_id ^ frame.param ^ frame.reserved;
+
+    int written = uart_write_bytes(UART_NUM_2, (const char*)&frame, sizeof(frame));
+    uart_wait_tx_done(UART_NUM_2, pdMS_TO_TICKS(100));
+
+    ESP_LOGI(TAG, "Kirim perintah scan ke nRF52840 (Mode %d: %s, 5B) -> Tx status: %s (%d bytes)",
+             mode_cmd,
+             (mode_cmd == 2) ? "ACTIVE" : (mode_cmd == 1) ? "PASSIVE" : "STOP",
+             (written == sizeof(frame)) ? "OK" : "GAGAL", written);
+
+    return (written == sizeof(frame)) ? ESP_OK : ESP_FAIL;
 }
 
 } // namespace Iotaru::Bsp

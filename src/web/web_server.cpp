@@ -253,7 +253,7 @@ static esp_err_t ws_pre_handshake_cb(httpd_req_t *req) {
         return ESP_FAIL;
     }
     ESP_LOGI(TAG, "WS Handshake disetujui (fd %d, role: %s)", fd,
-             role == UserRole::ADMIN ? "admin" : "teknisi");
+             role == UserRole::ADMIN ? "admin" : "engineer");
     return ESP_OK;
 }
 #endif
@@ -356,7 +356,8 @@ static esp_err_t ws_handler(httpd_req_t *req) {
                     s_ws_slots[i].is_subscribed = true;
                     Session::touch(s_ws_slots[i].token);
                     Core::BeaconPipeline::flushLiveBeacons();
-                    ESP_LOGI(TAG, "WS Test Subscriber AKTIF & Live Buffer Di-flush (fd %d)", fd);
+                    Core::BeaconPipeline::resetDropCounters();
+                    ESP_LOGI(TAG, "WS Test Subscriber AKTIF, Live Buffer Di-flush & Drop Counters Di-reset (fd %d)", fd);
                 } else if (strstr(buf, "\"action\":\"stop\"") || strstr(buf, "\"action\": \"stop\"") || strstr(buf, "stop")) {
                     s_ws_slots[i].is_subscribed = false;
                     ESP_LOGI(TAG, "WS Test Subscriber STOP (fd %d)", fd);
@@ -380,6 +381,11 @@ static esp_err_t ws_handler(httpd_req_t *req) {
 void broadcast_live_ws_stats() {
     if (Ota::is_in_progress()) return; // Total silence during OTA flashing
 
+    // Heap Guard: Lindungi kestabilan driver Wi-Fi & stack TLS jika memori menipis
+    if (esp_get_free_heap_size() < 20000) {
+        return;
+    }
+
     // Periksa apakah ada minimal 1 subscriber aktif sebelum alokasi JSON
     bool has_subscribers = false;
     if (s_ws_mutex && xSemaphoreTake(s_ws_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
@@ -401,6 +407,11 @@ void broadcast_live_ws_stats() {
     }
 
     cJSON *root = cJSON_CreateObject();
+    if (!root) return;
+
+    cJSON_AddNumberToObject(root, "raw_ingress", Core::BeaconPipeline::getTotalFramesIngress());
+    cJSON_AddNumberToObject(root, "scan_speed", Core::BeaconPipeline::getScanSpeed());
+    cJSON_AddNumberToObject(root, "drop_speed", Core::BeaconPipeline::getDropSpeed());
     cJSON_AddNumberToObject(root, "beacons_read", Core::BeaconPipeline::getTotalBeaconsRead());
     cJSON_AddNumberToObject(root, "read_speed", Core::BeaconPipeline::getReadSpeed());
     cJSON_AddNumberToObject(root, "mqtt_speed", Core::BeaconPipeline::getMqttSpeed());
@@ -408,6 +419,7 @@ void broadcast_live_ws_stats() {
     cJSON_AddNumberToObject(root, "dropped_count", Core::BeaconPipeline::getTotalDropped());
     cJSON_AddNumberToObject(root, "free_heap", esp_get_free_heap_size() / 1024);
     cJSON_AddNumberToObject(root, "queue_load", Core::BeaconPipeline::getQueueLoad());
+    cJSON_AddNumberToObject(root, "queue_max", (double)BEACON_QUEUE_MAX);
     cJSON_AddNumberToObject(root, "batch_load", Network::MqttService::getBatchBufferLoad());
     cJSON_AddNumberToObject(root, "batch_max", g_config.batch_max);
     cJSON_AddNumberToObject(root, "batch_pkt_size", Network::MqttService::getLastBatchPktCount());
@@ -417,19 +429,35 @@ void broadcast_live_ws_stats() {
     cJSON_AddNumberToObject(root, "ap_remain_sec", Network::NetworkManager::getApRemainingSeconds());
 
     cJSON *beacons_arr = cJSON_CreateArray();
-    static LiveBeaconItem s_live_buf[50];
-    size_t count = Core::BeaconPipeline::copyLiveBeacons(s_live_buf, 50);
+    static LiveBeaconItem s_live_buf[30];
+    size_t max_sample = (esp_get_free_heap_size() > 50000) ? 30 : 10;
+    size_t count = Core::BeaconPipeline::copyLiveBeacons(s_live_buf, max_sample);
 
     for (size_t i = 0; i < count; i++) {
         cJSON *b = cJSON_CreateObject();
         cJSON_AddStringToObject(b, "code", s_live_buf[i].code);
         cJSON_AddStringToObject(b, "tag", s_live_buf[i].tag);
         cJSON_AddNumberToObject(b, "rssi", s_live_buf[i].rssi);
-        if (strcmp(s_live_buf[i].code, "iBeacon") == 0 || s_live_buf[i].batt == 0) {
+        if (s_live_buf[i].batt == 0) {
             cJSON_AddNullToObject(b, "batt");
         } else {
             cJSON_AddNumberToObject(b, "batt", s_live_buf[i].batt);
         }
+
+        char macStr[18];
+        snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 s_live_buf[i].mac[0], s_live_buf[i].mac[1], s_live_buf[i].mac[2],
+                 s_live_buf[i].mac[3], s_live_buf[i].mac[4], s_live_buf[i].mac[5]);
+        cJSON_AddStringToObject(b, "mac", macStr);
+        cJSON_AddNumberToObject(b, "adv_type", s_live_buf[i].adv_type);
+
+        char hexBuf[85];
+        for (size_t h = 0; h < 42; h++) {
+            snprintf(hexBuf + (h * 2), 3, "%02X", s_live_buf[i].raw_frame[h]);
+        }
+        hexBuf[84] = '\0';
+        cJSON_AddStringToObject(b, "raw", hexBuf);
+
         cJSON_AddItemToArray(beacons_arr, b);
     }
     cJSON_AddItemToObject(root, "beacons", beacons_arr);
@@ -440,14 +468,15 @@ void broadcast_live_ws_stats() {
     cJSON_AddNumberToObject(drop_summary, "rssi", Core::BeaconPipeline::getDropRssiCount());
     cJSON_AddNumberToObject(drop_summary, "uuid", Core::BeaconPipeline::getDropUuidCount());
     cJSON_AddNumberToObject(drop_summary, "major", Core::BeaconPipeline::getDropMajorCount());
+    cJSON_AddNumberToObject(drop_summary, "unknown", Core::BeaconPipeline::getDropUnknownCount());
     cJSON_AddNumberToObject(drop_summary, "queue", Core::BeaconPipeline::getDropQueueCount());
     cJSON_AddNumberToObject(drop_summary, "mqtt", Core::BeaconPipeline::getDropMqttCount());
     cJSON_AddItemToObject(root, "drop_summary", drop_summary);
 
     // Snapshot Event Dropped Beacons
     cJSON *dropped_arr = cJSON_CreateArray();
-    static DroppedBeaconItem s_drop_buf[50];
-    size_t drop_count = Core::BeaconPipeline::copyDroppedBeacons(s_drop_buf, 50);
+    static DroppedBeaconItem s_drop_buf[30];
+    size_t drop_count = Core::BeaconPipeline::copyDroppedBeacons(s_drop_buf, max_sample);
 
     for (size_t i = 0; i < drop_count; i++) {
         cJSON *d = cJSON_CreateObject();
@@ -455,6 +484,20 @@ void broadcast_live_ws_stats() {
         cJSON_AddStringToObject(d, "tag", s_drop_buf[i].tag);
         cJSON_AddNumberToObject(d, "rssi", s_drop_buf[i].rssi);
         cJSON_AddNumberToObject(d, "reason", (int)s_drop_buf[i].reason);
+
+        char macStr[18];
+        snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 s_drop_buf[i].mac[0], s_drop_buf[i].mac[1], s_drop_buf[i].mac[2],
+                 s_drop_buf[i].mac[3], s_drop_buf[i].mac[4], s_drop_buf[i].mac[5]);
+        cJSON_AddStringToObject(d, "mac", macStr);
+
+        char hexBuf[85];
+        for (size_t h = 0; h < 42; h++) {
+            snprintf(hexBuf + (h * 2), 3, "%02X", s_drop_buf[i].raw_frame[h]);
+        }
+        hexBuf[84] = '\0';
+        cJSON_AddStringToObject(d, "raw", hexBuf);
+
         cJSON_AddItemToArray(dropped_arr, d);
     }
     cJSON_AddItemToObject(root, "dropped_beacons", dropped_arr);
@@ -566,9 +609,9 @@ bool init() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.ctrl_port = 32768;
-    config.max_open_sockets = 16; // Support 3 laptops (parallel keep-alive pool) + WS clients
-    config.max_uri_handlers = 64; // Increased from 32 to support 37+ routes & wildcard assets
-    config.stack_size = 8192;
+    config.max_open_sockets = 4;  // Pool soket paralel dibatasi ke 4 (Hemat ~8 KB RAM lwIP TCP, cegah memory spike)
+    config.max_uri_handlers = 64; // Mendukung 37+ routes & wildcard assets
+    config.stack_size = 6144;     // 6 KB stack (+3 KB DRAM dihemat, aman karena records[40] static BSS)
     config.task_priority = 3; // Prioritas 3 (di bawah MQTT 6 & Telemetry 4) agar pembacaan web tidak mem-preempt telemetri
     config.core_id = 1; // Core 1 for Web Server & MQTT (leaving Core 0 for UART pipeline)
     config.uri_match_fn = httpd_uri_match_wildcard;
@@ -596,7 +639,7 @@ bool init() {
 
     // Start 100ms Telemetry Broadcast & Watchdog Task on Core 1
     s_telemetry_stop.store(false, std::memory_order_seq_cst);
-    xTaskCreatePinnedToCore(telemetry_task_func, "web_telemetry", 8192, nullptr, 4, &s_telemetry_task, 1);
+    xTaskCreatePinnedToCore(telemetry_task_func, "web_telemetry", 6144, nullptr, 4, &s_telemetry_task, 1);
 
     ESP_LOGI(TAG, "Web Server native ESP-IDF siap dan aktif.");
     return true;

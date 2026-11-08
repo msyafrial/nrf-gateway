@@ -7,7 +7,7 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IOTARU %DEVICE_MODEL% - Emergency Recovery</title>
+  <title>Cubeacon %DEVICE_MODEL% - Emergency Recovery</title>
   <style>
     :root {
       --bg: #0b0f17;
@@ -268,7 +268,7 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
 
     <div class="card">
       <div class="alert-box">
-        <strong>Peringatan Sistem:</strong> Partisi Filesystem (LittleFS) tidak ditemukan atau belum terpasang. Fungsi utama gateway (penyerapan BLE nRF & transmisi MQTT) <strong>tetap beroperasi normal</strong> di latar belakang.
+        <strong>System Alert:</strong> Filesystem partition not mounted or not found. Fungsi utama gateway (penyerapan BLE nRF & transmisi MQTT) <strong>tetap beroperasi normal</strong> di latar belakang.
       </div>
 
       <div class="grid-info">
@@ -297,7 +297,7 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
         <div class="form-group">
           <label for="targetType">Target Pemulihan</label>
           <select id="targetType" name="targetType">
-            <option value="filesystem" selected>Partisi Filesystem Web (littlefs.bin)</option>
+            <option value="filesystem" selected>Web Filesystem Partition (.bin)</option>
             <option value="firmware">Partisi Firmware C++ (firmware.bin)</option>
           </select>
         </div>
@@ -306,7 +306,7 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
           <label>Pilih Berkas Biner (.bin)</label>
           <div class="file-dropzone" id="dropzone">
             <input type="file" id="binFile" accept=".bin" required>
-            <div class="dropzone-text" id="dropzoneText">Klik atau seret file <strong>littlefs.bin</strong> ke sini</div>
+            <div class="dropzone-text" id="dropzoneText">Click or drag <strong>filesystem.bin</strong> here</div>
             <div class="file-selected" id="fileSelected"></div>
           </div>
         </div>
@@ -341,7 +341,7 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
     </div>
 
     <div class="footer-note">
-      IOTARU %DEVICE_MODEL% Industrial Gateway &bull; Firmware %FIRMWARE_VERSION%
+      Cubeacon %DEVICE_MODEL% Industrial Gateway &bull; Firmware %FIRMWARE_VERSION%
     </div>
   </div>
 
@@ -378,13 +378,13 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
         const sliceBuf = await file.slice(0, 36).arrayBuffer();
         const bytes = new Uint8Array(sliceBuf);
         if (bytes.length < 36) {
-          alert('Ukuran berkas terlalu kecil untuk dianalisis sebagai binary ESP32 valid.');
+          alert('File size is too small to be a valid binary image.');
           return;
         }
         const b0 = bytes[0];
         const b1 = bytes[1];
         if (b0 === 0xAA && b1 === 0x50) {
-          alert('Berkas yang dipilih adalah Tabel Partisi ESP32 (partitions.bin), bukan Firmware atau LittleFS!');
+          alert('Berkas yang dipilih adalah Partition Table (partitions.bin), not Firmware or Filesystem!');
           return;
         }
         let isLfs = false;
@@ -397,12 +397,12 @@ const char EMERGENCY_RECOVERY_HTML[] = R"rawliteral(<!DOCTYPE html>
 
         if (targetType === 'filesystem') {
           if (!isLfs) {
-            alert('Berkas bukan citra partisi LittleFS yang valid (signature "littlefs" tidak ditemukan pada offset 0x08)!');
+            alert('File is not a valid Filesystem image (valid signature not found at offset 0x08).');
             return;
           }
         } else if (targetType === 'firmware') {
           if (!isAppDesc) {
-            alert('Berkas yang dipilih terdeteksi sebagai Bootloader ESP32 (bootloader.bin) atau bukan Firmware Aplikasi valid (Header 0xABCD5432 tidak cocok)!');
+            alert('Berkas yang dipilih terdeteksi sebagai Bootloader image (bootloader.bin) or not a valid Firmware image Aplikasi valid (Header 0xABCD5432 tidak cocok)!');
             return;
           }
         }

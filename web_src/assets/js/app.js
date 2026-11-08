@@ -1,5 +1,5 @@
 /**
- * IOTARU ESP32 Dashboard Core Application JS
+ * Cubeacon Gateway Dashboard Core Application JS
  * Modern Bottom Action Sheets (Config & Power) + 2-Mode Segmented Controls
  */
 document.addEventListener("DOMContentLoaded", function() {
@@ -18,8 +18,8 @@ document.addEventListener("DOMContentLoaded", function() {
     sheetConfig.innerHTML = `
       <div class="sheet-handle"></div>
       <div class="sheet-header">
-        <div class="sheet-title">Pengaturan Sistem</div>
-        <div class="sheet-desc">Pilih menu konfigurasi gateway IOTARU</div>
+        <div class="sheet-title">System Settings</div>
+        <div class="sheet-desc">Select Cubeacon gateway configuration menu</div>
       </div>
       <div class="sheet-options">
         <a href="/settings" class="sheet-btn">
@@ -44,11 +44,11 @@ document.addEventListener("DOMContentLoaded", function() {
           </div>
           <div class="sheet-btn-info">
             <div class="sheet-btn-title">Auth & Network Settings</div>
-            <div class="sheet-btn-sub">Kredensial login, Wi-Fi & LAN Ethernet</div>
+            <div class="sheet-btn-sub">Login credentials, Wi-Fi & Ethernet LAN</div>
           </div>
         </a>
 
-        <button type="button" class="sheet-btn-cancel" id="btnCancelConfigSheet">Batal</button>
+        <button type="button" class="sheet-btn-cancel" id="btnCancelConfigSheet">Cancel</button>
       </div>
     `;
 
@@ -71,8 +71,8 @@ document.addEventListener("DOMContentLoaded", function() {
     sheetPower.innerHTML = `
       <div class="sheet-handle"></div>
       <div class="sheet-header">
-        <div class="sheet-title">Kontrol Daya Perangkat</div>
-        <div class="sheet-desc">Pilih tindakan untuk mikrokontroler ESP32</div>
+        <div class="sheet-title">Device Power Management</div>
+        <div class="sheet-desc">Select gateway action</div>
       </div>
       <div class="sheet-options">
         <button type="button" class="sheet-btn" id="sheetBtnReboot">
@@ -83,8 +83,8 @@ document.addEventListener("DOMContentLoaded", function() {
             </svg>
           </div>
           <div class="sheet-btn-info">
-            <div class="sheet-btn-title">Reboot Perangkat</div>
-            <div class="sheet-btn-sub">Mulai ulang sistem modul ESP32</div>
+            <div class="sheet-btn-title">Reboot Gateway</div>
+            <div class="sheet-btn-sub">Restart gateway system</div>
           </div>
         </button>
 
@@ -98,12 +98,12 @@ document.addEventListener("DOMContentLoaded", function() {
             </svg>
           </div>
           <div class="sheet-btn-info">
-            <div class="sheet-btn-title">Reset Konfigurasi (Factory)</div>
-            <div class="sheet-btn-sub">Kembalikan semua setelan NVS ke default</div>
+            <div class="sheet-btn-title">Factory Reset Configuration</div>
+            <div class="sheet-btn-sub">Restore all NVS settings to factory defaults</div>
           </div>
         </button>
 
-        <button type="button" class="sheet-btn-cancel" id="btnCancelPowerSheet">Batal</button>
+        <button type="button" class="sheet-btn-cancel" id="btnCancelPowerSheet">Cancel</button>
       </div>
     `;
 
@@ -152,19 +152,19 @@ document.addEventListener("DOMContentLoaded", function() {
   function triggerReboot() {
     closeAllSheets();
     Swal.fire({
-      title: "Konfirmasi Reboot",
-      text: "Apakah Anda yakin ingin me-reboot perangkat ESP32?",
+      title: "Confirm Gateway Reboot",
+      text: "Are you sure you want to restart the gateway?",
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#2563eb",
       cancelButtonColor: "#64748b",
-      confirmButtonText: "Ya, Reboot!",
-      cancelButtonText: "Batal"
+      confirmButtonText: "Reboot Now",
+      cancelButtonText: "Cancel"
     }).then(res => {
       if (res.isConfirmed) {
         Swal.fire({
-          title: "Sedang Me-reboot...",
-          text: "Mohon tunggu 5-10 detik",
+          title: "Initiating Reboot...",
+          text: "Please wait 5-10 seconds",
           icon: "info",
           allowOutsideClick: false,
           showConfirmButton: false,
@@ -178,8 +178,8 @@ document.addEventListener("DOMContentLoaded", function() {
             setTimeout(() => {
               Swal.close();
               Swal.fire({
-                title: "Me-reboot...",
-                text: "Perangkat sedang memulai ulang",
+                title: "Rebooting...",
+                text: "Device is restarting",
                 icon: "info",
                 confirmButtonText: "OK",
                 confirmButtonColor: "#0284c7",
@@ -191,7 +191,7 @@ document.addEventListener("DOMContentLoaded", function() {
           })
           .catch(err => {
             Swal.close();
-            Swal.fire("Gagal", err.message || "Terjadi kesalahan saat reboot.", "error");
+            Swal.fire("Failed", err.message || "Reboot execution failed.", "error");
           });
       }
     });
@@ -200,19 +200,19 @@ document.addEventListener("DOMContentLoaded", function() {
   function triggerReset() {
     closeAllSheets();
     Swal.fire({
-      title: "Reset Pabrik (Factory Reset)",
-      text: "Semua konfigurasi NVS akan dihapus dan dikembalikan ke default. Lanjutkan?",
+      title: "Factory Reset",
+      text: "All NVS configuration will be erased and restored to defaults. Proceed?",
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#ef4444",
       cancelButtonColor: "#64748b",
-      confirmButtonText: "Ya, Reset!",
-      cancelButtonText: "Batal"
+      confirmButtonText: "Yes, Reset Factory Defaults",
+      cancelButtonText: "Cancel"
     }).then(res => {
       if (res.isConfirmed) {
         Swal.fire({
-          title: "Sedang Me-reset...",
-          text: "Menghapus partisi NVS dan me-reboot",
+          title: "Performing Factory Reset...",
+          text: "Erasing NVS partition and rebooting gateway",
           icon: "info",
           allowOutsideClick: false,
           showConfirmButton: false,
@@ -226,8 +226,8 @@ document.addEventListener("DOMContentLoaded", function() {
             setTimeout(() => {
               Swal.close();
               Swal.fire({
-                title: "Reset Berhasil!",
-                text: "Konfigurasi berhasil direset ke default. Sistem me-reboot...",
+                title: "Factory Reset Complete!",
+                text: "Configuration restored to factory defaults. Gateway restarting...",
                 icon: "success",
                 confirmButtonText: "OK",
                 confirmButtonColor: "#0284c7",
@@ -239,7 +239,7 @@ document.addEventListener("DOMContentLoaded", function() {
           })
           .catch(err => {
             Swal.close();
-            Swal.fire("Gagal", err.message || "Terjadi kesalahan saat reset.", "error");
+            Swal.fire("Failed", err.message || "Factory reset execution failed.", "error");
           });
       }
     });
@@ -269,14 +269,14 @@ document.addEventListener("DOMContentLoaded", function() {
   // 4. Logout Handler
   function triggerLogout() {
     Swal.fire({
-      title: "Konfirmasi Keluar",
-      text: "Apakah Anda yakin ingin logout dari sistem ESP32?",
+      title: "Confirm Sign Out",
+      text: "Are you sure you want to sign out of the gateway?",
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#ef4444",
       cancelButtonColor: "#64748b",
-      confirmButtonText: "Ya, Keluar!",
-      cancelButtonText: "Batal"
+      confirmButtonText: "Sign Out",
+      cancelButtonText: "Cancel"
     }).then(res => {
       if (res.isConfirmed) {
         window.isManualLoggingOut = true;
@@ -316,7 +316,7 @@ document.addEventListener("DOMContentLoaded", function() {
         if (!input.dataset.normalPlaceholder) {
           input.dataset.normalPlaceholder = input.placeholder;
         }
-        input.placeholder = "Otomatis via DHCP";
+        input.placeholder = "Automatic via DHCP";
         const item = input.closest(".item");
         if (item) item.classList.remove("has-error");
       } else {
@@ -363,6 +363,7 @@ document.addEventListener("DOMContentLoaded", function() {
       }
     });
   }
+  window.updateConnectionMode = updateConnectionMode;
 
   document.querySelectorAll(".segmented-control").forEach(seg => {
     const targetInputId = seg.dataset.target;
@@ -401,6 +402,10 @@ document.addEventListener("DOMContentLoaded", function() {
         this.classList.add("active");
         if (targetInput) {
           targetInput.value = this.dataset.value;
+          try {
+            targetInput.dispatchEvent(new Event("input", { bubbles: true }));
+            targetInput.dispatchEvent(new Event("change", { bubbles: true }));
+          } catch (err) {}
         }
         if (targetInputId === "connection_mode") {
           updateConnectionMode(this.dataset.value);
@@ -474,27 +479,27 @@ function handleFormSubmit(formId, endpoint, successMsg) {
 
   if (!isValid) {
     Swal.fire({
-      title: "Validasi Gagal",
-      text: "Harap isi semua kolom wajib dengan benar tanpa spasi!",
+      title: "Validation Error",
+      text: "Please fill all required fields correctly!",
       icon: "error"
     });
     return false;
   }
 
   Swal.fire({
-    title: "Konfirmasi Simpan",
-    text: "Apakah Anda yakin ingin memperbarui konfigurasi ini?",
+    title: "Confirm Configuration Save",
+    text: "Are you sure you want to apply these configuration settings?",
     icon: "warning",
     showCancelButton: true,
     confirmButtonColor: "#2563eb",
     cancelButtonColor: "#64748b",
-    confirmButtonText: "Ya, Simpan!",
-    cancelButtonText: "Batal"
+    confirmButtonText: "Save Configuration",
+    cancelButtonText: "Cancel"
   }).then(res => {
     if (res.isConfirmed) {
       Swal.fire({
-        title: "Sedang Menyimpan...",
-        text: "Menyimpan ke NVS memori ESP32",
+        title: "Saving Configuration...",
+        text: "Saving configuration to NVS memory",
         allowOutsideClick: false,
         showConfirmButton: false,
         didOpen: () => Swal.showLoading()
@@ -515,11 +520,11 @@ function handleFormSubmit(formId, endpoint, successMsg) {
           if (response.status === 200) {
             return response.text().then(text => {
               Swal.fire({
-                title: "Berhasil!",
-                text: text || successMsg || "Konfigurasi berhasil disimpan ke NVS.",
+                title: "Configuration Saved",
+                text: text || successMsg || "Configuration committed to NVS flash memory.",
                 icon: "success",
                 showCancelButton: true,
-                confirmButtonText: "Reboot Sekarang",
+                confirmButtonText: "Reboot Now",
                 cancelButtonText: "Selesai",
                 confirmButtonColor: "#10b981",
                 cancelButtonColor: "#64748b"
@@ -528,8 +533,8 @@ function handleFormSubmit(formId, endpoint, successMsg) {
                   window.isManualLoggingOut = true;
                   fetch("/api/v1/system/reboot", { method: "POST" });
                   Swal.fire({
-                    title: "Me-reboot...",
-                    text: "Perangkat sedang memulai ulang",
+                    title: "Rebooting...",
+                    text: "Device is restarting",
                     icon: "info",
                     confirmButtonText: "OK",
                     confirmButtonColor: "#0284c7",
@@ -544,13 +549,13 @@ function handleFormSubmit(formId, endpoint, successMsg) {
             });
           } else {
             return response.text().then(text => {
-              Swal.fire("Gagal", text || "Terjadi kesalahan saat menyimpan.", "error");
+              Swal.fire("Failed", text || "Failed to save configuration.", "error");
             });
           }
         })
         .catch(err => {
           Swal.close();
-          Swal.fire("Error Koneksi", err.message || "Gagal menghubungi ESP32.", "error");
+          Swal.fire("Connection Error", err.message || "Failed to communicate with gateway.", "error");
         });
     }
   });
@@ -643,9 +648,9 @@ document.addEventListener("DOMContentLoaded", function() {
 
     if (btnOpen) btnOpen.classList.add("scanning");
     if (btnRescan) btnRescan.disabled = true;
-    if (statusEl) statusEl.innerHTML = '<span class="pulse-dot"></span> Memindai saluran Wi-Fi...';
+    if (statusEl) statusEl.innerHTML = '<span class="pulse-dot"></span> Scanning Wi-Fi channels...';
 
-    // Visual Loader dengan Radar Sweep & Counter Persentase
+    // Visual Loader with Radar Sweep & Percentage Counter
     if (listContainer) {
       listContainer.innerHTML = `
         <div class="wifi-scanner-loader">
@@ -654,10 +659,10 @@ document.addEventListener("DOMContentLoaded", function() {
             <div class="radar-center-dot"></div>
           </div>
           <div class="wifi-scanner-text">
-            <span>Memindai Sinyal Sekitar</span>
+            <span>Scanning Nearby Networks</span>
             <span class="wifi-scanner-percent" id="wifiProgressPct">10%</span>
           </div>
-          <div class="wifi-scanner-sub">Mencari frekuensi 2.4 GHz (Channel 1 – 13)...</div>
+          <div class="wifi-scanner-sub">Searching 2.4 GHz spectrum (Channels 1 – 13)...</div>
         </div>
       `;
     }
@@ -666,17 +671,22 @@ document.addEventListener("DOMContentLoaded", function() {
 
     const url = "/api/v1/wifi/scan" + (forceRefresh ? "?refresh=1" : "");
     fetch(url, { cache: "no-store" })
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
       .then(data => {
         if (data.status === "complete") {
           completeScanProgress(data.networks || []);
-        } else {
+        } else if (data.status === "scanning") {
           pollScanResult();
+        } else {
+          showScanError(data.message || "Gagal memindai Wi-Fi");
         }
       })
       .catch(err => {
         console.warn("[WiFi Scan Error]", err);
-        showScanError("Gagal menghubungi ESP32.");
+        showScanError("Device busy or scan failed (" + err.message + ")");
       });
   }
 
@@ -684,18 +694,23 @@ document.addEventListener("DOMContentLoaded", function() {
     if (pollTimer) clearTimeout(pollTimer);
     pollTimer = setTimeout(() => {
       fetch("/api/v1/wifi/scan", { cache: "no-store" })
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return res.json();
+        })
         .then(data => {
           if (data.status === "complete") {
             completeScanProgress(data.networks || []);
-          } else {
+          } else if (data.status === "scanning") {
             pollScanResult();
+          } else {
+            showScanError(data.message || "Gagal memindai Wi-Fi");
           }
         })
-        .catch(() => {
-          showScanError("Koneksi terputus saat memindai.");
+        .catch(err => {
+          showScanError(err.message || "Connection lost during scan.");
         });
-    }, 700);
+    }, 1000);
   }
 
   function completeScanProgress(networks) {
@@ -717,18 +732,18 @@ document.addEventListener("DOMContentLoaded", function() {
     if (!listContainer) return;
 
     if (!networks || networks.length === 0) {
-      if (statusEl) statusEl.textContent = "Tidak ada Wi-Fi ditemukan";
+      if (statusEl) statusEl.textContent = "No Wi-Fi networks found";
       listContainer.innerHTML = `
         <div style="text-align:center;padding:32px 16px;color:var(--text-dim);">
           <div style="font-size:1.4rem;margin-bottom:8px;">🔍</div>
-          <div>Tidak ada jaringan Wi-Fi yang tertangkap.</div>
-          <div style="font-size:0.8rem;margin-top:6px;color:var(--text-muted);">Pastikan access point berada dalam jangkauan sinyal.</div>
+          <div>No Wi-Fi networks detected in scan.</div>
+          <div style="font-size:0.8rem;margin-top:6px;color:var(--text-muted);">Ensure the access point is within signal range.</div>
         </div>
       `;
       return;
     }
 
-    if (statusEl) statusEl.textContent = `Ditemukan ${networks.length} jaringan`;
+    if (statusEl) statusEl.textContent = `Found ${networks.length} networks`;
 
     let html = "";
     networks.forEach(net => {
@@ -742,8 +757,8 @@ document.addEventListener("DOMContentLoaded", function() {
 
       // Lock SVG icon
       const lockIcon = net.secure
-        ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" title="Terproteksi Password"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
-        : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" title="Jaringan Terbuka (Open)"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>`;
+        ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" title="Password Protected"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
+        : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" title="Open Network (Unsecured)"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>`;
 
       // Signal waves SVG
       const signalBars = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M8.5 13.5a5 5 0 0 1 7 0" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 10a10 10 0 0 1 14 0" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
@@ -772,7 +787,8 @@ document.addEventListener("DOMContentLoaded", function() {
         const selectedSsid = this.getAttribute("data-ssid");
         if (inputSsid) {
           inputSsid.value = selectedSsid;
-          inputSsid.dispatchEvent(new Event("change"));
+          inputSsid.dispatchEvent(new Event("change", { bubbles: true }));
+          inputSsid.dispatchEvent(new Event("input", { bubbles: true }));
         }
         closeModal();
         if (inputPass) {
@@ -788,7 +804,7 @@ document.addEventListener("DOMContentLoaded", function() {
     if (btnOpen) btnOpen.classList.remove("scanning");
     if (btnRescan) btnRescan.disabled = false;
     if (progressContainer) progressContainer.style.display = "none";
-    if (statusEl) statusEl.textContent = "Gagal memindai";
+    if (statusEl) statusEl.textContent = "Scan failed";
     if (listContainer) {
       listContainer.innerHTML = `
         <div style="text-align:center;padding:28px 16px;color:#f87171;">
@@ -873,21 +889,21 @@ function bindApStopButton() {
     e.preventDefault();
     if (typeof Swal !== "undefined") {
       Swal.fire({
-        title: "Nonaktifkan Mode AP?",
-        text: "Hotspot konfigurasi akan dimatikan dan indikator LED akan kembali ke status operasional normal.",
+        title: "Disable AP Mode?",
+        text: "The configuration hotspot will be disabled and the LED indicator will return to normal operation.",
         icon: "warning",
         showCancelButton: true,
         confirmButtonColor: "#f97316",
         cancelButtonColor: "#64748b",
-        confirmButtonText: "Ya, Matikan AP!",
-        cancelButtonText: "Batal"
+        confirmButtonText: "Yes, Shutdown AP",
+        cancelButtonText: "Cancel"
       }).then(res => {
         if (res.isConfirmed) {
           executeStopAp(banner);
         }
       });
     } else {
-      if (confirm("Nonaktifkan Mode Hotspot AP?")) {
+      if (confirm("Disable AP Hotspot Mode?")) {
         executeStopAp(banner);
       }
     }
@@ -897,8 +913,8 @@ function bindApStopButton() {
 function executeStopAp(banner) {
   if (typeof Swal !== "undefined") {
     Swal.fire({
-      title: "Menonaktifkan...",
-      text: "Mematikan Hotspot SoftAP...",
+      title: "Shutting Down SoftAP...",
+      text: "Disabling SoftAP hotspot interface...",
       allowOutsideClick: false,
       showConfirmButton: false,
       didOpen: () => Swal.showLoading()
@@ -908,19 +924,19 @@ function executeStopAp(banner) {
   fetch("/api/v1/system/config-ap/stop", { method: "POST" })
     .then(r => r.json().catch(() => ({ status: "ok" })))
     .then(resData => {
-      handleStopSuccess(banner, (resData && resData.message) ? resData.message : "Mode AP telah dinonaktifkan.");
+      handleStopSuccess(banner, (resData && resData.message) ? resData.message : "AP mode disabled.");
     })
     .catch(err => {
       // Karena mematikan AP otomatis memutus sambungan Wi-Fi ke 192.168.4.1,
       // network disconnection menandakan AP berhasil dimatikan!
-      handleStopSuccess(banner, "Hotspot AP berhasil dinonaktifkan. Perangkat kembali ke mode normal.");
+      handleStopSuccess(banner, "SoftAP hotspot disabled. Gateway returned to station mode.");
     });
 }
 
 function handleStopSuccess(banner, msg) {
   if (typeof Swal !== "undefined") {
     Swal.fire({
-      title: "Hotspot Dinonaktifkan",
+      title: "Hotspot Disabled",
       text: msg,
       icon: "success",
       confirmButtonColor: "#0284c7"
@@ -1038,14 +1054,14 @@ function initApModeWatcher() {
               <div class="ap-banner-left">
                 <div class="ap-pulse-ring"><span class="ap-pulse-dot"></span></div>
                 <div class="ap-banner-text">
-                  <div class="ap-banner-title">Hotspot Mode Konfigurasi Aktif</div>
+                  <div class="ap-banner-title">Config Hotspot Mode Active</div>
                   <div class="ap-banner-subtitle">
                     SSID: <strong id="apBannerSsid">${data.ap_ssid || "CONFIG-AP"}</strong> &bull; Auto-off idle: <span id="apBannerTimer" class="ap-timer-pill">60s</span>
                   </div>
                 </div>
               </div>
               <div class="ap-banner-right">
-                <button type="button" id="btnStopAp" class="btn-ap-stop" title="Matikan Hotspot Konfigurasi">
+                <button type="button" id="btnStopAp" class="btn-ap-stop" title="Shutdown Configuration Hotspot">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="1" y1="1" x2="23" y2="23"/>
                     <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
@@ -1055,7 +1071,7 @@ function initApModeWatcher() {
                     <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
                     <line x1="12" y1="20" x2="12.01" y2="20"/>
                   </svg>
-                  <span>Nonaktifkan AP</span>
+                  <span>Disable AP</span>
                 </button>
               </div>
             `;
@@ -1099,7 +1115,7 @@ function redirectToLogin(reason) {
   if (isLoginPage) return;
 
   isRedirectingToLogin = true;
-  console.warn(`[SESSION] Sesi kedaluwarsa (${reason || 'timeout'}). Mengalihkan ke halaman login...`);
+  console.warn(`[SESSION] Session expired (${reason || 'timeout'}). Redirecting to login...`);
 
   // Bersihkan cookie di client-side agar backend login_handler tidak memantulkan 302 kembali ke /
   try {
@@ -1122,7 +1138,7 @@ function initGlobalSessionLifecycle() {
   const isLoginPage = (location.pathname.endsWith("login") || location.pathname.endsWith("login.html"));
   if (isLoginPage) return;
 
-  // 15 menit batas waktu tidak aktif (sinkron dengan SESSION_TIMEOUT_MS = 900000 di firmware ESP32)
+  // 15 menit batas waktu tidak aktif (sinkron dengan SESSION_TIMEOUT_MS = 900000 di gateway firmware)
   const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
   let lastUserActivity = Date.now();
   let hasNewUserActivity = false;
@@ -1146,7 +1162,7 @@ function initGlobalSessionLifecycle() {
     }
   }, { passive: true });
 
-  // Fungsi verifikasi sesi ke server ESP32
+  // Fungsi verifikasi sesi ke gateway server
   function verifySessionNow() {
     if (isRedirectingToLogin) return;
 
@@ -1227,11 +1243,11 @@ if (document.readyState === "loading") {
 function triggerRebootNow() {
   Swal.fire({
     title: "Reboot Gateway?",
-    text: "Perangkat akan memulai ulang untuk menerapkan pengaturan jaringan baru.",
+    text: "The device will restart to apply updated network parameters.",
     icon: "warning",
     showCancelButton: true,
-    confirmButtonText: "Ya, Reboot Sekarang",
-    cancelButtonText: "Batal",
+    confirmButtonText: "Reboot Now",
+    cancelButtonText: "Cancel",
     confirmButtonColor: "#10b981",
     cancelButtonColor: "#64748b"
   }).then(res => {
@@ -1239,8 +1255,8 @@ function triggerRebootNow() {
       window.isManualLoggingOut = true;
       fetch("/api/v1/system/reboot", { method: "POST" });
       Swal.fire({
-        title: "Me-reboot...",
-        text: "Gateway sedang memulai ulang. Halaman akan dialihkan ke Login.",
+        title: "Rebooting...",
+        text: "Gateway is restarting. Redirecting to login...",
         icon: "info",
         allowOutsideClick: false,
         showConfirmButton: false,
@@ -1254,18 +1270,18 @@ function triggerRebootNow() {
 
 function discardPendingNetworkChanges() {
   Swal.fire({
-    title: "Batalkan Perubahan Jaringan?",
-    text: "Pengaturan jaringan yang belum di-reboot akan dikembalikan ke konfigurasi aktif saat ini.",
+    title: "Discard Pending Changes?",
+    text: "Pending network changes will be reverted to the active configuration.",
     icon: "question",
     showCancelButton: true,
-    confirmButtonText: "Ya, Batalkan Perubahan",
-    cancelButtonText: "Kembali",
+    confirmButtonText: "Yes, Discard Changes",
+    cancelButtonText: "Cancel",
     confirmButtonColor: "#ef4444",
     cancelButtonColor: "#64748b"
   }).then(res => {
     if (res.isConfirmed) {
       Swal.fire({
-        title: "Sedang Membatalkan...",
+        title: "Discarding Pending Changes...",
         allowOutsideClick: false,
         showConfirmButton: false,
         didOpen: () => Swal.showLoading()
@@ -1277,17 +1293,17 @@ function discardPendingNetworkChanges() {
           Swal.close();
           const banner = document.getElementById("pendingRebootBanner");
           if (banner) banner.style.display = "none";
-          const detailText = `Pengaturan jaringan yang belum di-reboot telah dibatalkan kembali ke mode ${d.reverted_mode}${d.reverted_ssid ? ` (${d.reverted_ssid})` : ''}.\n\n✓ Kredensial Login Admin/Teknisi dan MQTT Anda tetap aman tersimpan.`;
+          const detailText = `Pending network configuration changes were discarded. Reverted to mode ${d.reverted_mode}${d.reverted_ssid ? ` (${d.reverted_ssid})` : ''}.\n\n✓ Admin/Technician credentials and MQTT configurations remain intact.`;
           const detailHtml = `<div style="text-align:left; font-size:0.875rem; line-height:1.6; color:#475569;">
-              <p>Pengaturan jaringan yang belum di-reboot telah dibatalkan kembali ke status aktif:</p>
+              <p>Pending network changes have been discarded. Reverted to active configuration:</p>
               <ul style="margin: 8px 0; padding-left: 20px;">
-                <li><b>Mode Jaringan:</b> ${d.reverted_mode}</li>
+                <li><b>Network Interface:</b> ${d.reverted_mode}</li>
                 ${d.reverted_ssid ? `<li><b>Wi-Fi SSID:</b> ${d.reverted_ssid}</li>` : ''}
               </ul>
-              <p style="margin-top:10px; color:#059669; font-weight:600;">✓ Kredensial Login Admin/Teknisi dan MQTT Anda tetap aman tersimpan.</p>
+              <p style="margin-top:10px; color:#059669; font-weight:600;">✓ Admin/Technician credentials and MQTT configurations remain intact.</p>
             </div>`;
           Swal.fire({
-            title: "Perubahan Jaringan Dibatalkan",
+            title: "Network Changes Discarded",
             text: detailText,
             html: detailHtml,
             icon: "success",
@@ -1299,7 +1315,7 @@ function discardPendingNetworkChanges() {
         })
         .catch(() => {
           Swal.close();
-          Swal.fire("Error", "Gagal membatalkan perubahan jaringan.", "error");
+          Swal.fire("Error", "Failed to discard pending network changes.", "error");
         });
     }
   });
@@ -1320,11 +1336,11 @@ function updatePendingRebootBanner(rebootRequired) {
             <line x1="12" y1="9" x2="12" y2="13"/>
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
-          <span>Perubahan jaringan tersimpan di NVS. Reboot diperlukan untuk mengaktifkan ke hardware.</span>
+          <span>Network configuration changes saved to NVS. Reboot required to apply to hardware.</span>
         </div>
         <div class="pending-banner-actions">
-          <button type="button" class="btn-banner-reboot" onclick="triggerRebootNow()">Reboot Sekarang</button>
-          <button type="button" class="btn-banner-discard" onclick="discardPendingNetworkChanges()">Batalkan</button>
+          <button type="button" class="btn-banner-reboot" onclick="triggerRebootNow()">Reboot Now</button>
+          <button type="button" class="btn-banner-discard" onclick="discardPendingNetworkChanges()">Discard</button>
         </div>
       `;
       content.insertBefore(banner, content.firstChild);
@@ -1334,3 +1350,14 @@ function updatePendingRebootBanner(rebootRequired) {
     banner.style.display = rebootRequired ? "flex" : "none";
   }
 }
+
+
+// RBAC Security Enforcement for Role Engineer
+document.addEventListener("DOMContentLoaded", function() {
+  const role = document.body.dataset.role;
+  if (role === "engineer") {
+    document.querySelectorAll(".role-admin-only input, .role-admin-only select, .role-admin-only button, #mqtt input, #mqtt select, #mqtt button").forEach(function(el) {
+      el.disabled = true;
+    });
+  }
+});

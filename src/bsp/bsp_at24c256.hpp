@@ -33,7 +33,8 @@ struct __attribute__((packed)) SystemStatsStore {
     uint32_t mqtt_disconnects;   // Total diskoneksi MQTT
     uint32_t last_boot_uptime;   // Timestamp uptime boot terakhir
     uint8_t  last_reset_reason;  // esp_reset_reason_t
-    uint8_t  reserved[37];       // Padding cadangan
+    uint32_t lifetime_uptime_sec;// Total kumulatif uptime seumur hidup (detik)
+    uint8_t  reserved[33];       // Padding cadangan
     uint16_t checksum;           // CRC16-LE
 };
 
@@ -49,6 +50,7 @@ public:
     static esp_err_t readSlotHeader(size_t slotIdx, uint32_t* outMagic, uint32_t* outSeqId);
     static esp_err_t writePage(uint16_t memAddr, const uint8_t* data, size_t len);
     static esp_err_t readBuffer(uint16_t memAddr, uint8_t* outBuf, size_t len);
+    static esp_err_t wipeAll(uint8_t fillByte = 0xFF);
     static void recoverBus();
 
 private:

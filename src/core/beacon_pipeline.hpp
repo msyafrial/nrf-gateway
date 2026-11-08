@@ -27,10 +27,14 @@ public:
     static void   flushLiveBeacons();
     
     // Snapshot Dropped Beacons untuk WebSocket (Thread-Safe)
-    static void   recordDroppedBeacon(const char* code, const char* tag, int8_t rssi, DropReason reason);
+    static void   recordDroppedBeacon(const char* code, const char* tag, int8_t rssi, DropReason reason,
+                                      const uint8_t* mac = nullptr, const uint8_t* raw42 = nullptr);
     static void   recordDroppedBeacon(const BeaconPacket& packet, DropReason reason);
     static size_t copyDroppedBeacons(DroppedBeaconItem* outItems, size_t maxItems);
     static void   flushDroppedBeacons();
+
+    // Status Scanner nRF52840
+    static uint8_t getNrfScanState();
 
     // Kalkulasi Metrik Throughput (Dipanggil tiap 1 detik oleh esp_timer)
     static void updateMetrics();
@@ -41,8 +45,11 @@ public:
 
     // Getter Metrik
     static uint32_t getReadSpeed();
+    static uint32_t getScanSpeed();
+    static uint32_t getDropSpeed();
     static uint32_t getMqttSpeed();
     static uint32_t getMqttBatchSpeed();
+    static uint32_t getTotalFramesIngress();
     static uint32_t getTotalBeaconsRead();
     static uint32_t getTotalMqttPublished();
     static uint32_t getTotalMqttBatches();
@@ -56,6 +63,7 @@ public:
     static uint32_t getDropRssiCount();
     static uint32_t getDropUuidCount();
     static uint32_t getDropMajorCount();
+    static uint32_t getDropUnknownCount();
     static uint32_t getDropQueueCount();
     static uint32_t getDropMqttCount();
     static void     resetDropCounters();

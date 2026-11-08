@@ -104,10 +104,6 @@ static void restoreWifiDnsAndDefaultRoute() {
             dns_setserver(1, &lwip_dns2);
         }
         ESP_LOGI(TAG, "Default Netif dikunci ke Wi-Fi STA dan DNS dipulihkan (Main & Backup).");
-
-        if (!MqttService::isConnected()) {
-            MqttService::forceReconnect();
-        }
     }
 }
 
@@ -207,8 +203,13 @@ void NetworkManager::onWifiEvent(void* arg, esp_event_base_t base, int32_t id, v
                 s_wifiConnected = false;
                 s_wifiHasIp = false;
 
+                // Mode Wi-Fi: Putus sesi MQTT seketika (Zero-Failover ke Ethernet)
+                if (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI)) {
+                    MqttService::disconnect();
+                }
+
                 char det[80];
-                snprintf(det, sizeof(det), "Alasan: %s (%d)", getWifiDisconnectReasonName(e->reason), e->reason);
+                snprintf(det, sizeof(det), "Reason: %s (%d)", getWifiDisconnectReasonName(e->reason), e->reason);
                 NetLogService::log(NetCategory::WIFI, NetEvent::DISCONNECTED, det);
 
                 if (shouldWifiStaConnect()) {
@@ -334,11 +335,11 @@ void NetworkManager::initMdns() {
 
     char instance_name[64];
     const char* raw_model = g_config.device_model[0] ? g_config.device_model : "SG-10";
-    snprintf(instance_name, sizeof(instance_name), "IOTARU %s Gateway", raw_model);
+    snprintf(instance_name, sizeof(instance_name), "Cubeacon %s Gateway", raw_model);
     mdns_instance_name_set(instance_name);
 
     // Registrasi Service HTTP port 80 untuk Zeroconf / Bonjour auto-discovery
-    mdns_service_add("IOTARU Web Console", "_http", "_tcp", 80, NULL, 0);
+    mdns_service_add("Cubeacon Web Console", "_http", "_tcp", 80, NULL, 0);
     mdns_service_txt_item_set("_http", "_tcp", "model", raw_model);
     mdns_service_txt_item_set("_http", "_tcp", "firmware", FIRMWARE_VERSION);
     mdns_service_txt_item_set("_http", "_tcp", "device_id", device_id);
@@ -395,8 +396,16 @@ void NetworkManager::onIpEvent(void* arg, esp_event_base_t base, int32_t id, voi
         // Aktifkan mDNS saat koneksi IP diperoleh
         initMdns();
 
-        // Bangunkan MQTT Client seketika tanpa menunggu timer tidur (ala PubSubClient)
-        MqttService::forceReconnect();
+        // Bangunkan MQTT Client seketika hanya jika koneksi IP berasal dari uplink aktif sesuai mode
+        if (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI)) {
+            if (id == IP_EVENT_STA_GOT_IP) {
+                MqttService::forceReconnect();
+            }
+        } else {
+            if (id == IP_EVENT_ETH_GOT_IP) {
+                MqttService::forceReconnect();
+            }
+        }
     }
 }
 
@@ -531,6 +540,13 @@ void NetworkManager::ensureWifiDriverInitialized() {
             ESP_LOGI(TAG, "Wi-Fi Station Hostname (DHCP Option 12) diset ke: %s", hostname);
         }
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        // Low-DRAM Wi-Fi Profile (Hemat ~10 KB DRAM dari buffer statis & dinamis):
+        cfg.static_rx_buf_num = 6;
+        cfg.dynamic_rx_buf_num = 16;
+        cfg.dynamic_tx_buf_num = 16;
+        cfg.mgmt_sbuf_num = 16;
+        cfg.ampdu_rx_enable = 0;
+        cfg.ampdu_tx_enable = 0;
         ESP_ERROR_CHECK(esp_wifi_init(&cfg));
         ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
 
@@ -717,14 +733,20 @@ bool NetworkManager::isEthernetPeerSlaveMode() {
 }
 
 bool NetworkManager::isConnected() {
-    if (s_ethFsmState == EthFsmState::DIRECT_PC || s_ethFsmState == EthFsmState::PEER_SLAVE) return true;
-    if (s_ethDriver && s_ethDriver->hasIp()) return true;
-    return s_wifiHasIp;
+    if (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI)) {
+        return s_wifiHasIp;
+    } else {
+        if (s_ethFsmState == EthFsmState::DIRECT_PC || s_ethFsmState == EthFsmState::PEER_SLAVE) return true;
+        return (s_ethDriver != nullptr && s_ethDriver->hasIp());
+    }
 }
 
 bool NetworkManager::isLinkUp() {
-    if (s_ethDriver && s_ethDriver->isConnected()) return true;
-    return s_wifiConnected;
+    if (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI)) {
+        return s_wifiConnected;
+    } else {
+        return (s_ethDriver != nullptr && s_ethDriver->isConnected());
+    }
 }
 
 bool NetworkManager::isEthernetLinkUp() {
@@ -748,13 +770,21 @@ void NetworkManager::getActiveIp(char* outBuf, size_t maxLen) {
     if (!outBuf || maxLen == 0) return;
     outBuf[0] = '\0';
 
-    if (isEthernetActive()) {
-        s_ethDriver->getIp(outBuf, maxLen);
-    } else if (s_staNetif != nullptr) {
-        esp_netif_ip_info_t ip_info;
-        if (esp_netif_get_ip_info(s_staNetif, &ip_info) == ESP_OK) {
-            esp_ip4addr_ntoa(&ip_info.ip, outBuf, maxLen);
+    if (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI)) {
+        if (s_wifiHasIp && s_staNetif != nullptr) {
+            esp_netif_ip_info_t ip_info;
+            if (esp_netif_get_ip_info(s_staNetif, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
+                esp_ip4addr_ntoa(&ip_info.ip, outBuf, maxLen);
+                return;
+            }
         }
+        return; // Zero display failover: jangan pernah tampilkan IP Ethernet pada Mode Wi-Fi
+    } else {
+        if (isEthernetActive()) {
+            s_ethDriver->getIp(outBuf, maxLen);
+            return;
+        }
+        return;
     }
 }
 
@@ -1168,6 +1198,9 @@ void NetworkManager::checkDailyRestart() {
 }
 
 void NetworkManager::checkEthernetFallback() {
+    // [DIRECT LAN DISABLED] Dinonaktifkan sementara agar Ethernet bertindak murni sebagai DHCP Client tanpa timeout
+    return;
+
     if (s_ethDriver == nullptr || !s_ethDriver->isConnected()) {
         return;
     }
@@ -1360,7 +1393,7 @@ void NetworkManager::tickWatchdog() {
     checkWifiDisconRetry();
     checkApInactivityTimeout();
     checkDailyRestart();
-    checkEthernetFallback();
+    // checkEthernetFallback(); // [DIRECT LAN DISABLED] Dinonaktifkan sementara
 }
 
 } // namespace Iotaru::Network

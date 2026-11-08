@@ -28,6 +28,7 @@ static std::atomic<uint32_t> s_statUuidMismatch{0};
 static std::atomic<uint32_t> s_statMajorMismatch{0};
 static std::atomic<uint32_t> s_statQueueOverflow{0};
 static std::atomic<uint32_t> s_statMqttFailed{0};
+static std::atomic<uint32_t> s_statUnknownFormat{0};
 
 void DropLogService::init() {
     if (s_dropMutex == nullptr) {
@@ -60,13 +61,14 @@ void DropLogService::formatTimestamp(char* outBuf, size_t maxLen, uint32_t uptim
 
 const char* DropLogService::reasonToString(DropReason reason) {
     switch (reason) {
-        case DropReason::TTL_EXPIRED:       return "TTL Kadaluarsa";
-        case DropReason::RSSI_OUT_OF_RANGE: return "Di Bawah RSSI Min";
-        case DropReason::UUID_MISMATCH:     return "UUID Tidak Cocok";
-        case DropReason::MAJOR_MISMATCH:    return "Major Tidak Cocok";
-        case DropReason::QUEUE_OVERFLOW:    return "Antrean Penuh";
-        case DropReason::MQTT_FAIL:         return "Gagal Publish MQTT";
-        default:                            return "Drop Lainnya";
+        case DropReason::TTL_EXPIRED:       return "TTL Expired";
+        case DropReason::RSSI_OUT_OF_RANGE: return "Below Min RSSI";
+        case DropReason::UUID_MISMATCH:     return "UUID Mismatch";
+        case DropReason::MAJOR_MISMATCH:    return "Major Mismatch";
+        case DropReason::QUEUE_OVERFLOW:    return "Queue Full";
+        case DropReason::MQTT_FAIL:         return "MQTT Publish Failed";
+        case DropReason::UNKNOWN_FORMAT:    return "Unknown Format";
+        default:                            return "Other Drop";
     }
 }
 
@@ -78,11 +80,12 @@ const char* DropLogService::reasonToStatusClass(DropReason reason) {
         case DropReason::MAJOR_MISMATCH:    return "orange";
         case DropReason::QUEUE_OVERFLOW:    return "danger";
         case DropReason::MQTT_FAIL:         return "danger";
+        case DropReason::UNKNOWN_FORMAT:    return "orange";
         default:                            return "neutral";
     }
 }
 
-void DropLogService::record(const char* code, const char* tag, int8_t rssi, DropReason reason, uint32_t count) {
+void DropLogService::record(const char* code, const char* tag, int8_t rssi, DropReason reason, uint32_t count, const char* mac, const char* raw) {
     if (reason != DropReason::MQTT_FAIL && !Network::MqttService::isConnected()) {
         return;
     }
@@ -100,6 +103,7 @@ void DropLogService::record(const char* code, const char* tag, int8_t rssi, Drop
         case DropReason::MAJOR_MISMATCH:    s_statMajorMismatch.fetch_add(count, std::memory_order_relaxed); break;
         case DropReason::QUEUE_OVERFLOW:    s_statQueueOverflow.fetch_add(count, std::memory_order_relaxed); break;
         case DropReason::MQTT_FAIL:         s_statMqttFailed.fetch_add(count, std::memory_order_relaxed); break;
+        case DropReason::UNKNOWN_FORMAT:    s_statUnknownFormat.fetch_add(count, std::memory_order_relaxed); break;
     }
 
     // Mutex take non-blocking (maksimal 2 ms) agar tidak menghambat Core 0 UART ingestion
@@ -122,6 +126,8 @@ void DropLogService::record(const char* code, const char* tag, int8_t rssi, Drop
         strlcpy(s_dropLogs[0].time_str, timeStr, sizeof(s_dropLogs[0].time_str));
         strlcpy(s_dropLogs[0].code, code ? code : "BLE", sizeof(s_dropLogs[0].code));
         strlcpy(s_dropLogs[0].tag, tag ? tag : "-", sizeof(s_dropLogs[0].tag));
+        strlcpy(s_dropLogs[0].mac, mac ? mac : "-", sizeof(s_dropLogs[0].mac));
+        strlcpy(s_dropLogs[0].raw, raw ? raw : "-", sizeof(s_dropLogs[0].raw));
         s_dropLogs[0].rssi = rssi;
         s_dropLogs[0].reason = reason;
 
@@ -130,10 +136,27 @@ void DropLogService::record(const char* code, const char* tag, int8_t rssi, Drop
 }
 
 void DropLogService::record(const BeaconPacket& p, DropReason reason, uint32_t count) {
-    const char* code = (p.type == BeaconType::IBEACON_EXT) ? "ibeacon_ext" : "iBeacon";
+    const char* code = (p.type == BeaconType::IBEACON_EXT) ? "ibeacon_ext" :
+                       (p.type == BeaconType::IBEACON) ? "iBeacon" :
+                       (p.type == BeaconType::EDDYSTONE) ? "Eddystone" :
+                       (p.type == BeaconType::MOKO_SENSOR || p.type == BeaconType::MOKO_ALARM) ? "MOKO" : "BLE";
     char tagBuf[24];
-    snprintf(tagBuf, sizeof(tagBuf), "%05u-%05u", p.major, p.minor);
-    record(code, tagBuf, p.rssi, reason, count);
+    if (p.has_major) {
+        snprintf(tagBuf, sizeof(tagBuf), "%05u-%05u", p.major, p.minor);
+    } else {
+        snprintf(tagBuf, sizeof(tagBuf), "%02X%02X", p.mac[4], p.mac[5]);
+    }
+
+    char macStr[18];
+    snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             p.mac[0], p.mac[1], p.mac[2], p.mac[3], p.mac[4], p.mac[5]);
+
+    char rawStr[86] = {0};
+    for (int i = 0; i < 42; ++i) {
+        snprintf(rawStr + i * 2, sizeof(rawStr) - i * 2, "%02X", p.raw_frame[i]);
+    }
+
+    record(code, tagBuf, p.rssi, reason, count, macStr, rawStr);
 }
 
 size_t DropLogService::getLogs(DropLogEntry* outEntries, size_t maxCount) {
@@ -166,6 +189,7 @@ void DropLogService::clearLogs() {
     s_statMajorMismatch.store(0, std::memory_order_relaxed);
     s_statQueueOverflow.store(0, std::memory_order_relaxed);
     s_statMqttFailed.store(0, std::memory_order_relaxed);
+    s_statUnknownFormat.store(0, std::memory_order_relaxed);
 
     // 2. Kosongkan riwayat array log jika mutex tersedia
     if (s_dropMutex != nullptr && xSemaphoreTake(s_dropMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
@@ -183,6 +207,7 @@ DropSummaryStats DropLogService::getSummaryStats() {
     stats.major_mismatch  = s_statMajorMismatch.load(std::memory_order_relaxed);
     stats.queue_overflow  = s_statQueueOverflow.load(std::memory_order_relaxed);
     stats.mqtt_failed     = s_statMqttFailed.load(std::memory_order_relaxed);
+    stats.unknown_format  = s_statUnknownFormat.load(std::memory_order_relaxed);
     return stats;
 }
 

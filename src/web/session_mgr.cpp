@@ -286,14 +286,14 @@ AuthResult authenticate(httpd_req_t *req, const char *user, const char *pass, Us
     // Fallback to factory defaults if config strings are uninitialized
     const char *expected_adm_u = (g_config.admin_user[0] != '\0') ? g_config.admin_user : "admin";
     const char *expected_adm_p = (g_config.admin_pass[0] != '\0') ? g_config.admin_pass : "admin";
-    const char *expected_tek_u = (g_config.user_user[0] != '\0') ? g_config.user_user : "user";
-    const char *expected_tek_p = (g_config.user_pass[0] != '\0') ? g_config.user_pass : "user";
+    const char *expected_eng_u = (g_config.user_user[0] != '\0') ? g_config.user_user : "user";
+    const char *expected_eng_p = (g_config.user_pass[0] != '\0') ? g_config.user_pass : "user";
 
     UserRole role = UserRole::NONE;
     if (constant_time_eq(user, expected_adm_u) && constant_time_eq(pass, expected_adm_p)) {
         role = UserRole::ADMIN;
-    } else if (constant_time_eq(user, expected_tek_u) && constant_time_eq(pass, expected_tek_p)) {
-        role = UserRole::TEKNISI;
+    } else if (constant_time_eq(user, expected_eng_u) && constant_time_eq(pass, expected_eng_p)) {
+        role = UserRole::ENGINEER;
     }
 
     if (role == UserRole::NONE) {

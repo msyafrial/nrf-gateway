@@ -15,6 +15,8 @@
 #include "freertos/queue.h"
 #include "cJSON.h"
 #include "psa/crypto.h"
+#include "lwip/def.h"
+#include <ctime>
 #include <cstring>
 #include <cstdio>
 #include <cctype>
@@ -176,7 +178,7 @@ static char s_topicData[128]      = "";
 static char s_topicStatus[128]    = "";
 static char s_topicCmd[128]       = "";
 static char s_topicRes[128]       = "";
-static char s_topicHeartbeat[64]  = "CRHC3048";
+static char s_topicHeartbeat[64]  = "";
 static uint32_t s_lastHeartbeatMs = 0;
 static std::atomic<uint32_t> s_lastInboundActivityMs{0};
 static char s_lastError[64]       = "None";
@@ -335,7 +337,7 @@ void MqttService::updateTopicNames() {
     snprintf(s_topicStatus,    sizeof(s_topicStatus),    "%s/info/%s/status", dev_prefix, device_id);
     snprintf(s_topicCmd,       sizeof(s_topicCmd),       "%s/cmd/%s",         dev_prefix, device_id);
     snprintf(s_topicRes,       sizeof(s_topicRes),       "%s/res/%s",         dev_prefix, device_id);
-    snprintf(s_topicHeartbeat, sizeof(s_topicHeartbeat), "CRHC3048");
+    snprintf(s_topicHeartbeat, sizeof(s_topicHeartbeat), "%s/hb",             dev_prefix);
 
     ESP_LOGI(TAG, "Topik MQTT Dikonfigurasi (model='%s' -> prefix='%s', device_id='%s'):",
              raw_model, dev_prefix, device_id);
@@ -378,7 +380,7 @@ static void formatMqttDisconnectDetail(esp_mqtt_event_handle_t event, char* outB
     outBuf[0] = '\0';
 
     if (!event || !event->error_handle) {
-        snprintf(outBuf, maxLen, "Sesi Dihentikan oleh Broker (TCP FIN)");
+        snprintf(outBuf, maxLen, "Session terminated by broker (TCP FIN)");
         return;
     }
 
@@ -388,63 +390,63 @@ static void formatMqttDisconnectDetail(esp_mqtt_event_handle_t event, char* outB
 
         switch (sock_err) {
             case 104: // ECONNRESET
-                snprintf(outBuf, maxLen, "Koneksi Di-reset Paksa oleh Broker (ECONNRESET:104)");
+                snprintf(outBuf, maxLen, "Connection reset by broker (ECONNRESET:104)");
                 break;
             case 110: // ETIMEDOUT
-                snprintf(outBuf, maxLen, "Batas Waktu Respon Terlampaui (ETIMEDOUT:110)");
+                snprintf(outBuf, maxLen, "Connection response timed out (ETIMEDOUT:110)");
                 break;
             case 113: // EHOSTUNREACH
-                snprintf(outBuf, maxLen, "Rute Host Broker Tidak Ditemukan (EHOSTUNREACH:113)");
+                snprintf(outBuf, maxLen, "Broker host route unreachable (EHOSTUNREACH:113)");
                 break;
             case 111: // ECONNREFUSED
-                snprintf(outBuf, maxLen, "Port Broker Menolak Koneksi (ECONNREFUSED:111)");
+                snprintf(outBuf, maxLen, "Broker port refused connection (ECONNREFUSED:111)");
                 break;
             case 32:  // EPIPE
-                snprintf(outBuf, maxLen, "Pipa Soket Komunikasi Terputus (EPIPE:32)");
+                snprintf(outBuf, maxLen, "Broken communication socket pipe (EPIPE:32)");
                 break;
             case 128: // ENOTCONN
-                snprintf(outBuf, maxLen, "Soket Tidak Terhubung ke Jaringan (ENOTCONN:128)");
+                snprintf(outBuf, maxLen, "Socket not connected to network (ENOTCONN:128)");
                 break;
             case 118: // EHOSTDOWN
-                snprintf(outBuf, maxLen, "Server Broker Tidak Aktif / Offline (EHOSTDOWN:118)");
+                snprintf(outBuf, maxLen, "Broker server down / offline (EHOSTDOWN:118)");
                 break;
             default:
                 if (tls_err != 0) {
                     if (tls_err == 0x8001) {
-                        snprintf(outBuf, maxLen, "Gagal Resolusi Domain Broker (DNS Error: 0x8001)");
+                        snprintf(outBuf, maxLen, "Broker DNS domain resolution failed (DNS Error: 0x8001)");
                     } else {
-                        snprintf(outBuf, maxLen, "Kegagalan Enkripsi TLS Handshake (Error: 0x%04X)", tls_err);
+                        snprintf(outBuf, maxLen, "TLS encryption handshake failed (Error: 0x%04X)", tls_err);
                     }
                 } else if (sock_err != 0) {
-                    snprintf(outBuf, maxLen, "Kegagalan Lapisan Transport TCP (Errno: %d)", sock_err);
+                    snprintf(outBuf, maxLen, "TCP transport layer failure (Errno: %d)", sock_err);
                 } else {
-                    snprintf(outBuf, maxLen, "Sesi Dihentikan oleh Broker (TCP FIN / Keepalive Timeout)");
+                    snprintf(outBuf, maxLen, "Session terminated by broker (TCP FIN / Keepalive Timeout)");
                 }
                 break;
         }
     } else if (event->error_handle->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
         switch (event->error_handle->connect_return_code) {
             case 1:
-                snprintf(outBuf, maxLen, "Versi Protokol MQTT Ditolak oleh Broker (Code 1)");
+                snprintf(outBuf, maxLen, "MQTT protocol version rejected by broker (Code 1)");
                 break;
             case 2:
-                snprintf(outBuf, maxLen, "Client ID Ditolak oleh Broker (Code 2)");
+                snprintf(outBuf, maxLen, "Client ID rejected by broker (Code 2)");
                 break;
             case 3:
-                snprintf(outBuf, maxLen, "Layanan Broker Tidak Tersedia / Overload (Code 3)");
+                snprintf(outBuf, maxLen, "Broker service unavailable / overloaded (Code 3)");
                 break;
             case 4:
-                snprintf(outBuf, maxLen, "Kredensial Ditolak: Username atau Password Salah (Code 4)");
+                snprintf(outBuf, maxLen, "Authentication failed: Invalid credentials (Code 4)");
                 break;
             case 5:
-                snprintf(outBuf, maxLen, "Otorisasi Ditolak: Hak Akses ACL Dibatasi (Code 5)");
+                snprintf(outBuf, maxLen, "Authorization failed: ACL access restricted (Code 5)");
                 break;
             default:
-                snprintf(outBuf, maxLen, "Koneksi Ditolak oleh Broker (Return Code: %d)", event->error_handle->connect_return_code);
+                snprintf(outBuf, maxLen, "Connection refused by broker (Return Code: %d)", event->error_handle->connect_return_code);
                 break;
         }
     } else {
-        snprintf(outBuf, maxLen, "Sesi Dihentikan oleh Broker (TCP FIN / Keepalive Timeout)");
+        snprintf(outBuf, maxLen, "Session terminated by broker (TCP FIN / Keepalive Timeout)");
     }
 }
 
@@ -502,7 +504,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
             esp_mqtt_client_subscribe(s_mqttClient, s_topicCmd, 1);
             ESP_LOGI(TAG, "Subscribed ke topik perintah: %s", s_topicCmd);
 
-            // 3. Pancarkan Heartbeat Perdana Seketika (Topik CRHC3048, Payload device_id)
+            // 3. Pancarkan Heartbeat Perdana Seketika (Topik <prefix>/hb, Payload device_id)
             s_lastHeartbeatMs = (uint32_t)(esp_timer_get_time() / 1000);
             publishHeartbeat();
 
@@ -721,44 +723,49 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                 continue; // Buang paket kadaluarsa dan catat ke DropLog
             }
 
-            uint8_t binBuffer[32];
-            size_t binLen = 0;
-            if (buildBinaryPayload(packet, binBuffer, sizeof(binBuffer), binLen)) {
-                // Periksa apakah batch saat ini sudah penuh sebelum menambah item baru
-                if ((batchLen + binLen > MQTT_BATCH_BUFFER_SIZE) ||
-                    (batchCount >= (size_t)g_config.batch_max)) {
-                    if (s_mqttConnected) {
-                        int qos = (g_config.mqtt_qos == 0) ? 0 : 1;
-                        int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicData,
-                                                            (const char*)s_batchBuffer,
-                                                            batchLen, qos, 0);
-                        if (msgId >= 0) {
-                            if (qos == 0) {
-                                s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
-                            }
-                            recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
-                            Bsp::LedManager::triggerTrafficBlip();
-                            Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
-                            s_statLastBatchPktCount = batchCount;
-                        } else {
-                            Core::BeaconPipeline::recordMqttFailed(batchCount);
+            constexpr size_t frameLen = sizeof(MqttBleFrame44); // 44 bytes dengan Unix Timestamp (Solusi 3)
+            // Periksa apakah batch saat ini sudah penuh sebelum menambah item baru
+            if ((batchLen + frameLen > MQTT_BATCH_BUFFER_SIZE) ||
+                (batchCount >= (size_t)g_config.batch_max)) {
+                if (s_mqttConnected) {
+                    int qos = (g_config.mqtt_qos == 0) ? 0 : 1;
+                    int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicData,
+                                                        (const char*)s_batchBuffer,
+                                                        batchLen, qos, 0);
+                    if (msgId >= 0) {
+                        if (qos == 0) {
+                            s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
                         }
+                        recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
+                        Bsp::LedManager::triggerTrafficBlip();
+                        Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
+                        s_statLastBatchPktCount = batchCount;
                     } else {
                         Core::BeaconPipeline::recordMqttFailed(batchCount);
                     }
-                    // Reset batch buffer selalu dilakukan untuk mencegah buffer overflow
-                    batchLen = 0;
-                    batchCount = 0;
-                    lastFlushTime = now;
+                } else {
+                    Core::BeaconPipeline::recordMqttFailed(batchCount);
                 }
-
-                memcpy(s_batchBuffer + batchLen, binBuffer, binLen);
-                batchLen += binLen;
-                batchCount++;
-            } else {
-                // Tipe payload tidak valid/korup
-                Core::BeaconPipeline::recordDroppedBeacon(packet, DropReason::TTL_EXPIRED);
+                // Reset batch buffer selalu dilakukan untuk mencegah buffer overflow
+                batchLen = 0;
+                batchCount = 0;
+                lastFlushTime = now;
             }
+
+            // Susun frame MQTT 44-byte (Solusi 3: injeksi Unix Timestamp epoch detik)
+            time_t nowSec = time(NULL);
+            uint32_t epochOut = (nowSec > 1700000000) ? static_cast<uint32_t>(nowSec) : (packet.timestamp / 1000);
+
+            const RawBleBinaryFrame* raw = reinterpret_cast<const RawBleBinaryFrame*>(packet.raw_frame);
+            MqttBleFrame44* outFrame = reinterpret_cast<MqttBleFrame44*>(s_batchBuffer + batchLen);
+            outFrame->timestamp = lwip_htonl(epochOut);
+            std::memcpy(outFrame->mac, raw->mac, 6);
+            outFrame->adv_type = raw->adv_type;
+            outFrame->rssi = raw->rssi;
+            outFrame->payload_len = raw->payload_len;
+            std::memcpy(outFrame->payload, raw->payload, 31);
+            batchLen += frameLen;
+            batchCount++;
         }
 
         // 4. Timer-based Batch Flush
@@ -791,10 +798,13 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
             }
         }
 
-        // 5. Periodic Gateway Heartbeat (tiap 5000 ms / 5 detik) ke topik CRHC3048
+        // 5. Periodic Gateway Heartbeat (tiap 5000 ms / 5 detik) ke topik <prefix>/hb
         if (s_mqttConnected) {
             uint32_t nowMs = (uint32_t)(esp_timer_get_time() / 1000);
-            if (nowMs - s_lastHeartbeatMs >= 5000) {
+            uint32_t hbMs = (g_config.hb_interval >= 1 && g_config.hb_interval <= 300)
+                            ? (uint32_t)(g_config.hb_interval * 1000)
+                            : 5000;
+            if (nowMs - s_lastHeartbeatMs >= hbMs) {
                 s_lastHeartbeatMs = nowMs;
                 publishHeartbeat();
             }
@@ -838,12 +848,12 @@ void MqttService::init() {
         mqtt_cfg.session.last_will.retain = 1;
         mqtt_cfg.session.keepalive = (g_config.mqtt_keepalive >= 5 && g_config.mqtt_keepalive <= 65535) ? g_config.mqtt_keepalive : 30;
         mqtt_cfg.network.reconnect_timeout_ms = 3000;
-        mqtt_cfg.network.timeout_ms = 5000;
-        mqtt_cfg.buffer.size = 4096;
-        mqtt_cfg.buffer.out_size = 4096;
-        mqtt_cfg.outbox.limit = 4096;
+        mqtt_cfg.network.timeout_ms = 10000;
+        mqtt_cfg.buffer.size = 2048; // Inbound dihemat dari 8192 ke 2048 (+6 KB DRAM). Cukup untuk JSON cmd & PUBACK
+        mqtt_cfg.buffer.out_size = 8192; // Tetap 8192 B untuk menjamin batch telemetri 150 beacon (6.6 KB) @ 1200 pkt/s QoS 1
+        mqtt_cfg.outbox.limit = 8192; // Tetap 8192 B untuk in-flight QoS 1 buffer
         mqtt_cfg.task.priority = 6;
-        mqtt_cfg.task.stack_size = 8192;
+        mqtt_cfg.task.stack_size = 6144; // Dihemat dari 8192 ke 6144 (+2 KB DRAM, aman untuk TLS callback)
 
         s_mqttClient = esp_mqtt_client_init(&mqtt_cfg);
         if (s_mqttClient == nullptr) {
@@ -880,6 +890,13 @@ void MqttService::forceReconnect() {
             ESP_LOGI(TAG, "Memicu force reconnect MQTT seketika (ala PubSubClient)...");
             esp_mqtt_client_reconnect(s_mqttClient);
         }
+    }
+}
+
+void MqttService::disconnect() {
+    if (s_mqttClient != nullptr && s_mqttStarted) {
+        ESP_LOGI(TAG, "Memutuskan sesi MQTT (Zero-Failover: Uplink terputus)...");
+        esp_mqtt_client_disconnect(s_mqttClient);
     }
 }
 

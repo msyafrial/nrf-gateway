@@ -53,7 +53,7 @@ bool MicroDhcpServer::start(esp_netif_t* netif, uint32_t server_ip, uint32_t cli
     BaseType_t res = xTaskCreatePinnedToCore(
         taskWorker,
         "micro_dhcp_tsk",
-        3072,
+        2048, // Dihemat dari 3072 ke 2048 (+1 KB DRAM, stack hanya untuk socket recv/send DHCP frame kecil)
         nullptr,
         4,
         &s_taskHandle,
@@ -163,7 +163,7 @@ static void sendDhcpReply(int sock, const dhcp_raw_msg& req, uint8_t msg_type, u
         opt_idx += 4;
 
         // CATATAN KRUSIAL: Option 3 (Router/Gateway) dan Option 6 (DNS)
-        // SENGAJA DITIADAKAN agar koneksi Wi-Fi internet di laptop teknisi tidak terputus!
+        // SENGAJA DITIADAKAN agar koneksi Wi-Fi internet di laptop engineer tidak terputus!
     }
 
     // Option 255: End
@@ -285,7 +285,7 @@ void MicroDhcpServer::taskWorker(void* arg) {
 
         // CATATAN KRUSIAL 1: Filter Hostname Option 12
         // Jika diawali prefix model gateway (misal "sg10-" atau model NVS), Master WAJIB MENGABAIKAN!
-        // Jangan layani sesama gateway agar IP 192.168.4.2 100% khusus untuk PC teknisi!
+        // Jangan layani sesama gateway agar IP 192.168.4.2 100% khusus untuk PC engineer!
         char dyn_prefix[32] = {0};
         size_t pIdx = 0;
         const char* raw_model = g_config.device_model[0] ? g_config.device_model : "sg10";

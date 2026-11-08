@@ -1,11 +1,28 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IOTARU %model% - Login</title>
-  <link rel="stylesheet" href="assets/css/app.css">
-  <script src="assets/js/swal-lite.js"></script>
+  <title>Cubeacon %model% - Login</title>
+  <style>
+    /* Critical Pre-paint CSS: Eliminates White Canvas Flash */
+    html, body {
+      background-color: #070c14 !important;
+      color: #f8fafc;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+    }
+    /* Instant Banner Suppression before external CSS loads */
+    .pending-reboot-banner,
+    .ap-banner-card,
+    .wifi-modal-backdrop,
+    .session-expired-banner {
+      display: none;
+    }
+  </style>
+  <link rel="stylesheet" href="assets/css/app.css?v=%firmware_version%">
+  <script src="assets/js/swal-lite.js?v=%firmware_version%" defer></script>
   <style>
     body {
       display: flex;
@@ -212,14 +229,14 @@
           <span class="ap-pulse-dot"></span>
         </div>
         <div class="ap-banner-text">
-          <div class="ap-banner-title">Hotspot Mode Config Aktif</div>
+          <div class="ap-banner-title">Config Hotspot Mode Active</div>
           <div class="ap-banner-subtitle">
             SSID: <strong id="apBannerSsid">%ap_ssid%</strong> &bull; Auto-off: <span id="apBannerTimer" class="ap-timer-pill">60s</span>
           </div>
         </div>
       </div>
       <div class="ap-banner-right">
-        <button type="button" id="btnStopAp" class="btn-ap-stop" title="Matikan Hotspot Konfigurasi">
+        <button type="button" id="btnStopAp" class="btn-ap-stop" title="Shutdown Configuration Hotspot">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="1" y1="1" x2="23" y2="23"/>
             <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
@@ -229,34 +246,34 @@
             <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
             <line x1="12" y1="20" x2="12.01" y2="20"/>
           </svg>
-          <span>Nonaktifkan AP</span>
+          <span>Disable AP</span>
         </button>
       </div>
     </div>
 
     <div class="login-card">
       <div class="login-brand">
-        <img src="assets/img/logo.png" alt="IOTARU" class="login-logo-img">
+        <img src="assets/img/logo.png" alt="Cubeacon" class="login-logo-img">
       </div>
       <div class="login-title">Autentikasi Gateway %model%</div>
-      <div class="login-sub">Masuk sebagai Administrator atau Teknisi Lapangan</div>
+      <div class="login-sub">Sign in as Administrator or Field Technician</div>
       <div id="sessionExpiredBanner" class="session-expired-banner" style="display:none;">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"></circle>
           <line x1="12" y1="8" x2="12" y2="12"></line>
           <line x1="12" y1="16" x2="12.01" y2="16"></line>
         </svg>
-        <span>Sesi Anda telah berakhir demi keamanan. Silakan login kembali.</span>
+        <span>Your session has expired for security. Please sign in again.</span>
       </div>
       <form class="login-form" autocomplete="off" onsubmit="return false;">
         <div class="item">
           <label for="username">Username</label>
-          <input type="text" id="username" name="username" placeholder="Masukkan username" autocomplete="username" spellcheck="false" required autofocus>
+          <input type="text" id="username" name="username" placeholder="Enter username" autocomplete="username" spellcheck="false" required autofocus>
         </div>
         <div class="item">
           <label for="password">Password</label>
           <div class="password-wrapper">
-            <input type="password" id="password" name="password" placeholder="Masukkan password" autocomplete="current-password" spellcheck="false" required>
+            <input type="password" id="password" name="password" placeholder="Enter password" autocomplete="current-password" spellcheck="false" required>
             <button type="button" class="btn-toggle-pwd" title="Tahan untuk melihat password" aria-label="Tahan untuk melihat password" tabindex="-1">
                     <svg class="eye-closed" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
@@ -271,7 +288,7 @@
                   </button>
           </div>
         </div>
-        <button type="button" id="btnLogin" class="login-btn" onclick="handleLogin(event)">Masuk ke Sistem</button>
+        <button type="button" id="btnLogin" class="login-btn" onclick="handleLogin(event)">Sign In to Gateway</button>
       </form>
     </div>
   </div>
@@ -327,7 +344,7 @@
 
       Swal.fire({
         title: "Memverifikasi...",
-        text: "Menghubungkan ke sistem otentikasi ESP32",
+        text: "Connecting to gateway authentication service",
         allowOutsideClick: false,
         showConfirmButton: false,
         didOpen: () => Swal.showLoading()
@@ -353,26 +370,26 @@
           return res.json().then(data => {
             Swal.fire({
               icon: "warning",
-              title: "Sesi Penuh (Maks. 2 Perangkat)",
+              title: "Active Sessions Exceeded (Max 2 Clients)",
               html: `<div style="text-align:left;font-size:0.92rem;line-height:1.6;">
-                Saat ini sudah ada <b>2 perangkat</b> yang sedang aktif login ke sistem gateway.<br><br>
-                <span style="color:#94a3b8;">Demi keamanan dan integritas konfigurasi, silakan <b>logout terlebih dahulu</b> di salah satu perangkat lain sebelum login di perangkat ini.</span>
+                Currently <b>2 client sessions</b> are actively connected to the gateway.<br><br>
+                <span style="color:#94a3b8;">For configuration integrity and security, please <b>sign out</b> on another client before accessing this session.</span>
               </div>`,
               confirmButtonText: "Mengerti",
               confirmButtonColor: "#0284c7"
             });
           }).catch(() => {
-            Swal.fire("Sesi Penuh", "Batas maksimal 2 perangkat aktif tercapai. Silakan logout terlebih dahulu di perangkat lain.", "warning");
+            Swal.fire("Sesi Penuh", "Maximum active session limit reached (2 devices). Please sign out from another device.", "warning");
           });
         } else {
           return res.text().then(text => {
-            Swal.fire("Login Gagal", text || "Username atau password salah.", "error");
+            Swal.fire("Authentication Failed", text || "Invalid username or password.", "error");
           });
         }
       })
       .catch(err => {
         Swal.close();
-        Swal.fire("Error Koneksi", err.message || "Gagal menghubungi ESP32.", "error");
+        Swal.fire("Connection Error", err.message || "Gateway unreachable.", "error");
       });
     }
   
@@ -451,19 +468,19 @@ document.addEventListener("DOMContentLoaded", initPasswordToggles);
                 btnStop.dataset.bound = "true";
                 btnStop.addEventListener("click", function() {
                   Swal.fire({
-                    title: "Nonaktifkan Mode AP?",
-                    text: "Hotspot konfigurasi akan dimatikan dan indikator LED akan kembali ke status operasional normal.",
+                    title: "Disable AP Mode?",
+                    text: "The configuration hotspot will be disabled and the LED indicator will return to normal operation.",
                     icon: "warning",
                     showCancelButton: true,
                     confirmButtonColor: "#f97316",
                     cancelButtonColor: "#64748b",
-                    confirmButtonText: "Ya, Matikan AP!",
-                    cancelButtonText: "Batal"
+                    confirmButtonText: "Yes, Shutdown AP",
+                    cancelButtonText: "Cancel"
                   }).then(res => {
                     if (res.isConfirmed) {
                       Swal.fire({
-                        title: "Menonaktifkan...",
-                        text: "Mematikan Hotspot SoftAP...",
+                        title: "Shutting Down SoftAP...",
+                        text: "Disabling SoftAP hotspot interface...",
                         allowOutsideClick: false,
                         showConfirmButton: false,
                         didOpen: () => Swal.showLoading()
@@ -472,8 +489,8 @@ document.addEventListener("DOMContentLoaded", initPasswordToggles);
                         .then(r => r.json().catch(() => ({ status: "ok" })))
                         .then(resData => {
                           Swal.fire({
-                            title: "Hotspot Dinonaktifkan",
-                            text: (resData && resData.message) ? resData.message : "Mode AP telah dinonaktifkan.",
+                            title: "Hotspot Disabled",
+                            text: (resData && resData.message) ? resData.message : "AP mode disabled.",
                             icon: "success",
                             confirmButtonColor: "#0284c7"
                           });
@@ -484,8 +501,8 @@ document.addEventListener("DOMContentLoaded", initPasswordToggles);
                           // Karena mematikan AP otomatis memutus sambungan Wi-Fi ke 192.168.4.1,
                           // network disconnection menandakan AP berhasil dimatikan!
                           Swal.fire({
-                            title: "Hotspot Dinonaktifkan",
-                            text: "Mode Hotspot AP berhasil dimatikan. Perangkat kembali ke mode normal.",
+                            title: "Hotspot Disabled",
+                            text: "SoftAP hotspot successfully stopped. Gateway reverted to normal operation.",
                             icon: "success",
                             confirmButtonColor: "#0284c7"
                           });

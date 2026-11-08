@@ -19,8 +19,49 @@ struct __attribute__((packed)) BeaconBinaryFrame {
     uint8_t  battery;   // Battery % (0 .. 100)
     uint8_t  checksum;  // XOR Checksum (bytes 1 to 23)
 };
-
 static_assert(sizeof(BeaconBinaryFrame) == 25, "BeaconBinaryFrame must be exactly 25 bytes");
+
+// Struktur Frame Biner Universal 42-Byte dari nRF52840
+struct __attribute__((packed)) RawBleBinaryFrame {
+    uint8_t header;      // Byte 0      : Selalu 0xAA (Sync Byte)
+    uint8_t mac[6];      // Byte 1..6   : MAC Address (MSB ke LSB)
+    uint8_t adv_type;    // Byte 7      : Tipe PDU Radio (ADV_IND, etc.)
+    int8_t  rssi;        // Byte 8      : Kekuatan sinyal dBm
+    uint8_t payload_len; // Byte 9      : Panjang data AD asli (0..31 byte)
+    uint8_t payload[31]; // Byte 10..40 : Raw AD Structures (0-padded jika len < 31)
+    uint8_t checksum;    // Byte 41     : XOR byte 1..40
+};
+static_assert(sizeof(RawBleBinaryFrame) == 42, "RawBleBinaryFrame must be exactly 42 bytes");
+
+// Struktur Frame Biner Telemetri MQTT 44-Byte (Solusi 3: dengan Unix Epoch Timestamp)
+struct __attribute__((packed)) MqttBleFrame44 {
+    uint32_t timestamp;   // Byte 0..3   : Unix Epoch Time detik (Big-Endian)
+    uint8_t  mac[6];      // Byte 4..9   : MAC Address (MSB ke LSB)
+    uint8_t  adv_type;    // Byte 10     : Tipe PDU Radio (ADV_IND, etc.)
+    int8_t   rssi;        // Byte 11     : Kekuatan sinyal dBm
+    uint8_t  payload_len; // Byte 12     : Panjang data AD asli (0..31 byte)
+    uint8_t  payload[31]; // Byte 13..43: Raw AD Structures (0-padded)
+};
+static_assert(sizeof(MqttBleFrame44) == 44, "MqttBleFrame44 must be exactly 44 bytes");
+
+// Protokol Perintah Downlink ESP32 -> nRF52840 (5 Byte)
+struct __attribute__((packed)) ControlCmdFrame {
+    uint8_t header;   // 0x55
+    uint8_t cmd_id;   // 0x01 (SET_SCAN_MODE), 0x02 (GET_STATUS), 0x03 (SOFT_REBOOT)
+    uint8_t param;    // 0x01 (Passive), 0x02 (Active), 0x00 (Stop)
+    uint8_t reserved; // 0x00
+    uint8_t crc;      // cmd_id ^ param ^ reserved
+};
+static_assert(sizeof(ControlCmdFrame) == 5, "ControlCmdFrame must be exactly 5 bytes");
+
+// Protokol Balasan Uplink nRF52840 -> ESP32 (4 Byte)
+struct __attribute__((packed)) ControlRspFrame {
+    uint8_t header;     // 0xBB
+    uint8_t rsp_type;   // 0x81 (ACK), 0x82 (STATUS), 0x8F (NACK)
+    uint8_t scan_state; // 0x00 (STOPPED), 0x01 (PASSIVE), 0x02 (ACTIVE)
+    uint8_t crc;        // rsp_type ^ scan_state
+};
+static_assert(sizeof(ControlRspFrame) == 4, "ControlRspFrame must be exactly 4 bytes");
 
 // Bitmask Flags Dynamic Telemetry Protocol v2 (Urutan: UUID, Major, Minor, RSSI, Battery, Timestamp)
 constexpr uint32_t TELEM_MASK_V2_FLAG   = 0x80; // Penanda format dinamis v2
@@ -36,7 +77,11 @@ enum class BeaconType : uint8_t {
     UNKNOWN     = 0,
     IBEACON_EXT = 1,
     MINEW_B     = 1,
-    IBEACON     = 2
+    IBEACON     = 2,
+    EDDYSTONE   = 3,
+    MOKO_SENSOR = 4,
+    MOKO_ALARM  = 5,
+    RAW_BLE     = 6
 };
 
 struct BeaconPacket {
@@ -47,6 +92,11 @@ struct BeaconPacket {
     uint16_t   major;
     uint16_t   minor;
     uint8_t    uuid[16];
+    bool       has_uuid;
+    bool       has_major;
+    uint8_t    mac[6];
+    uint8_t    adv_type;
+    uint8_t    raw_frame[42]; // Full raw 42-byte unaltered frame
 };
 
 struct LiveBeaconItem {
@@ -54,6 +104,9 @@ struct LiveBeaconItem {
     char    tag[24];
     int8_t  rssi;
     uint8_t batt;
+    uint8_t mac[6];
+    uint8_t adv_type;
+    uint8_t raw_frame[42];
 };
 
 enum class DropReason : uint8_t {
@@ -61,8 +114,9 @@ enum class DropReason : uint8_t {
     RSSI_OUT_OF_RANGE = 1, // RSSI di bawah ambang batas minimal (rssi_min)
     UUID_MISMATCH     = 2, // UUID tidak cocok dengan konfigurasi filter
     MAJOR_MISMATCH    = 3, // Major tidak masuk dalam rentang filter
-    QUEUE_OVERFLOW    = 4, // Antrean FreeRTOS penuh 300/300 (drop-oldest)
-    MQTT_FAIL         = 5  // Gagal publish ke MQTT broker
+    QUEUE_OVERFLOW    = 4, // Antrean FreeRTOS penuh (drop-oldest)
+    MQTT_FAIL         = 5, // Gagal publish ke MQTT broker / Outbox full
+    UNKNOWN_FORMAT    = 6  // Format BLE tidak dikenali / di-reject oleh filter
 };
 
 struct DroppedBeaconItem {
@@ -70,12 +124,14 @@ struct DroppedBeaconItem {
     char       tag[24];
     int8_t     rssi;
     DropReason reason;
+    uint8_t    mac[6];
+    uint8_t    raw_frame[42];
 };
 
 constexpr size_t LIVE_FIFO_MAX = 50;
 constexpr size_t DROPPED_FIFO_MAX = 50;
-constexpr size_t BEACON_QUEUE_MAX = 600;
-constexpr size_t MQTT_BATCH_BUFFER_SIZE = 4096;
+constexpr size_t BEACON_QUEUE_MAX = 150;
+constexpr size_t MQTT_BATCH_BUFFER_SIZE = 8192;
 
 // =================================================================
 // 2. SYSTEM & HARDWARE ENUMS
@@ -99,9 +155,9 @@ enum class ComLedState : uint8_t {
 };
 
 enum class UserRole : uint8_t {
-    NONE    = 0,
-    TEKNISI = 1,
-    ADMIN   = 2
+    NONE     = 0,
+    ENGINEER = 1,
+    ADMIN    = 2
 };
 
 enum class ConnectionMode : uint8_t {

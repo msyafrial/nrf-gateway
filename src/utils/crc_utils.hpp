@@ -20,10 +20,26 @@ inline IRAM_ATTR uint8_t calculateXorChecksum(const uint8_t* data, size_t length
 }
 
 /**
- * @brief Verifikasi instan integritas frame biner 25 byte.
+ * @brief Verifikasi instan integritas frame biner 25 byte (Legacy iBeacon).
  */
 inline IRAM_ATTR bool verifyBeaconChecksum(const uint8_t* frame25) {
     return calculateXorChecksum(frame25, 25) == frame25[24];
+}
+
+/**
+ * @brief Verifikasi instan integritas frame biner universal 42 byte.
+ * XOR(Byte 1..40) == Byte 41
+ */
+inline IRAM_ATTR bool verifyRawBleChecksum(const uint8_t* frame42) {
+    return calculateXorChecksum(frame42, 42) == frame42[41];
+}
+
+/**
+ * @brief Verifikasi paket balasan kontrol 4 byte (Header 0xBB, rsp_type, scan_state, crc).
+ * CRC: rsp_type ^ scan_state == crc
+ */
+inline IRAM_ATTR bool verifyControlRspChecksum(const uint8_t* rsp4) {
+    return (rsp4[0] == 0xBB) && ((rsp4[1] ^ rsp4[2]) == rsp4[3]);
 }
 
 } // namespace Iotaru::Utils

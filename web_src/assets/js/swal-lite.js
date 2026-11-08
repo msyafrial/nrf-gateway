@@ -1,5 +1,5 @@
 /**
- * SwalLite - Micro SweetAlert2 Drop-in Replacement for ESP32
+ * SwalLite - Micro SweetAlert2 Drop-in Replacement
  * Zero dependencies, pure vanilla JS (~2.5 KB)
  */
 (function(window) {

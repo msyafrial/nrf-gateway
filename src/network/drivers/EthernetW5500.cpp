@@ -1,6 +1,7 @@
 #include "EthernetW5500.hpp"
 #include "net_log_service.hpp"
 #include "bsp_led.hpp"
+#include "app_config.hpp"
 #include "esp_eth_mac_w5500.h"
 #include "esp_eth_phy_w5500.h"
 #include "esp_eth_netif_glue.h"
@@ -83,7 +84,7 @@ void EthernetW5500::onEthEvent(void* arg, esp_event_base_t base, int32_t id, voi
             Bsp::LedManager::setComState(ComLedState::DISCONNECTED);
             ESP_LOGW(TAG, "Kabel LAN W5500 Terputus (Link Down)!");
             NetLogService::log(NetCategory::ETHERNET, NetEvent::DISCONNECTED,
-                               "Kabel Fisik RJ45 Terputus / Switch Port Nonaktif (Link Down)");
+                               "RJ45 Ethernet Cable Disconnected / Switch Port Inactive (Link Down)");
             break;
 
         case ETHERNET_EVENT_START:
@@ -107,6 +108,12 @@ void EthernetW5500::onIpEvent(void* arg, esp_event_base_t base, int32_t id, void
     ip_event_got_ip_t* event = (ip_event_got_ip_t*)data;
     if (id == IP_EVENT_ETH_GOT_IP) {
         s_hasIp = true;
+        // Hanya jadikan default netif jika mode operasi memang murni ETHERNET
+        if (g_config.connection_mode == static_cast<int>(ConnectionMode::ETHERNET)) {
+            if (s_eth_netif != nullptr) {
+                esp_netif_set_default_netif(s_eth_netif);
+            }
+        }
         char ipStr[16], gwStr[16], maskStr[16];
         esp_ip4addr_ntoa(&event->ip_info.ip, ipStr, sizeof(ipStr));
         esp_ip4addr_ntoa(&event->ip_info.gw, gwStr, sizeof(gwStr));
@@ -163,7 +170,7 @@ bool EthernetW5500::begin(uint32_t ip, uint32_t gw, uint32_t mask,
     devcfg.command_bits = 16;
     devcfg.address_bits = 8;
     devcfg.mode = 0;
-    devcfg.clock_speed_hz = 33 * 1000 * 1000; // 33 MHz SPI Clock
+    devcfg.clock_speed_hz = 16 * 1000 * 1000; // 16 MHz SPI Clock (Sinyal bersih anti-noise/bit-flip TLS)
     devcfg.spics_io_num = Pins::W5500_CS;
     devcfg.queue_size = 20;
 
@@ -172,8 +179,8 @@ bool EthernetW5500::begin(uint32_t ip, uint32_t gw, uint32_t mask,
     w5500_config.base.int_gpio_num = Pins::W5500_INT;
 
     eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
-    mac_config.rx_task_stack_size = 4096;
-    mac_config.rx_task_prio = 5; // Prioritas tinggi untuk pemrosesan ACK instan
+    mac_config.rx_task_stack_size = 3072; // Dihemat dari 4096 ke 3072 (+1 KB DRAM, aman untuk W5500 SPI RX polling & LwIP input)
+    mac_config.rx_task_prio = 8; // Prioritas 8 (di atas MQTT 6) agar pemrosesan ACK & PINGRESP instan tanpa starvation
 
     esp_eth_mac_t *mac = esp_eth_mac_new_w5500(&w5500_config, &mac_config);
     if (!mac) {

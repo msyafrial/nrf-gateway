@@ -37,6 +37,8 @@ persegi_dimensi.svg
 *.vectorcraft
 __pycache__/
 *.pyc
+.agents/
+mockup_tables.html
 
 # Backup files
 *-backup.*

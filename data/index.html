@@ -1,11 +1,34 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IOTARU %model% - Overview</title>
-  <link rel="stylesheet" href="assets/css/app.css?v=1.0.7">
-  <script src="assets/js/swal-lite.js"></script>
+  <title>Cubeacon %model% - Gateway Overview</title>
+  <style>
+    /* Critical Pre-paint CSS: Eliminates White Canvas Flash */
+    html, body {
+      background-color: #070c14 !important;
+      color: #f8fafc;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+    }
+    /* Instant Banner Suppression before external CSS loads */
+    .pending-reboot-banner,
+    .ap-banner-card,
+    .wifi-modal-backdrop,
+    .session-expired-banner {
+      display: none;
+    }
+  
+    body[data-role="engineer"] .role-admin-only,
+    body[data-role="engineer"] #mqtt,
+    body[data-role="engineer"] .nav-docs {
+      display: none !important;
+    }
+  </style>
+  <link rel="stylesheet" href="assets/css/app.css?v=%firmware_version%">
+  <script src="assets/js/swal-lite.js?v=%firmware_version%" defer></script>
 <style>
   .ap-banner-card {
     display: none;
@@ -606,29 +629,30 @@
   .sg-signal-bar:nth-child(3) { height: 10px; }
   .sg-signal-bar:nth-child(4) { height: 14px; }
 
-  /* 3. SLIM MQTT TELEMETRY CARD */
+  /* 3. SLIM MQTT TELEMETRY CARD (Inside Network Status & Connectivity) */
   .sg-mqtt-card {
-    margin-top: 14px;
-    padding: 13px 18px;
+    margin-top: 12px;
+    padding: 10px 14px 12px 14px;
     border-radius: 12px;
     background: #090e18;
     border: 1px solid #1a2333;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     transition: all 0.2s ease;
   }
   .sg-mqtt-card.active-online,
   .sg-mqtt-card.active-mqtt {
-    border-color: rgba(16, 185, 129, 0.4);
+    border-color: rgba(16, 185, 129, 0.45);
+    box-shadow: 0 4px 18px rgba(16, 185, 129, 0.08);
   }
   .sg-mqtt-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding-bottom: 9px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   }
   .sg-mqtt-header-left {
     display: flex;
@@ -637,7 +661,7 @@
     min-width: 0;
   }
   .sg-mqtt-header-left h4 {
-    font-size: 0.90rem;
+    font-size: 0.92rem;
     font-weight: 700;
     color: #ffffff;
     margin: 0;
@@ -645,7 +669,7 @@
     white-space: nowrap;
   }
   .sg-mqtt-role {
-    font-size: 0.76rem;
+    font-size: 0.78rem;
     color: #8191a6;
     margin-left: 4px;
     white-space: nowrap;
@@ -658,85 +682,70 @@
     }
   }
 
-  /* Responsive 2-Tier Mobile Grid / 3-Column Desktop Grid */
+  /* 3. SLIM MQTT TELEMETRY CARD (Single-Row Streamlined Layout) */
   .sg-mqtt-data-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px 14px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .sg-mqtt-col-host {
+    grid-column: 1 / -1;
+  }
+  @media (min-width: 640px) {
+    .sg-mqtt-data-grid {
+      grid-template-columns: minmax(130px, 1.9fr) minmax(55px, 0.75fr) minmax(95px, 1.15fr) minmax(75px, 0.9fr) minmax(65px, 0.75fr);
+      gap: 8px;
+      align-items: stretch;
+    }
+    .sg-mqtt-col-host {
+      grid-column: auto;
+    }
   }
   .sg-mqtt-col {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     justify-content: center;
-    gap: 4px;
+    gap: 3px;
     min-width: 0;
-  }
-  .sg-mqtt-col-host {
-    grid-column: 1 / -1;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
+    background: #080c14;
+    border: 1px solid #1a2333;
+    border-radius: 8px;
+    padding: 7px 10px;
+    box-sizing: border-box;
   }
   .sg-mqtt-col-label {
-    font-size: 0.74rem;
+    font-size: 0.68rem;
     font-weight: 600;
     color: #8191a6;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
     white-space: nowrap;
+    line-height: 1.2;
   }
   .sg-mqtt-col-val {
     display: flex;
     align-items: center;
     gap: 6px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.90rem;
+    font-size: 0.88rem;
     font-weight: 700;
     color: #ffffff;
     min-width: 0;
     width: 100%;
+    line-height: 1.2;
   }
   .sg-mqtt-col-host .sg-mqtt-col-val {
-    display: flex;
-    align-items: center;
     justify-content: space-between;
-    width: 100%;
-    gap: 8px;
   }
-  .sg-mqtt-col-host .sg-mqtt-col-val span {
-    word-break: break-all;
-    white-space: normal;
-    line-height: 1.35;
-    overflow: visible;
-    text-overflow: clip;
-    font-size: 0.88rem;
-  }
-  .sg-mqtt-col-val span {
+  .sg-mqtt-host-val {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  @media (min-width: 768px) {
-    .sg-mqtt-data-grid {
-      grid-template-columns: 1.8fr 0.75fr 1.15fr 0.85fr 0.8fr;
-      gap: 16px;
-      align-items: center;
-    }
-    .sg-mqtt-col-host {
-      grid-column: auto;
-    }
-    .sg-mqtt-col-host .sg-mqtt-col-val {
-      justify-content: flex-start;
-    }
-    .sg-mqtt-col-host .sg-mqtt-col-val span {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      font-size: 0.90rem;
-    }
+    min-width: 0;
+    flex: 1 1 auto;
   }
 
   /* 4. TOAST NOTIFICATION */
@@ -784,6 +793,40 @@
   @media (max-width: 640px) {
     .content {
       padding: 16px 12px !important;
+    }
+    .sg-bento-grid {
+      grid-template-columns: minmax(0, 1fr) !important;
+      width: 100% !important;
+    }
+    .sg-panel-left, .sg-panel-right {
+      min-width: 0 !important;
+      max-width: 100% !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    .sg-version-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+      gap: 6px !important;
+      margin-top: 16px !important;
+    }
+    .sg-version-tile {
+      min-width: 0 !important;
+      overflow: hidden !important;
+      padding: 8px 3px !important;
+    }
+    .sg-version-tile-label {
+      font-size: 0.62rem !important;
+    }
+    .sg-version-tile-val {
+      font-size: 0.85rem !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+    }
+    .sg-diagnostic-tile {
+      width: 100% !important;
+      box-sizing: border-box !important;
+      min-width: 0 !important;
     }
     .sg-header-card {
       padding: 14px 16px;
@@ -850,13 +893,13 @@
   }
 </style>
 </head>
-<body>
+<body data-role="%user_role%">
   <div class="wrapper">
     <!-- Sidebar (Desktop) -->
     <aside class="sidebar">
       <div class="sidebar-wrapper">
         <div class="logo">
-          <img src="assets/img/logo.png" alt="IOTARU" class="sidebar-logo-img">
+          <img src="assets/img/logo.png" alt="Cubeacon" class="sidebar-logo-img">
         </div>
         <div class="user">
           <div class="user-avatar">
@@ -878,12 +921,6 @@
             </a>
           </li>
           <li>
-            <a href="/docs">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-              <span>Integration Docs</span>
-            </a>
-          </li>
-          <li>
             <a href="/log">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
               <span>System Logs</span>
@@ -901,6 +938,12 @@
               <span>Device Settings</span>
             </a>
           </li>
+<li class="nav-docs role-admin-only"><a href="/docs">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>Docs</span>
+            </a>
+          </li>
+
           <li>
             <a href="/firmware">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
@@ -934,7 +977,7 @@
       <header class="navbar">
         <div class="navbar-left">
           <a href="/" class="mobile-logo-link">
-            <img src="assets/img/logo.png" alt="IOTARU" class="mobile-logo-img">
+            <img src="assets/img/logo.png" alt="Cubeacon" class="mobile-logo-img">
           </a>
           <span class="navbar-brand">Gateway Overview</span>
         </div>
@@ -946,7 +989,7 @@
 
       <section class="content">
       <!-- PENDING REBOOT FLOATING BANNER (INDUSTRIAL SAFETY) -->
-      <div id="pendingRebootBanner" class="pending-reboot-banner">
+      <div id="pendingRebootBanner" class="pending-reboot-banner" style="display:none;">
         <div class="pending-banner-text">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
@@ -996,25 +1039,14 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 </script>
 <!-- ================= END AP MODE CONFIG BANNER COMPONENT ================= -->
         <!-- ========================================================================= -->
-        <!-- 1. SLIM HEADER CARD: SMART GUARD (%model%)                                -->
+        <!-- 1. PAGE HEADER STANDARD: GATEWAY OVERVIEW                                 -->
         <!-- ========================================================================= -->
-        <section class="sg-header-card">
-          <!-- Kiri: Ikon + Nama Perangkat & Deskripsi Sejajar -->
-          <div class="sg-header-left">
-            <div class="sg-chip-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect width="16" height="16" x="4" y="4" rx="2"/>
-                <rect width="6" height="6" x="9" y="9" rx="1"/>
-                <path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>
-              </svg>
-            </div>
-            <div class="sg-title-group">
-              <h2 class="sg-title">SMART GUARD (%model%)</h2>
-              <span class="sg-title-dot">•</span>
-              <p class="sg-subtitle">Industrial Smart BLE Beacon Gateway Controller</p>
-            </div>
+        <header class="head">
+          <div>
+            <h1>Gateway Overview</h1>
+            <p>Industrial smart BLE beacon gateway controller and real-time network telemetry.</p>
           </div>
-        </section>
+        </header>
 
         <!-- ========================================================================= -->
         <!-- 2. MODERN BENTO GRID (RESPONSIVE 12 KOLOM DESKTOP, 1 KOLOM MOBILE)        -->
@@ -1049,12 +1081,18 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                   <span class="sg-kv-value">%model%</span>
                 </div>
 
-                <!-- Manufacture -->
+                <!-- Scan Mode -->
                 <div class="sg-kv-row">
-                  <span class="sg-kv-label">Manufacturer</span>
-                  <div class="sg-kv-value">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                    <span>IoT Gateway</span>
+                  <span class="sg-kv-label">Scan Mode</span>
+                  <div class="sg-kv-value" style="display:flex;align-items:center;gap:6px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="%scan_mode_color%" stroke-width="2">
+                      <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+                      <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
+                      <circle cx="12" cy="12" r="2"/>
+                      <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+                      <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/>
+                    </svg>
+                    <span style="color:%scan_mode_color%;font-weight:700;">%scan_mode_text%</span>
                   </div>
                 </div>
 
@@ -1267,14 +1305,14 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                   </div>
                 </div>
 
-                <!-- Grid Data (2-Tier Mobile, 3-Col Desktop) -->
+                <!-- Single-Row Symmetrical 5-Column Grid -->
                 <div class="sg-mqtt-data-grid">
-                  <!-- Kolom 1: Broker Host (Full Width on Mobile) -->
+                  <!-- Kolom 1: Broker Host -->
                   <div class="sg-mqtt-col sg-mqtt-col-host">
                     <span class="sg-mqtt-col-label">Broker Host</span>
                     <div class="sg-mqtt-col-val">
-                      <span id="mqtt-broker-val">%mqtt_broker_host%</span>
-                      <button type="button" onclick="copyText(document.getElementById('mqtt-broker-val').textContent)" class="sg-copy-btn" title="Copy MQTT Broker Host">
+                      <span id="mqtt-broker-val" class="sg-mqtt-host-val" title="%mqtt_broker_host%">%mqtt_broker_host%</span>
+                      <button type="button" onclick="copyText(document.getElementById('mqtt-broker-val').getAttribute('title') || document.getElementById('mqtt-broker-val').textContent)" class="sg-copy-btn" title="Copy MQTT Broker Host">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                       </button>
                     </div>
@@ -1319,7 +1357,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
       </section>
 
       <footer>
-        &copy; <span id="year"></span> ESP32 Gateway (%model%). High-Reliability BLE Telemetry.
+        &copy; <span id="year"></span> Cubeacon Gateway (%model%). High-Reliability BLE Telemetry.
       </footer>
     </main>
 
@@ -1357,7 +1395,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
   <div id="toast" class="sg-toast">
     <div class="sg-toast-box">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-      <span id="toastMessage">Berhasil disalin ke clipboard!</span>
+      <span id="toastMessage">Copied to clipboard!</span>
     </div>
   </div>
 
@@ -1649,6 +1687,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
           }
           if (mqttBrokerVal && d.mqtt_host) {
             mqttBrokerVal.textContent = d.mqtt_host;
+            mqttBrokerVal.title = d.mqtt_host;
           }
           if (mqttPortVal && d.mqtt_port !== undefined) {
             mqttPortVal.textContent = d.mqtt_port;

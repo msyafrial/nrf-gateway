@@ -14,6 +14,8 @@ struct DropLogEntry {
     char time_str[24];      // Format waktu aktual: "YYYY-MM-DD HH:MM:SS" atau "+HH:MM:SS"
     char code[16];          // "iBeacon", "ibeacon_ext", "MQTT"
     char tag[24];           // Major-Minor "10001-00042" atau "10 pkt"
+    char mac[18];           // MAC address string "AA:BB:CC:DD:EE:FF"
+    char raw[85];           // 84 hex characters + null terminator
     int8_t rssi;            // Nilai sinyal dBm
     DropReason reason;      // Enum alasan drop
 };
@@ -26,12 +28,13 @@ struct DropSummaryStats {
     uint32_t major_mismatch;
     uint32_t queue_overflow;
     uint32_t mqtt_failed;
+    uint32_t unknown_format;
 };
 
 class DropLogService {
 public:
     static void init();
-    static void record(const char* code, const char* tag, int8_t rssi, DropReason reason, uint32_t count = 1);
+    static void record(const char* code, const char* tag, int8_t rssi, DropReason reason, uint32_t count = 1, const char* mac = nullptr, const char* raw = nullptr);
     static void record(const BeaconPacket& packet, DropReason reason, uint32_t count = 1);
 
     static size_t getLogs(DropLogEntry* outEntries, size_t maxCount);
