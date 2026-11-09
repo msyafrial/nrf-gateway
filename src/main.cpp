@@ -133,14 +133,19 @@ extern "C" void app_main(void) {
              startupScanMode, (startupScanMode == 2) ? "ACTIVE" : "PASSIVE");
 
     // Handshake pre-network: coba kirim dan tunggu respon ACK nRF52840 (maks ~3 detik jika nRF sedang booting)
+    bool nrfSynced = false;
     for (int retry = 0; retry < 12; ++retry) {
         Bsp::UartManager::sendScanCommand(startupScanMode);
         vTaskDelay(pdMS_TO_TICKS(250));
         if (Core::BeaconPipeline::getNrfScanState() == startupScanMode) {
             ESP_LOGI(TAG, "nRF52840 terverifikasi aktif & sinkron di mode %u setelah %d ms.",
                      startupScanMode, (retry + 1) * 250);
+            nrfSynced = true;
             break;
         }
+    }
+    if (!nrfSynced) {
+        ESP_LOGW(TAG, "nRF52840 belum merespons handshake (kabel terbalik / belum terpasang / nRF offline). Startup dilanjutkan, auto-retry berjalan di background...");
     }
 
     // 7. Inisialisasi Network Stack (Ethernet W5500 SPI DMA / Wi-Fi STA / SNTP)

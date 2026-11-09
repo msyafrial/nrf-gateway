@@ -939,9 +939,9 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
                 <select id="w_dhcp" name="w_dhcp" class="dhcp-selector" data-group="wifi">
 
-                  <option value="1" selected>DHCP (Automatic from Router)</option>
+                  <option value="1" %w_dhcp_1_selected%>DHCP (Automatic from Router)</option>
 
-                  <option value="0">Static IP (Manual)</option>
+                  <option value="0" %w_dhcp_0_selected%>Static IP (Manual)</option>
 
                 </select>
 
@@ -1081,9 +1081,9 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
                 <select id="eth_dhcp" name="eth_dhcp" class="dhcp-selector" data-group="eth">
 
-                  <option value="1" selected>DHCP (Automatic / Router Assigned)</option>
+                  <option value="1" %eth_dhcp_1_selected%>DHCP (Automatic / Router Assigned)</option>
 
-                  <option value="0">Static IP (Manual)</option>
+                  <option value="0" %eth_dhcp_0_selected%>Static IP (Manual)</option>
 
                 </select>
 

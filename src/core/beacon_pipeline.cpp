@@ -24,7 +24,7 @@ static size_t s_liveBeaconCount = 0;
 static DroppedBeaconItem s_droppedBeaconBuf[DROPPED_FIFO_MAX];
 static size_t s_droppedBeaconCount = 0;
 
-static std::atomic<uint8_t> s_nrfScanState{1}; // 1 = Passive bawaan
+static std::atomic<uint8_t> s_nrfScanState{0}; // 0 = STOPPED / Disconnected bawaan (hanya berubah saat terima ACK dari nRF)
 
 static std::atomic<uint32_t> s_dropTtlExpired{0};
 static std::atomic<uint32_t> s_dropRssiMin{0};

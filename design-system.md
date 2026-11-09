@@ -5130,3 +5130,22 @@ Setiap berkas master HTML terotentikasi (`index.html`, `test.html`, `log.html`, 
   - Total ukuran direktori `data/`: **509.206 bytes (~497.3 KB)**.
   - Line ending terverifikasi murni **Unix LF** (`\n`, 0 `\r`).
   - Headroom bebas partisi flash: **539.370 bytes (~51.4%)**.
+
+## 139. Sinkronisasi Template Static IP / DHCP Selector & Proteksi End-to-End Static IP (Wi-Fi & Ethernet)
+
+### 1. Latar Belakang & Analisis Akar Masalah (Root Cause)
+- **Bug Dropdown Mode IP (`/auth`)**: Elemen `<select id="w_dhcp">` dan `<select id="eth_dhcp">` di `data/auth.html` sebelumnya memiliki atribut `<option value="1" selected>` statis tanpa token template. Akibatnya, saat halaman `/auth` dimuat ulang ketika perangkat menggunakan Static IP (`w_dhcp = 0` atau `eth_dhcp = 0`), dropdown selalu kembali menampilkan **DHCP (Automatic)**, mengunci kolom input IPv4, dan menimpa konfigurasi Static IP kembali ke DHCP jika pengguna menekan tombol Save.
+- **Konflik Duplikasi Token `%eth_ip%` (`web_template.cpp`)**: Di `get_placeholder_value()`, cabang `key == "eth_ip"` didefinisikan dua kali: baris 113 memanggil fungsi status runtime `NetworkManager::getEthernetIp()` (`"Kabel Terputus (Link Down)"`), sedangkan baris 421 (`html_escape(g_config.eth_ip, ...)`) menjadi *dead code*. Akibatnya, input `#eth_ip` di `auth.html` terisi teks `"Kabel Terputus (Link Down)"` saat kabel LAN tidak terpasang.
+- **Kehilangan Static IP Ethernet Saat Hot-Plug Kabel LAN**: Pada `ETHERNET_EVENT_DISCONNECTED` (`net_manager.cpp`), pemanggilan `esp_netif_set_ip_info(eth_netif, &zero_ip)` menghapus Static IP menjadi `0.0.0.0` sementara DHCP client (`dhcpc`) dalam keadaan `STOPPED`, menyebabkan Ethernet kehilangan IP permanen saat kabel dicolok kembali.
+
+### 2. Spesifikasi Token Template & Perbaikan Arsitektur
+1. **Token Template Selector DHCP / Static IP (`web_template.cpp` & `data/auth.html`)**:
+   - `%w_dhcp%`: `"1"` (DHCP) atau `"0"` (Static IP).
+   - `%w_dhcp_1_selected%` / `%w_dhcp_0_selected%`: Mengisi atribut `selected` secara dinamis pada `<select id="w_dhcp">`.
+   - `%eth_dhcp%`: `"1"` (DHCP) atau `"0"` (Static IP).
+   - `%eth_dhcp_1_selected%` / `%eth_dhcp_0_selected%`: Mengisi atribut `selected` secara dinamis pada `<select id="eth_dhcp">`.
+   - `%eth_ip%`: Murni merender `g_config.eth_ip` untuk form konfigurasi (`auth.html`), sedangkan kartu status dashboard (`index.html`) menggunakan `%eth_ip_display%`.
+2. **Ketahanan Static IP Runtime (`net_manager.cpp`, `config_store.cpp`, `web_routes.cpp`)**:
+   - **Preservasi Static IP Saat Link Down**: Pada `ETHERNET_EVENT_DISCONNECTED`, reset `0.0.0.0` hanya dijalankan bila `g_config.eth_dhcp != 0`. Pada mode Static IP, `ip_info` dipertahankan di `eth_netif` agar `IP_EVENT_ETH_GOT_IP` otomatis terpicu saat kabel dicolok kembali.
+   - **Dukungan Static IP Lintas Mode & Secondary DNS Wi-Fi**: Static IP Ethernet tetap dihormati baik pada mode Ethernet maupun Wi-Fi, dan `w_dns2` diterapkan ke `ESP_NETIF_DNS_BACKUP` serta dipulihkan pada `restoreWifiDnsAndDefaultRoute()`.
+   - **Validasi IPv4 Backend & Self-Healing NVS**: Endpoint `/api/v1/config/auth` memvalidasi format IPv4 (`is_valid_ipv4`) sebelum komit NVS, dan `ConfigStore::loadConfig()` otomatis memulihkan field IPv4 yang korup ke default aman.

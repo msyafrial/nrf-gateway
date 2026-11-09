@@ -48,9 +48,13 @@ static void uartEventTask(void *pvParameters) {
                     uart_flush_input(UART_NUM_2);
                     xQueueReset(s_uartEventQueue);
                     break;
-                case UART_BREAK:
-                case UART_PARITY_ERR:
                 case UART_FRAME_ERR:
+                    ESP_LOGW(TAG, "UART Frame Error terdeteksi! Periksa jalur fisik (kabel TX/RX terbalik, floating GND, atau kontak kendor).");
+                    break;
+                case UART_PARITY_ERR:
+                    ESP_LOGW(TAG, "UART Parity Error terdeteksi!");
+                    break;
+                case UART_BREAK:
                 default:
                     break;
             }

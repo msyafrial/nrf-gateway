@@ -1,0 +1,228 @@
+#include "micro_dns_server.hpp"
+#include "lwip/sockets.h"
+#include "lwip/netdb.h"
+#include "lwip/ip_addr.h"
+#include "lwip/inet.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include <cstring>
+#include <cctype>
+
+static const char *TAG = "MICRO_DNS";
+
+namespace Iotaru::Network {
+
+struct __attribute__((packed)) DnsHeader {
+    uint16_t id;
+    uint16_t flags;
+    uint16_t qdcount;
+    uint16_t ancount;
+    uint16_t nscount;
+    uint16_t arcount;
+};
+
+static volatile bool s_running = false;
+static esp_netif_t*  s_netif = nullptr;
+static uint32_t      s_resolvedIp = 0xC0A80401; // 192.168.4.1 (Host Order)
+static TaskHandle_t  s_taskHandle = nullptr;
+
+bool MicroDnsServer::start(esp_netif_t* netif, uint32_t resolved_ip) {
+    if (s_running) {
+        return true;
+    }
+
+    s_netif = netif;
+    s_resolvedIp = resolved_ip;
+    s_running = true;
+
+    BaseType_t res = xTaskCreatePinnedToCore(
+        taskWorker,
+        "micro_dns_tsk",
+        2048, // 2 KB stack memadai untuk UDP DNS frame kecil tanpa heap malloc
+        nullptr,
+        3,    // Prioritas 3 (setara Web Server)
+        &s_taskHandle,
+        1     // Core 1
+    );
+
+    if (res != pdPASS) {
+        ESP_LOGE(TAG, "Gagal membuat task Micro-DNS!");
+        s_running = false;
+        return false;
+    }
+
+    ESP_LOGI(TAG, "Micro-DNS Server dimulai (Port 53 -> Resolv: 0x%08X)", (unsigned int)resolved_ip);
+    return true;
+}
+
+void MicroDnsServer::stop() {
+    if (!s_running) return;
+
+    s_running = false;
+
+    // Tunggu task berhenti dengan batas waktu 500ms
+    for (int i = 0; i < 25 && s_taskHandle != nullptr; ++i) {
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    s_taskHandle = nullptr;
+    ESP_LOGI(TAG, "Micro-DNS Server dihentikan");
+}
+
+bool MicroDnsServer::isRunning() {
+    return s_running;
+}
+
+void MicroDnsServer::taskWorker(void* arg) {
+    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock < 0) {
+        ESP_LOGE(TAG, "Gagal membuat socket UDP port 53: errno %d", errno);
+        s_running = false;
+        s_taskHandle = nullptr;
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    int opt = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    // Ikat ke interface SoftAP jika handle netif tersedia
+    if (s_netif != nullptr) {
+        char if_name[IFNAMSIZ] = {0};
+        if (esp_netif_get_netif_impl_name(s_netif, if_name) == ESP_OK && strlen(if_name) > 0) {
+            struct ifreq ifr = {};
+            strncpy(ifr.ifr_name, if_name, sizeof(ifr.ifr_name) - 1);
+            setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof(ifr));
+        }
+    }
+
+    // Timeout terima paket 500ms agar task rutin mengecek status s_running
+    struct timeval tv = {};
+    tv.tv_sec = 0;
+    tv.tv_usec = 500000;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    struct sockaddr_in bind_addr = {};
+    bind_addr.sin_family = AF_INET;
+    bind_addr.sin_port = htons(53); // DNS Port
+    bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if (bind(sock, (struct sockaddr*)&bind_addr, sizeof(bind_addr)) < 0) {
+        ESP_LOGE(TAG, "Gagal bind port 53: %d", errno);
+        close(sock);
+        s_running = false;
+        s_taskHandle = nullptr;
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    uint8_t rx_buf[384];
+    uint8_t tx_buf[384];
+
+    while (s_running) {
+        struct sockaddr_in from_addr;
+        socklen_t from_len = sizeof(from_addr);
+        int len = recvfrom(sock, rx_buf, sizeof(rx_buf), 0, (struct sockaddr*)&from_addr, &from_len);
+
+        if (len < (int)(sizeof(DnsHeader) + 5)) {
+            continue; // Paket terlalu pendek atau timeout
+        }
+
+        const DnsHeader* req_hdr = reinterpret_cast<const DnsHeader*>(rx_buf);
+        uint16_t flags = ntohs(req_hdr->flags);
+        if ((flags & 0x8000) != 0) {
+            continue; // Bukan query (abaikan paket respon)
+        }
+
+        uint16_t qdcount = ntohs(req_hdr->qdcount);
+        if (qdcount < 1) {
+            continue;
+        }
+
+        // Parse Question Name (QNAME)
+        size_t offset = sizeof(DnsHeader);
+        while (offset < (size_t)len && rx_buf[offset] != 0) {
+            uint8_t label_len = rx_buf[offset++];
+            if (label_len > 63 || (offset + label_len) > (size_t)len) {
+                break;
+            }
+            offset += label_len;
+        }
+
+        if (offset >= (size_t)len || rx_buf[offset] != 0) {
+            continue; // Malformed QNAME
+        }
+        offset++; // Lewati byte null terminasi 0x00
+
+        if (offset + 4 > (size_t)len) {
+            continue; // Kurang QTYPE atau QCLASS
+        }
+
+        uint16_t qtype = (static_cast<uint16_t>(rx_buf[offset]) << 8) | rx_buf[offset + 1];
+        offset += 4; // Lewati QTYPE (2B) dan QCLASS (2B)
+
+        // Salin Header & Question asli ke buffer balasan
+        memcpy(tx_buf, rx_buf, offset);
+        DnsHeader* res_hdr = reinterpret_cast<DnsHeader*>(tx_buf);
+
+        if (qtype == 1) {
+            // TIPE A (IPv4): Balas dengan IP SoftAP Gateway (192.168.4.1)
+            res_hdr->flags = htons(0x8180); // Response, Authoritative, Recursion Available, No Error
+            res_hdr->qdcount = htons(1);
+            res_hdr->ancount = htons(1);
+            res_hdr->nscount = 0;
+            res_hdr->arcount = 0;
+
+            size_t ans_offset = offset;
+            // Kompresi DNS Pointer ke QNAME (offset 12 = 0x000C)
+            tx_buf[ans_offset++] = 0xC0;
+            tx_buf[ans_offset++] = 0x0C;
+            // TYPE = A (0x0001)
+            tx_buf[ans_offset++] = 0x00;
+            tx_buf[ans_offset++] = 0x01;
+            // CLASS = IN (0x0001)
+            tx_buf[ans_offset++] = 0x00;
+            tx_buf[ans_offset++] = 0x01;
+            // TTL = 60 detik
+            tx_buf[ans_offset++] = 0x00;
+            tx_buf[ans_offset++] = 0x00;
+            tx_buf[ans_offset++] = 0x00;
+            tx_buf[ans_offset++] = 0x3C;
+            // RDLENGTH = 4 Byte
+            tx_buf[ans_offset++] = 0x00;
+            tx_buf[ans_offset++] = 0x04;
+            // RDATA = Alamat IPv4 Big-Endian
+            uint32_t ip_be = htonl(s_resolvedIp);
+            memcpy(&tx_buf[ans_offset], &ip_be, 4);
+            ans_offset += 4;
+
+            sendto(sock, tx_buf, ans_offset, 0, (struct sockaddr*)&from_addr, from_len);
+        } else if (qtype == 28) {
+            // TIPE AAAA (IPv6): Balas NOERROR dengan 0 Answer agar klien segera fallback ke IPv4
+            res_hdr->flags = htons(0x8180);
+            res_hdr->qdcount = htons(1);
+            res_hdr->ancount = 0;
+            res_hdr->nscount = 0;
+            res_hdr->arcount = 0;
+
+            sendto(sock, tx_buf, offset, 0, (struct sockaddr*)&from_addr, from_len);
+        } else {
+            // Tipe lain: Kembalikan respon NXDOMAIN
+            res_hdr->flags = htons(0x8183); // NXDOMAIN
+            res_hdr->qdcount = htons(1);
+            res_hdr->ancount = 0;
+            res_hdr->nscount = 0;
+            res_hdr->arcount = 0;
+
+            sendto(sock, tx_buf, offset, 0, (struct sockaddr*)&from_addr, from_len);
+        }
+    }
+
+    close(sock);
+    s_running = false;
+    s_taskHandle = nullptr;
+    vTaskDelete(nullptr);
+}
+
+} // namespace Iotaru::Network
+

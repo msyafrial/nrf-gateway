@@ -535,6 +535,31 @@ static inline bool is_masked_or_empty(const char* val) {
     return false;
 }
 
+static bool is_valid_ipv4(const char* s, bool is_mask = false) {
+    if (!s || s[0] == '\0') return false;
+    int dots = 0, val = 0, digits = 0;
+    uint32_t packed = 0;
+    for (const char* p = s; *p != '\0'; ++p) {
+        if (*p == '.') {
+            if (digits == 0 || dots >= 3) return false;
+            packed = (packed << 8) | static_cast<uint32_t>(val);
+            dots++;
+            val = 0;
+            digits = 0;
+        } else if (*p >= '0' && *p <= '9') {
+            val = val * 10 + (*p - '0');
+            if (++digits > 3 || val > 255) return false;
+        } else {
+            return false;
+        }
+    }
+    if (dots != 3 || digits == 0) return false;
+    packed = (packed << 8) | static_cast<uint32_t>(val);
+    if (packed == 0) return false;
+    if (!is_mask && packed == 0xFFFFFFFFUL) return false;
+    return true;
+}
+
 static esp_err_t api_config_auth_handler(httpd_req_t *req) {
     UserRole role = Session::validate(req);
     if (role == UserRole::NONE) {
@@ -644,19 +669,83 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
             strlcpy(g_config.w_password, val, sizeof(g_config.w_password));
         }
     }
-    if (get_form_param(body, "w_dhcp", val, sizeof(val))) g_config.w_dhcp = atoi(val);
-    if (get_form_param(body, "w_ip", val, sizeof(val))) strlcpy(g_config.w_ip, val, sizeof(g_config.w_ip));
-    if (get_form_param(body, "w_gateway", val, sizeof(val))) strlcpy(g_config.w_gateway, val, sizeof(g_config.w_gateway));
-    if (get_form_param(body, "w_subnet", val, sizeof(val))) strlcpy(g_config.w_subnet, val, sizeof(g_config.w_subnet));
-    if (get_form_param(body, "w_dns", val, sizeof(val))) strlcpy(g_config.w_dns, val, sizeof(g_config.w_dns));
-    if (get_form_param(body, "w_dns2", val, sizeof(val))) strlcpy(g_config.w_dns2, val, sizeof(g_config.w_dns2));
+    if (get_form_param(body, "w_dhcp", val, sizeof(val))) g_config.w_dhcp = (atoi(val) != 0) ? 1 : 0;
+    if (get_form_param(body, "w_ip", val, sizeof(val))) {
+        if (is_valid_ipv4(val)) {
+            strlcpy(g_config.w_ip, val, sizeof(g_config.w_ip));
+        } else if (g_config.w_dhcp == 0) {
+            httpd_resp_set_status(req, "400 Bad Request");
+            httpd_resp_send(req, "Invalid Wi-Fi Static IPv4 address format.", HTTPD_RESP_USE_STRLEN);
+            return ESP_OK;
+        }
+    }
+    if (get_form_param(body, "w_gateway", val, sizeof(val))) {
+        if (is_valid_ipv4(val)) {
+            strlcpy(g_config.w_gateway, val, sizeof(g_config.w_gateway));
+        } else if (g_config.w_dhcp == 0) {
+            httpd_resp_set_status(req, "400 Bad Request");
+            httpd_resp_send(req, "Invalid Wi-Fi Gateway IPv4 address format.", HTTPD_RESP_USE_STRLEN);
+            return ESP_OK;
+        }
+    }
+    if (get_form_param(body, "w_subnet", val, sizeof(val))) {
+        if (is_valid_ipv4(val, true)) {
+            strlcpy(g_config.w_subnet, val, sizeof(g_config.w_subnet));
+        } else if (g_config.w_dhcp == 0) {
+            httpd_resp_set_status(req, "400 Bad Request");
+            httpd_resp_send(req, "Invalid Wi-Fi Subnet Mask format.", HTTPD_RESP_USE_STRLEN);
+            return ESP_OK;
+        }
+    }
+    if (get_form_param(body, "w_dns", val, sizeof(val))) {
+        if (val[0] == '\0' || is_valid_ipv4(val)) {
+            strlcpy(g_config.w_dns, val, sizeof(g_config.w_dns));
+        }
+    }
+    if (get_form_param(body, "w_dns2", val, sizeof(val))) {
+        if (val[0] == '\0' || is_valid_ipv4(val)) {
+            strlcpy(g_config.w_dns2, val, sizeof(g_config.w_dns2));
+        }
+    }
 
-    if (get_form_param(body, "eth_dhcp", val, sizeof(val))) g_config.eth_dhcp = atoi(val);
-    if (get_form_param(body, "eth_ip", val, sizeof(val))) strlcpy(g_config.eth_ip, val, sizeof(g_config.eth_ip));
-    if (get_form_param(body, "eth_gateway", val, sizeof(val))) strlcpy(g_config.eth_gateway, val, sizeof(g_config.eth_gateway));
-    if (get_form_param(body, "eth_subnet", val, sizeof(val))) strlcpy(g_config.eth_subnet, val, sizeof(g_config.eth_subnet));
-    if (get_form_param(body, "eth_dns", val, sizeof(val))) strlcpy(g_config.eth_dns, val, sizeof(g_config.eth_dns));
-    if (get_form_param(body, "eth_dns2", val, sizeof(val))) strlcpy(g_config.eth_dns2, val, sizeof(g_config.eth_dns2));
+    if (get_form_param(body, "eth_dhcp", val, sizeof(val))) g_config.eth_dhcp = (atoi(val) != 0) ? 1 : 0;
+    if (get_form_param(body, "eth_ip", val, sizeof(val))) {
+        if (is_valid_ipv4(val)) {
+            strlcpy(g_config.eth_ip, val, sizeof(g_config.eth_ip));
+        } else if (g_config.eth_dhcp == 0) {
+            httpd_resp_set_status(req, "400 Bad Request");
+            httpd_resp_send(req, "Invalid Ethernet Static IPv4 address format.", HTTPD_RESP_USE_STRLEN);
+            return ESP_OK;
+        }
+    }
+    if (get_form_param(body, "eth_gateway", val, sizeof(val))) {
+        if (is_valid_ipv4(val)) {
+            strlcpy(g_config.eth_gateway, val, sizeof(g_config.eth_gateway));
+        } else if (g_config.eth_dhcp == 0) {
+            httpd_resp_set_status(req, "400 Bad Request");
+            httpd_resp_send(req, "Invalid Ethernet Gateway IPv4 address format.", HTTPD_RESP_USE_STRLEN);
+            return ESP_OK;
+        }
+    }
+    if (get_form_param(body, "eth_subnet", val, sizeof(val))) {
+        if (is_valid_ipv4(val, true)) {
+            strlcpy(g_config.eth_subnet, val, sizeof(g_config.eth_subnet));
+        } else if (g_config.eth_dhcp == 0) {
+            httpd_resp_set_status(req, "400 Bad Request");
+            httpd_resp_send(req, "Invalid Ethernet Subnet Mask format.", HTTPD_RESP_USE_STRLEN);
+            return ESP_OK;
+        }
+    }
+    if (get_form_param(body, "eth_dns", val, sizeof(val))) {
+        if (val[0] == '\0' || is_valid_ipv4(val)) {
+            strlcpy(g_config.eth_dns, val, sizeof(g_config.eth_dns));
+        }
+    }
+    if (get_form_param(body, "eth_dns2", val, sizeof(val))) {
+        if (val[0] == '\0' || is_valid_ipv4(val)) {
+            strlcpy(g_config.eth_dns2, val, sizeof(g_config.eth_dns2));
+        }
+    }
 
     Core::ConfigStore::saveConfigAuth();
     s_auth_reboot_required = true;

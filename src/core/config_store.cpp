@@ -288,6 +288,31 @@ bool matchMajorFilter(uint16_t beaconMajor, std::string_view filterStr) {
 
 namespace Iotaru::Core {
 
+static bool isValidIpv4Str(const char* s, bool isMask = false) {
+    if (!s || s[0] == '\0') return false;
+    int dots = 0, val = 0, digits = 0;
+    uint32_t packed = 0;
+    for (const char* p = s; *p != '\0'; ++p) {
+        if (*p == '.') {
+            if (digits == 0 || dots >= 3) return false;
+            packed = (packed << 8) | static_cast<uint32_t>(val);
+            dots++;
+            val = 0;
+            digits = 0;
+        } else if (*p >= '0' && *p <= '9') {
+            val = val * 10 + (*p - '0');
+            if (++digits > 3 || val > 255) return false;
+        } else {
+            return false;
+        }
+    }
+    if (dots != 3 || digits == 0) return false;
+    packed = (packed << 8) | static_cast<uint32_t>(val);
+    if (packed == 0) return false;
+    if (!isMask && packed == 0xFFFFFFFFUL) return false;
+    return true;
+}
+
 static void nvsGetStr(nvs_handle_t handle, const char* key, char* outBuf, size_t maxLen, const char* defVal) {
     size_t reqLen = maxLen;
     if (nvs_get_str(handle, key, outBuf, &reqLen) != ESP_OK || reqLen == 0) {
@@ -555,7 +580,7 @@ void ConfigStore::loadConfig() {
     ESP_LOGI(TAG, "Auth Config Aktif: Admin='%s', Engineer='%s'", g_config.admin_user, g_config.user_user);
 
     // cfg_net
-    if (nvs_open("cfg_net", NVS_READONLY, &h) == ESP_OK) {
+    if (nvs_open("cfg_net", NVS_READWRITE, &h) == ESP_OK) {
         g_config.connection_mode = (int)nvsGetU32(h, "mode", 1);
         nvsGetStr(h, "w_ssid", g_config.w_ssid, sizeof(g_config.w_ssid), "");
         nvsGetStr(h, "w_pass", g_config.w_password, sizeof(g_config.w_password), "");
@@ -572,6 +597,25 @@ void ConfigStore::loadConfig() {
         nvsGetStr(h, "eth_dns", g_config.eth_dns, sizeof(g_config.eth_dns), "8.8.8.8");
         nvsGetStr(h, "eth_dns2", g_config.eth_dns2, sizeof(g_config.eth_dns2), "");
         nvsGetStr(h, "ap_pass", g_config.ap_password, sizeof(g_config.ap_password), "12345678");
+
+        // Self-healing jika ada field IP di NVS yang korup atau berisi string non-IP
+        bool healedNet = false;
+        if (!isValidIpv4Str(g_config.w_ip)) { strlcpy(g_config.w_ip, "192.168.1.100", sizeof(g_config.w_ip)); nvs_set_str(h, "w_ip", g_config.w_ip); healedNet = true; }
+        if (!isValidIpv4Str(g_config.w_gateway)) { strlcpy(g_config.w_gateway, "192.168.1.1", sizeof(g_config.w_gateway)); nvs_set_str(h, "w_gw", g_config.w_gateway); healedNet = true; }
+        if (!isValidIpv4Str(g_config.w_subnet, true)) { strlcpy(g_config.w_subnet, "255.255.255.0", sizeof(g_config.w_subnet)); nvs_set_str(h, "w_sn", g_config.w_subnet); healedNet = true; }
+        if (g_config.w_dns[0] != '\0' && !isValidIpv4Str(g_config.w_dns)) { strlcpy(g_config.w_dns, "8.8.8.8", sizeof(g_config.w_dns)); nvs_set_str(h, "w_dns", g_config.w_dns); healedNet = true; }
+        if (g_config.w_dns2[0] != '\0' && !isValidIpv4Str(g_config.w_dns2)) { g_config.w_dns2[0] = '\0'; nvs_set_str(h, "w_dns2", ""); healedNet = true; }
+
+        if (!isValidIpv4Str(g_config.eth_ip)) { strlcpy(g_config.eth_ip, "192.168.1.150", sizeof(g_config.eth_ip)); nvs_set_str(h, "eth_ip", g_config.eth_ip); healedNet = true; }
+        if (!isValidIpv4Str(g_config.eth_gateway)) { strlcpy(g_config.eth_gateway, "192.168.1.1", sizeof(g_config.eth_gateway)); nvs_set_str(h, "eth_gw", g_config.eth_gateway); healedNet = true; }
+        if (!isValidIpv4Str(g_config.eth_subnet, true)) { strlcpy(g_config.eth_subnet, "255.255.255.0", sizeof(g_config.eth_subnet)); nvs_set_str(h, "eth_sn", g_config.eth_subnet); healedNet = true; }
+        if (g_config.eth_dns[0] != '\0' && !isValidIpv4Str(g_config.eth_dns)) { strlcpy(g_config.eth_dns, "8.8.8.8", sizeof(g_config.eth_dns)); nvs_set_str(h, "eth_dns", g_config.eth_dns); healedNet = true; }
+        if (g_config.eth_dns2[0] != '\0' && !isValidIpv4Str(g_config.eth_dns2)) { g_config.eth_dns2[0] = '\0'; nvs_set_str(h, "eth_dns2", ""); healedNet = true; }
+
+        if (healedNet) {
+            nvs_commit(h);
+            ESP_LOGW(TAG, "Self-healing cfg_net: memulihkan field IPv4 yang tidak valid ke default aman.");
+        }
         nvs_close(h);
     }
 

@@ -1,5 +1,6 @@
 #include "net_manager.hpp"
 #include "micro_dhcp_server.hpp"
+#include "micro_dns_server.hpp"
 #include "udp_discovery.hpp"
 #include "mqtt_service.hpp"
 #include "net_log_service.hpp"
@@ -83,8 +84,7 @@ static void restoreWifiDnsAndDefaultRoute() {
         bool has_dns = false;
         if (esp_netif_get_dns_info(s_staNetif, ESP_NETIF_DNS_MAIN, &dns_info) == ESP_OK && dns_info.ip.u_addr.ip4.addr != 0) {
             has_dns = true;
-        } else if (strlen(g_config.w_dns) > 0) {
-            esp_netif_str_to_ip4(g_config.w_dns, &dns_info.ip.u_addr.ip4);
+        } else if (strlen(g_config.w_dns) > 0 && esp_netif_str_to_ip4(g_config.w_dns, &dns_info.ip.u_addr.ip4) == ESP_OK && dns_info.ip.u_addr.ip4.addr != 0) {
             dns_info.ip.type = ESP_IPADDR_TYPE_V4;
             has_dns = true;
         } else {
@@ -99,8 +99,20 @@ static void restoreWifiDnsAndDefaultRoute() {
             ip_addr_set_ip4_u32(&lwip_dns, dns_info.ip.u_addr.ip4.addr);
             dns_setserver(0, &lwip_dns);
 
+            esp_netif_dns_info_t dns2_info = {};
             ip_addr_t lwip_dns2;
-            ip_addr_set_ip4_u32(&lwip_dns2, PP_HTONL(0x01010101)); // Cloudflare 1.1.1.1
+            if (!g_config.w_dhcp && strlen(g_config.w_dns2) > 0 &&
+                esp_netif_str_to_ip4(g_config.w_dns2, &dns2_info.ip.u_addr.ip4) == ESP_OK &&
+                dns2_info.ip.u_addr.ip4.addr != 0) {
+                dns2_info.ip.type = ESP_IPADDR_TYPE_V4;
+                esp_netif_set_dns_info(s_staNetif, ESP_NETIF_DNS_BACKUP, &dns2_info);
+                ip_addr_set_ip4_u32(&lwip_dns2, dns2_info.ip.u_addr.ip4.addr);
+            } else if (esp_netif_get_dns_info(s_staNetif, ESP_NETIF_DNS_BACKUP, &dns2_info) == ESP_OK &&
+                       dns2_info.ip.u_addr.ip4.addr != 0) {
+                ip_addr_set_ip4_u32(&lwip_dns2, dns2_info.ip.u_addr.ip4.addr);
+            } else {
+                ip_addr_set_ip4_u32(&lwip_dns2, PP_HTONL(0x01010101)); // Cloudflare 1.1.1.1 fallback
+            }
             dns_setserver(1, &lwip_dns2);
         }
         ESP_LOGI(TAG, "Default Netif dikunci ke Wi-Fi STA dan DNS dipulihkan (Main & Backup).");
@@ -254,6 +266,9 @@ void NetworkManager::onWifiEvent(void* arg, esp_event_base_t base, int32_t id, v
                 ESP_LOGI(TAG, "Klien terhubung ke SoftAP: MAC=%02X:%02X:%02X:%02X:%02X:%02X, AID=%d",
                          e->mac[0], e->mac[1], e->mac[2], e->mac[3], e->mac[4], e->mac[5], e->aid);
                 recordApActivity();
+                if (s_apNetif != nullptr) {
+                    mdns_netif_action(s_apNetif, MDNS_EVENT_ANNOUNCE_IP4);
+                }
                 char det[80];
                 snprintf(det, sizeof(det), "Klien terhubung (MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
                          e->mac[0], e->mac[1], e->mac[2], e->mac[3], e->mac[4], e->mac[5]);
@@ -393,8 +408,13 @@ void NetworkManager::onIpEvent(void* arg, esp_event_base_t base, int32_t id, voi
         snprintf(det, sizeof(det), "IP: %s | GW: %s", ip_str, gw_str);
         NetLogService::log((id == IP_EVENT_STA_GOT_IP) ? NetCategory::WIFI : NetCategory::ETHERNET, NetEvent::GOT_IP, det);
 
-        // Aktifkan mDNS saat koneksi IP diperoleh
+        // Aktifkan & umumkan mDNS saat koneksi IP diperoleh
         initMdns();
+        esp_netif_t* cur_netif = (id == IP_EVENT_STA_GOT_IP) ? s_staNetif : (s_ethDriver ? s_ethDriver->getNetif() : nullptr);
+        if (cur_netif != nullptr) {
+            mdns_netif_action(cur_netif, MDNS_EVENT_ENABLE_IP4);
+            mdns_netif_action(cur_netif, MDNS_EVENT_ANNOUNCE_IP4);
+        }
 
         // Bangunkan MQTT Client seketika hanya jika koneksi IP berasal dari uplink aktif sesuai mode
         if (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI)) {
@@ -419,17 +439,20 @@ void NetworkManager::onEthEvent(void* arg, esp_event_base_t base, int32_t id, vo
                 // Beri waktu 10-12 detik untuk kedua mode agar router/switch kantor/rumah sempat handshake DHCP
                 s_ethProbeTimeoutMs = 10000 + jitter;
                 s_ethProbeStartMs = (uint32_t)(esp_timer_get_time() / 1000);
-                s_ethFsmState = EthFsmState::PROBING;
+                s_ethFsmState = (!g_config.eth_dhcp && strlen(g_config.eth_ip) > 0) ? EthFsmState::ROUTER_LAN : EthFsmState::PROBING;
 
                 esp_netif_t* eth_netif = s_ethDriver ? s_ethDriver->getNetif() : nullptr;
                 if (eth_netif) {
                     char hostname[64];
                     getMdnsHostname(hostname, sizeof(hostname));
                     esp_netif_set_hostname(eth_netif, hostname);
+                    initMdns();
+                    mdns_netif_action(eth_netif, MDNS_EVENT_ENABLE_IP4);
+                    mdns_netif_action(eth_netif, MDNS_EVENT_ANNOUNCE_IP4);
                     UdpDiscoveryService::start(eth_netif);
                 }
-                ESP_LOGI(TAG, "Ethernet Link Up terdeteksi. FSM: PROBING (Timeout: %lu ms)...",
-                         (unsigned long)s_ethProbeTimeoutMs);
+                ESP_LOGI(TAG, "Ethernet Link Up terdeteksi. Mode: %s...",
+                         (s_ethFsmState == EthFsmState::ROUTER_LAN) ? "STATIC_IP" : "DHCP_PROBING");
                 break;
             }
 
@@ -444,7 +467,9 @@ void NetworkManager::onEthEvent(void* arg, esp_event_base_t base, int32_t id, vo
                 Bsp::LedManager::autoSync(isLinkUp(), isConnected(), MqttService::isConnected(), s_apActive);
 
                 esp_netif_t* eth_netif = s_ethDriver ? s_ethDriver->getNetif() : nullptr;
-                if (eth_netif) {
+                // Hanya reset IP ke 0.0.0.0 jika menggunakan DHCP Client; pada mode Static IP pertahankan ip_info
+                // agar saat kabel dicolok kembali (ETHERNET_EVENT_CONNECTED) esp_netif otomatis memicu IP_EVENT_ETH_GOT_IP.
+                if (eth_netif && g_config.eth_dhcp != 0) {
                     esp_netif_ip_info_t zero_ip = {};
                     esp_netif_set_ip_info(eth_netif, &zero_ip);
                 }
@@ -479,6 +504,9 @@ void NetworkManager::init(IEthernetDriver* driver) {
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &onIpEvent, nullptr));
     ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &onEthEvent, nullptr));
 
+    // Inisialisasi mDNS sedini mungkin agar memantau event seluruh netif (STA, AP, ETH)
+    initMdns();
+
     bool ethPreferred = (g_config.connection_mode == static_cast<int>(ConnectionMode::ETHERNET));
 
     bool ethStarted = false;
@@ -488,13 +516,14 @@ void NetworkManager::init(IEthernetDriver* driver) {
         esp_ip4_addr_t ip = {}, gw = {}, mask = {}, dns = {}, dns2 = {};
         bool use_dhcp = true;
 
-        if (ethPreferred) {
-            if (!g_config.eth_dhcp && strlen(g_config.eth_ip) > 0) {
-                esp_netif_str_to_ip4(g_config.eth_ip, &ip);
+        if (!g_config.eth_dhcp && strlen(g_config.eth_ip) > 0) {
+            if (esp_netif_str_to_ip4(g_config.eth_ip, &ip) == ESP_OK && ip.addr != 0) {
                 esp_netif_str_to_ip4(g_config.eth_gateway, &gw);
-                esp_netif_str_to_ip4(g_config.eth_subnet, &mask);
-                if (strlen(g_config.eth_dns) > 0) {
-                    esp_netif_str_to_ip4(g_config.eth_dns, &dns);
+                if (esp_netif_str_to_ip4(g_config.eth_subnet, &mask) != ESP_OK || mask.addr == 0) {
+                    IP4_ADDR(&mask, 255, 255, 255, 0);
+                }
+                if (strlen(g_config.eth_dns) > 0 && esp_netif_str_to_ip4(g_config.eth_dns, &dns) == ESP_OK && dns.addr != 0) {
+                    // Primary DNS Ethernet valid
                 } else {
                     dns = gw;
                 }
@@ -502,10 +531,9 @@ void NetworkManager::init(IEthernetDriver* driver) {
                     esp_netif_str_to_ip4(g_config.eth_dns2, &dns2);
                 }
                 use_dhcp = false;
+            } else {
+                ESP_LOGW(TAG, "Format Static IP Ethernet ('%s') tidak valid! Fallback ke DHCP Client.", g_config.eth_ip);
             }
-        } else {
-            // Mode Wi-Fi: Ethernet siaga sebagai DHCP client untuk Direct LAN Maintenance Port
-            use_dhcp = true;
         }
 
         char hostname[64];
@@ -586,21 +614,40 @@ void NetworkManager::initWifiStation() {
 
     // Static IP jika DHCP tidak diaktifkan
     if (!g_config.w_dhcp && strlen(g_config.w_ip) > 0) {
-        esp_netif_dhcpc_stop(s_staNetif);
         esp_netif_ip_info_t ip_info = {};
-        esp_netif_str_to_ip4(g_config.w_ip, &ip_info.ip);
-        esp_netif_str_to_ip4(g_config.w_gateway, &ip_info.gw);
-        esp_netif_str_to_ip4(g_config.w_subnet, &ip_info.netmask);
-        esp_netif_set_ip_info(s_staNetif, &ip_info);
+        if (esp_netif_str_to_ip4(g_config.w_ip, &ip_info.ip) == ESP_OK && ip_info.ip.addr != 0) {
+            esp_netif_str_to_ip4(g_config.w_gateway, &ip_info.gw);
+            if (esp_netif_str_to_ip4(g_config.w_subnet, &ip_info.netmask) != ESP_OK || ip_info.netmask.addr == 0) {
+                IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
+            }
+            esp_netif_dhcpc_stop(s_staNetif);
+            esp_netif_set_ip_info(s_staNetif, &ip_info);
 
-        esp_netif_dns_info_t dns_info = {};
-        if (strlen(g_config.w_dns) > 0) {
-            esp_netif_str_to_ip4(g_config.w_dns, &dns_info.ip.u_addr.ip4);
+            esp_netif_dns_info_t dns_info = {};
+            if (strlen(g_config.w_dns) > 0 && esp_netif_str_to_ip4(g_config.w_dns, &dns_info.ip.u_addr.ip4) == ESP_OK && dns_info.ip.u_addr.ip4.addr != 0) {
+                // Primary DNS dari konfigurasi
+            } else if (ip_info.gw.addr != 0) {
+                dns_info.ip.u_addr.ip4 = ip_info.gw;
+            } else {
+                IP4_ADDR(&dns_info.ip.u_addr.ip4, 8, 8, 8, 8);
+            }
+            dns_info.ip.type = ESP_IPADDR_TYPE_V4;
+            esp_netif_set_dns_info(s_staNetif, ESP_NETIF_DNS_MAIN, &dns_info);
+
+            if (strlen(g_config.w_dns2) > 0) {
+                esp_netif_dns_info_t dns2_info = {};
+                if (esp_netif_str_to_ip4(g_config.w_dns2, &dns2_info.ip.u_addr.ip4) == ESP_OK && dns2_info.ip.u_addr.ip4.addr != 0) {
+                    dns2_info.ip.type = ESP_IPADDR_TYPE_V4;
+                    esp_netif_set_dns_info(s_staNetif, ESP_NETIF_DNS_BACKUP, &dns2_info);
+                }
+            }
+
+            initMdns();
+            mdns_netif_action(s_staNetif, MDNS_EVENT_ENABLE_IP4);
+            mdns_netif_action(s_staNetif, MDNS_EVENT_ANNOUNCE_IP4);
         } else {
-            dns_info.ip.u_addr.ip4 = ip_info.gw;
+            ESP_LOGW(TAG, "Format Static IP Wi-Fi ('%s') tidak valid! Fallback ke DHCP Client.", g_config.w_ip);
         }
-        dns_info.ip.type = ESP_IPADDR_TYPE_V4;
-        esp_netif_set_dns_info(s_staNetif, ESP_NETIF_DNS_MAIN, &dns_info);
     }
 
     ESP_ERROR_CHECK(esp_wifi_start());
@@ -677,6 +724,17 @@ void NetworkManager::startConfigAP() {
     esp_wifi_set_max_tx_power(78);
     ESP_LOGI(TAG, "SoftAP aktif: SSID='%s' | IP=192.168.4.1", ap_config.ap.ssid);
 
+    // Aktifkan mDNS & Hostname pada interface SoftAP
+    initMdns();
+    char hostname[64];
+    getMdnsHostname(hostname, sizeof(hostname));
+    esp_netif_set_hostname(s_apNetif, hostname);
+    mdns_netif_action(s_apNetif, MDNS_EVENT_ENABLE_IP4);
+    mdns_netif_action(s_apNetif, MDNS_EVENT_ANNOUNCE_IP4);
+
+    // Mulai Micro DNS Server pada port 53 untuk klien HP Android / Windows
+    MicroDnsServer::start(s_apNetif, 0xC0A80401);
+
     char det[80];
     snprintf(det, sizeof(det), "Hotspot aktif: SSID %s (IP 192.168.4.1)", ap_config.ap.ssid);
     NetLogService::log(NetCategory::SOFTAP, NetEvent::STARTED, det);
@@ -688,6 +746,11 @@ void NetworkManager::stopConfigAP() {
         s_manualConfigMode = false;
         s_apActive = false;
         s_pendingApStopMillis = 0;
+
+        MicroDnsServer::stop();
+        if (s_apNetif != nullptr) {
+            mdns_netif_action(s_apNetif, MDNS_EVENT_DISABLE_IP4);
+        }
 
         NetLogService::log(NetCategory::SOFTAP, NetEvent::STOPPED, "Hotspot konfigurasi dinonaktifkan");
 
@@ -1310,6 +1373,10 @@ void NetworkManager::checkEthernetFallback() {
 
             // Inisialisasi mDNS pada IP baru
             initMdns();
+            if (eth_netif) {
+                mdns_netif_action(eth_netif, MDNS_EVENT_ENABLE_IP4);
+                mdns_netif_action(eth_netif, MDNS_EVENT_ANNOUNCE_IP4);
+            }
         }
     } else if (s_ethFsmState == EthFsmState::DIRECT_PC) {
         // Pada mode Ethernet: jika belum ada PC yang mengambil lease setelah 30 detik, re-probe router kantor

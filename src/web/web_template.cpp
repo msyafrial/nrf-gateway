@@ -110,8 +110,6 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len, 
         Network::NetworkManager::getWifiIp(out_buf, max_len);
     } else if (key == "wifi_mac") {
         Network::NetworkManager::getWifiMac(out_buf, max_len);
-    } else if (key == "eth_ip") {
-        Network::NetworkManager::getEthernetIp(out_buf, max_len);
     } else if (key == "eth_mac") {
         Network::NetworkManager::getEthernetMac(out_buf, max_len);
     } else if (key == "eth_tiles_style") {
@@ -408,6 +406,12 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len, 
         html_escape(g_config.w_ssid, out_buf, max_len);
     } else if (key == "w_password") {
         snprintf(out_buf, max_len, "••••••••");
+    } else if (key == "w_dhcp") {
+        snprintf(out_buf, max_len, "%d", g_config.w_dhcp ? 1 : 0);
+    } else if (key == "w_dhcp_1_selected") {
+        snprintf(out_buf, max_len, "%s", (g_config.w_dhcp != 0) ? "selected" : "");
+    } else if (key == "w_dhcp_0_selected") {
+        snprintf(out_buf, max_len, "%s", (g_config.w_dhcp == 0) ? "selected" : "");
     } else if (key == "w_ip") {
         html_escape(g_config.w_ip, out_buf, max_len);
     } else if (key == "w_gateway") {
@@ -418,6 +422,12 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len, 
         html_escape(g_config.w_dns, out_buf, max_len);
     } else if (key == "w_dns2") {
         html_escape(g_config.w_dns2, out_buf, max_len);
+    } else if (key == "eth_dhcp") {
+        snprintf(out_buf, max_len, "%d", g_config.eth_dhcp ? 1 : 0);
+    } else if (key == "eth_dhcp_1_selected") {
+        snprintf(out_buf, max_len, "%s", (g_config.eth_dhcp != 0) ? "selected" : "");
+    } else if (key == "eth_dhcp_0_selected") {
+        snprintf(out_buf, max_len, "%s", (g_config.eth_dhcp == 0) ? "selected" : "");
     } else if (key == "eth_ip") {
         html_escape(g_config.eth_ip, out_buf, max_len);
     } else if (key == "eth_gateway") {
@@ -835,3 +845,4 @@ esp_err_t stream_template_file(httpd_req_t *req, const char *filepath) {
 }
 
 } // namespace Iotaru::Web::Template
+
