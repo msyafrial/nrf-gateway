@@ -12,8 +12,11 @@ public:
     static void initMetadata();
     static void initNvsConfiguration();
     static void loadConfig();
+    static void loadConfigFromNvs(AppConfig& targetCfg, bool allowMigration = false);
     static void saveConfigAuth();
+    static void saveConfigAuth(const AppConfig& srcCfg);
     static void saveConfigSettings();
+    static void saveConfigSettings(const AppConfig& srcCfg);
     static void resetConfigToFactory();
 
     // Helper getters

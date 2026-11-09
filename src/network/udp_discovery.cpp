@@ -1,6 +1,7 @@
 #include "udp_discovery.hpp"
 #include "net_manager.hpp"
 #include "config_store.hpp"
+#include "web_template.hpp"
 #include "app_types.hpp"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
@@ -52,7 +53,7 @@ void UdpDiscoveryService::stop() {
     if (!s_running) return;
 
     s_running = false;
-    for (int i = 0; i < 20 && s_taskHandle != nullptr; ++i) {
+    for (int i = 0; i < 40 && s_taskHandle != nullptr; ++i) {
         vTaskDelay(pdMS_TO_TICKS(20));
     }
     s_taskHandle = nullptr;
@@ -124,9 +125,15 @@ void UdpDiscoveryService::taskWorker(void* arg) {
 
         char ip_str[32] = {0};
         NetworkManager::getActiveIp(ip_str, sizeof(ip_str));
+        if (ip_str[0] == '\0') {
+            NetworkManager::getEthernetIpRaw(ip_str, sizeof(ip_str));
+        }
 
         char mac_str[32] = {0};
         NetworkManager::getActiveMac(mac_str, sizeof(mac_str));
+        if (mac_str[0] == '\0' || strcmp(mac_str, "-") == 0) {
+            NetworkManager::getEthernetMac(mac_str, sizeof(mac_str));
+        }
 
         const char* model = g_config.device_model[0] ? g_config.device_model : "SG-10";
 
@@ -146,7 +153,7 @@ void UdpDiscoveryService::taskWorker(void* arg) {
         snprintf(reply_json, sizeof(reply_json),
             "{\"device\":\"%s\",\"device_id\":\"%s\",\"ip\":\"%s\",\"mac\":\"%s\","
             "\"mode\":\"%s\",\"web_url\":\"http://%s\",\"firmware\":\"%s\",\"ui_version\":\"%s\"}\n",
-            model, device_id, ip_str, mac_str, link_mode, ip_str, FIRMWARE_VERSION, "v1.0.5");
+            model, device_id, ip_str, mac_str, link_mode, ip_str, FIRMWARE_VERSION, Web::Template::get_ui_version());
 
         // 1. Kirim balasan Unicast langsung ke pengirim (from_addr: IP PC + port ephemeral pengirim).
         // Ini SANGAT KRUSIAL agar lolos firewall stateful Windows/macOS/Linux

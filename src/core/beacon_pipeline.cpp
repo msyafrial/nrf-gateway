@@ -42,11 +42,11 @@ static std::atomic<uint32_t> s_totalMqttFailed{0};
 static std::atomic<uint32_t> s_totalQueueDropped{0};
 static std::atomic<uint32_t> s_checksumErrors{0};
 
-static uint32_t s_readSpeed = 0;
-static uint32_t s_scanSpeed = 0;
-static uint32_t s_dropSpeed = 0;
-static uint32_t s_mqttSpeed = 0;
-static uint32_t s_mqttBatchSpeed = 0;
+static std::atomic<uint32_t> s_readSpeed{0};
+static std::atomic<uint32_t> s_scanSpeed{0};
+static std::atomic<uint32_t> s_dropSpeed{0};
+static std::atomic<uint32_t> s_mqttSpeed{0};
+static std::atomic<uint32_t> s_mqttBatchSpeed{0};
 static uint32_t s_lastReadSnap = 0;
 static uint32_t s_lastIngressSnap = 0;
 static uint32_t s_lastDropSnap = 0;
@@ -360,6 +360,10 @@ void BeaconPipeline::flushQueue() {
 }
 
 // Fast Stream State Machine (Core 0)
+void BeaconPipeline::resetStreamParser() {
+    s_rxBufLen = 0;
+}
+
 void BeaconPipeline::processBytes(const uint8_t* buffer, size_t len) {
     if (!buffer || len == 0) return;
 
@@ -396,6 +400,7 @@ void BeaconPipeline::processBytes(const uint8_t* buffer, size_t len) {
                 if (Utils::verifyControlRspChecksum(ptr)) {
                     const ControlRspFrame* rsp = reinterpret_cast<const ControlRspFrame*>(ptr);
                     s_nrfScanState.store(rsp->scan_state, std::memory_order_relaxed);
+                    s_totalFramesIngress.fetch_add(1, std::memory_order_relaxed);
                     ESP_LOGI(TAG, "nRF52840 Status Rsp: type=0x%02X, state=%u", rsp->rsp_type, rsp->scan_state);
                     readIdx += sizeof(ControlRspFrame);
                 } else {
@@ -589,11 +594,11 @@ uint32_t BeaconPipeline::getDropUnknownCount() { return s_dropUnknownFormat.load
 uint32_t BeaconPipeline::getDropQueueCount() { return s_dropQueueOverflow.load(); }
 uint32_t BeaconPipeline::getDropMqttCount() { return s_dropMqttFailed.load(); }
 
-uint32_t BeaconPipeline::getReadSpeed() { return s_readSpeed; }
-uint32_t BeaconPipeline::getScanSpeed() { return s_scanSpeed; }
-uint32_t BeaconPipeline::getDropSpeed() { return s_dropSpeed; }
-uint32_t BeaconPipeline::getMqttSpeed() { return s_mqttSpeed; }
-uint32_t BeaconPipeline::getMqttBatchSpeed() { return s_mqttBatchSpeed; }
+uint32_t BeaconPipeline::getReadSpeed() { return s_readSpeed.load(std::memory_order_relaxed); }
+uint32_t BeaconPipeline::getScanSpeed() { return s_scanSpeed.load(std::memory_order_relaxed); }
+uint32_t BeaconPipeline::getDropSpeed() { return s_dropSpeed.load(std::memory_order_relaxed); }
+uint32_t BeaconPipeline::getMqttSpeed() { return s_mqttSpeed.load(std::memory_order_relaxed); }
+uint32_t BeaconPipeline::getMqttBatchSpeed() { return s_mqttBatchSpeed.load(std::memory_order_relaxed); }
 uint32_t BeaconPipeline::getTotalFramesIngress() { return s_totalFramesIngress.load(std::memory_order_relaxed); }
 uint32_t BeaconPipeline::getTotalBeaconsRead() { return s_totalBeaconsRead; }
 uint32_t BeaconPipeline::getTotalMqttPublished() { return s_totalMqttPublished; }

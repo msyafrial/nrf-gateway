@@ -27,12 +27,37 @@
 #include <cstdio>
 #include <cstdlib>
 #include <atomic>
+#include <memory>
 
 static const char *TAG = "WebRoutes";
 
 namespace Iotaru::Web::Routes {
 
 static bool s_auth_reboot_required = false;
+
+bool is_reboot_required() {
+    return s_auth_reboot_required;
+}
+
+static int recv_full_post_body(httpd_req_t *req, char *buf, size_t buf_cap) {
+    if (!req || !buf || buf_cap == 0) return -1;
+    if (req->content_len == 0) return 0;
+    if (req->content_len >= buf_cap) return -413;
+
+    size_t received = 0;
+    int timeout_retries = 0;
+    while (received < req->content_len) {
+        int r = httpd_req_recv(req, buf + received, req->content_len - received);
+        if (r == HTTPD_SOCK_ERR_TIMEOUT) {
+            if (++timeout_retries <= 3) continue;
+            return -1;
+        }
+        if (r <= 0) return -1;
+        received += static_cast<size_t>(r);
+    }
+    buf[received] = '\0';
+    return static_cast<int>(received);
+}
 
 // -------------------------------------------------------------
 // URL Decoding & Form Parameter Extraction Helpers
@@ -432,17 +457,16 @@ static esp_err_t api_login_handler(httpd_req_t *req) {
     }
 
     char body[512] = {0};
-    if (req->content_len >= sizeof(body)) {
+    int r = recv_full_post_body(req, body, sizeof(body));
+    if (r == -413) {
         httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "Payload too large");
         return ESP_FAIL;
     }
-    int r = httpd_req_recv(req, body, sizeof(body) - 1);
     if (r <= 0) {
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_send(req, "Bad Request", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
-    body[r] = '\0';
 
     char u[64] = {0};
     char p[64] = {0};
@@ -569,19 +593,33 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
     }
 
     char body[1536] = {0};
-    int r = httpd_req_recv(req, body, sizeof(body) - 1);
+    int r = recv_full_post_body(req, body, sizeof(body));
+    if (r == -413) {
+        httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "Payload too large");
+        return ESP_FAIL;
+    }
     if (r <= 0) {
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_send(req, "Bad Request", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
-    body[r] = '\0';
+
+    // Alokasikan buffer staging sementara (0 Byte permanent RAM overhead)
+    std::unique_ptr<AppConfig> cfgPtr(new (std::nothrow) AppConfig(g_config));
+    if (!cfgPtr) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+    AppConfig &staged = *cfgPtr;
+    if (s_auth_reboot_required) {
+        Core::ConfigStore::loadConfigFromNvs(staged, false);
+    }
 
     if (role == UserRole::ADMIN) {
         char val[64];
         if (get_form_param(body, "admin_user", val, sizeof(val))) {
             if (strlen(val) >= 4 && strchr(val, ':') == nullptr) {
-                strlcpy(g_config.admin_user, val, sizeof(g_config.admin_user));
+                strlcpy(staged.admin_user, val, sizeof(staged.admin_user));
             }
         }
         if (get_form_param(body, "admin_pass", val, sizeof(val))) {
@@ -591,25 +629,30 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
                     httpd_resp_send(req, "Admin password must be at least 8 characters and cannot contain ':'", HTTPD_RESP_USE_STRLEN);
                     return ESP_OK;
                 }
-                strlcpy(g_config.admin_pass, val, sizeof(g_config.admin_pass));
+                strlcpy(staged.admin_pass, val, sizeof(staged.admin_pass));
             }
         }
-        if (get_form_param(body, "mqtt_host", val, sizeof(val))) strlcpy(g_config.mqtt_host, val, sizeof(g_config.mqtt_host));
-        if (get_form_param(body, "mqtt_port", val, sizeof(val))) g_config.mqtt_port = atoi(val);
-        if (get_form_param(body, "mqtt_user", val, sizeof(val))) strlcpy(g_config.mqtt_user, val, sizeof(g_config.mqtt_user));
-        if (get_form_param(body, "mqtt_use_ssl", val, sizeof(val))) g_config.mqtt_use_ssl = atoi(val);
+        if (get_form_param(body, "mqtt_host", val, sizeof(val))) strlcpy(staged.mqtt_host, val, sizeof(staged.mqtt_host));
+        if (get_form_param(body, "mqtt_port", val, sizeof(val))) {
+            int p = atoi(val);
+            if (p < 1) p = 1;
+            if (p > 65535) p = 65535;
+            staged.mqtt_port = p;
+        }
+        if (get_form_param(body, "mqtt_user", val, sizeof(val))) strlcpy(staged.mqtt_user, val, sizeof(staged.mqtt_user));
+        if (get_form_param(body, "mqtt_use_ssl", val, sizeof(val))) staged.mqtt_use_ssl = (atoi(val) != 0) ? 1 : 0;
         if (get_form_param(body, "mqtt_qos", val, sizeof(val))) {
             int q = atoi(val);
-            g_config.mqtt_qos = (q == 0) ? 0 : 1;
+            staged.mqtt_qos = (q == 0) ? 0 : 1;
         }
         if (get_form_param(body, "mqtt_keepalive", val, sizeof(val))) {
             int k = atoi(val);
             if (k < 5) k = 5;
             if (k > 65535) k = 65535;
-            g_config.mqtt_keepalive = k;
+            staged.mqtt_keepalive = k;
         }
         if (get_form_param(body, "telem_mask", val, sizeof(val))) {
-            g_config.telem_mask = (uint32_t)strtoul(val, nullptr, 10);
+            staged.telem_mask = (uint32_t)strtoul(val, nullptr, 10);
         } else if (strstr(body, "telem_present=1") != nullptr) {
             uint32_t mask = TELEM_MASK_V2_FLAG;
             char chk[16];
@@ -619,21 +662,21 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
             if (get_form_param(body, "telem_rssi", chk, sizeof(chk)) && strcmp(chk, "1") == 0)  mask |= TELEM_MASK_RSSI;
             if (get_form_param(body, "telem_batt", chk, sizeof(chk)) && strcmp(chk, "1") == 0)  mask |= TELEM_MASK_BATT;
             if (get_form_param(body, "telem_time", chk, sizeof(chk)) && strcmp(chk, "1") == 0)  mask |= TELEM_MASK_TIME;
-            g_config.telem_mask = mask;
+            staged.telem_mask = mask;
         }
         if (get_form_param(body, "mqtt_password", val, sizeof(val))) {
             if (!is_masked_or_empty(val)) {
-                strlcpy(g_config.mqtt_password, val, sizeof(g_config.mqtt_password));
+                strlcpy(staged.mqtt_password, val, sizeof(staged.mqtt_password));
             }
         }
         if (get_form_param(body, "ap_password", val, sizeof(val))) {
             if (!is_masked_or_empty(val)) {
                 if (strlen(val) >= 8) {
-                    strlcpy(g_config.ap_password, val, sizeof(g_config.ap_password));
+                    strlcpy(staged.ap_password, val, sizeof(staged.ap_password));
                 }
             }
         }
-        if (get_form_param(body, "user_user", val, sizeof(val))) strlcpy(g_config.user_user, val, sizeof(g_config.user_user));
+        if (get_form_param(body, "user_user", val, sizeof(val))) strlcpy(staged.user_user, val, sizeof(staged.user_user));
         if (get_form_param(body, "user_pass", val, sizeof(val))) {
             if (!is_masked_or_empty(val)) {
                 if (strlen(val) < 8 || strchr(val, ':') != nullptr) {
@@ -641,7 +684,7 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
                     httpd_resp_send(req, "Technician password must be at least 8 characters and cannot contain ':'", HTTPD_RESP_USE_STRLEN);
                     return ESP_OK;
                 }
-                strlcpy(g_config.user_pass, val, sizeof(g_config.user_pass));
+                strlcpy(staged.user_pass, val, sizeof(staged.user_pass));
             }
         }
     } else {
@@ -654,26 +697,26 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
                     httpd_resp_send(req, "Engineer password must be at least 8 characters and cannot contain ':'", HTTPD_RESP_USE_STRLEN);
                     return ESP_OK;
                 }
-                strlcpy(g_config.user_pass, val, sizeof(g_config.user_pass));
+                strlcpy(staged.user_pass, val, sizeof(staged.user_pass));
             }
         }
     }
 
     char val[64];
     if (get_form_param(body, "connection_mode", val, sizeof(val))) {
-        g_config.connection_mode = atoi(val);
+        staged.connection_mode = (atoi(val) == 1) ? 1 : 0;
     }
-    if (get_form_param(body, "w_ssid", val, sizeof(val))) strlcpy(g_config.w_ssid, val, sizeof(g_config.w_ssid));
+    if (get_form_param(body, "w_ssid", val, sizeof(val))) strlcpy(staged.w_ssid, val, sizeof(staged.w_ssid));
     if (get_form_param(body, "w_password", val, sizeof(val))) {
         if (!is_masked_or_empty(val)) {
-            strlcpy(g_config.w_password, val, sizeof(g_config.w_password));
+            strlcpy(staged.w_password, val, sizeof(staged.w_password));
         }
     }
-    if (get_form_param(body, "w_dhcp", val, sizeof(val))) g_config.w_dhcp = (atoi(val) != 0) ? 1 : 0;
+    if (get_form_param(body, "w_dhcp", val, sizeof(val))) staged.w_dhcp = (atoi(val) != 0) ? 1 : 0;
     if (get_form_param(body, "w_ip", val, sizeof(val))) {
         if (is_valid_ipv4(val)) {
-            strlcpy(g_config.w_ip, val, sizeof(g_config.w_ip));
-        } else if (g_config.w_dhcp == 0) {
+            strlcpy(staged.w_ip, val, sizeof(staged.w_ip));
+        } else if (staged.w_dhcp == 0) {
             httpd_resp_set_status(req, "400 Bad Request");
             httpd_resp_send(req, "Invalid Wi-Fi Static IPv4 address format.", HTTPD_RESP_USE_STRLEN);
             return ESP_OK;
@@ -681,8 +724,8 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
     }
     if (get_form_param(body, "w_gateway", val, sizeof(val))) {
         if (is_valid_ipv4(val)) {
-            strlcpy(g_config.w_gateway, val, sizeof(g_config.w_gateway));
-        } else if (g_config.w_dhcp == 0) {
+            strlcpy(staged.w_gateway, val, sizeof(staged.w_gateway));
+        } else if (staged.w_dhcp == 0) {
             httpd_resp_set_status(req, "400 Bad Request");
             httpd_resp_send(req, "Invalid Wi-Fi Gateway IPv4 address format.", HTTPD_RESP_USE_STRLEN);
             return ESP_OK;
@@ -690,8 +733,8 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
     }
     if (get_form_param(body, "w_subnet", val, sizeof(val))) {
         if (is_valid_ipv4(val, true)) {
-            strlcpy(g_config.w_subnet, val, sizeof(g_config.w_subnet));
-        } else if (g_config.w_dhcp == 0) {
+            strlcpy(staged.w_subnet, val, sizeof(staged.w_subnet));
+        } else if (staged.w_dhcp == 0) {
             httpd_resp_set_status(req, "400 Bad Request");
             httpd_resp_send(req, "Invalid Wi-Fi Subnet Mask format.", HTTPD_RESP_USE_STRLEN);
             return ESP_OK;
@@ -699,20 +742,20 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
     }
     if (get_form_param(body, "w_dns", val, sizeof(val))) {
         if (val[0] == '\0' || is_valid_ipv4(val)) {
-            strlcpy(g_config.w_dns, val, sizeof(g_config.w_dns));
+            strlcpy(staged.w_dns, val, sizeof(staged.w_dns));
         }
     }
     if (get_form_param(body, "w_dns2", val, sizeof(val))) {
         if (val[0] == '\0' || is_valid_ipv4(val)) {
-            strlcpy(g_config.w_dns2, val, sizeof(g_config.w_dns2));
+            strlcpy(staged.w_dns2, val, sizeof(staged.w_dns2));
         }
     }
 
-    if (get_form_param(body, "eth_dhcp", val, sizeof(val))) g_config.eth_dhcp = (atoi(val) != 0) ? 1 : 0;
+    if (get_form_param(body, "eth_dhcp", val, sizeof(val))) staged.eth_dhcp = (atoi(val) != 0) ? 1 : 0;
     if (get_form_param(body, "eth_ip", val, sizeof(val))) {
         if (is_valid_ipv4(val)) {
-            strlcpy(g_config.eth_ip, val, sizeof(g_config.eth_ip));
-        } else if (g_config.eth_dhcp == 0) {
+            strlcpy(staged.eth_ip, val, sizeof(staged.eth_ip));
+        } else if (staged.eth_dhcp == 0) {
             httpd_resp_set_status(req, "400 Bad Request");
             httpd_resp_send(req, "Invalid Ethernet Static IPv4 address format.", HTTPD_RESP_USE_STRLEN);
             return ESP_OK;
@@ -720,8 +763,8 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
     }
     if (get_form_param(body, "eth_gateway", val, sizeof(val))) {
         if (is_valid_ipv4(val)) {
-            strlcpy(g_config.eth_gateway, val, sizeof(g_config.eth_gateway));
-        } else if (g_config.eth_dhcp == 0) {
+            strlcpy(staged.eth_gateway, val, sizeof(staged.eth_gateway));
+        } else if (staged.eth_dhcp == 0) {
             httpd_resp_set_status(req, "400 Bad Request");
             httpd_resp_send(req, "Invalid Ethernet Gateway IPv4 address format.", HTTPD_RESP_USE_STRLEN);
             return ESP_OK;
@@ -729,8 +772,8 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
     }
     if (get_form_param(body, "eth_subnet", val, sizeof(val))) {
         if (is_valid_ipv4(val, true)) {
-            strlcpy(g_config.eth_subnet, val, sizeof(g_config.eth_subnet));
-        } else if (g_config.eth_dhcp == 0) {
+            strlcpy(staged.eth_subnet, val, sizeof(staged.eth_subnet));
+        } else if (staged.eth_dhcp == 0) {
             httpd_resp_set_status(req, "400 Bad Request");
             httpd_resp_send(req, "Invalid Ethernet Subnet Mask format.", HTTPD_RESP_USE_STRLEN);
             return ESP_OK;
@@ -738,20 +781,20 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
     }
     if (get_form_param(body, "eth_dns", val, sizeof(val))) {
         if (val[0] == '\0' || is_valid_ipv4(val)) {
-            strlcpy(g_config.eth_dns, val, sizeof(g_config.eth_dns));
+            strlcpy(staged.eth_dns, val, sizeof(staged.eth_dns));
         }
     }
     if (get_form_param(body, "eth_dns2", val, sizeof(val))) {
         if (val[0] == '\0' || is_valid_ipv4(val)) {
-            strlcpy(g_config.eth_dns2, val, sizeof(g_config.eth_dns2));
+            strlcpy(staged.eth_dns2, val, sizeof(staged.eth_dns2));
         }
     }
 
-    Core::ConfigStore::saveConfigAuth();
+    Core::ConfigStore::saveConfigAuth(staged);
     s_auth_reboot_required = true;
 
     char detAuth[80];
-    snprintf(detAuth, sizeof(detAuth), "Kredensial Akun Diperbarui oleh %s",
+    snprintf(detAuth, sizeof(detAuth), "Kredensial Akun Diperbarui oleh %s (Staged NVS)",
              role == UserRole::ADMIN ? "Admin" : "Engineer");
     Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::AUTH_UPDATE, detAuth);
 
@@ -771,11 +814,13 @@ static esp_err_t api_network_discard_handler(httpd_req_t *req) {
     s_auth_reboot_required = false;
 
     Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::CONFIG_DISCARD,
-                                "Perubahan Konfigurasi Jaringan Dibatalkan oleh Pengguna");
+                                "Perubahan Konfigurasi Dibatalkan oleh Pengguna");
 
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "status", "ok");
-    cJSON_AddStringToObject(root, "message", "Pending network changes discarded successfully.");
+    cJSON_AddStringToObject(root, "message", "Pending changes discarded successfully.");
+    cJSON_AddStringToObject(root, "reverted_mode", (g_config.connection_mode == 1) ? "Ethernet (LAN)" : "Wi-Fi");
+    cJSON_AddStringToObject(root, "reverted_ssid", g_config.w_ssid);
     char *out = cJSON_PrintUnformatted(root);
     if (out) {
         httpd_resp_set_type(req, "application/json");
@@ -797,56 +842,91 @@ static esp_err_t api_config_settings_handler(httpd_req_t *req) {
     }
 
     char body[1024] = {0};
-    int r = httpd_req_recv(req, body, sizeof(body) - 1);
+    int r = recv_full_post_body(req, body, sizeof(body));
+    if (r == -413) {
+        httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "Payload too large");
+        return ESP_FAIL;
+    }
     if (r <= 0) {
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_send(req, "Bad Request", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
-    body[r] = '\0';
+
+    // Alokasikan buffer staging sementara (0 Byte permanent RAM overhead)
+    std::unique_ptr<AppConfig> cfgPtr(new (std::nothrow) AppConfig(g_config));
+    if (!cfgPtr) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+    AppConfig &staged = *cfgPtr;
+    if (s_auth_reboot_required) {
+        Core::ConfigStore::loadConfigFromNvs(staged, false);
+    }
 
     char val[64];
     if (get_form_param(body, "scan_mode", val, sizeof(val))) {
         int sm = atoi(val);
         if (sm == 1 || sm == 2) {
-            g_config.scan_mode = sm;
+            staged.scan_mode = sm;
         }
     }
-    if (get_form_param(body, "filter_uuid_en", val, sizeof(val))) g_config.filter_uuid_en = atoi(val);
-    if (get_form_param(body, "filter_uuid", val, sizeof(val))) strlcpy(g_config.filter_uuid, val, sizeof(g_config.filter_uuid));
-    if (get_form_param(body, "filter_major_en", val, sizeof(val))) g_config.filter_major_en = atoi(val);
-    if (get_form_param(body, "filter_unknown_en", val, sizeof(val))) g_config.filter_unknown_en = atoi(val);
+    if (get_form_param(body, "filter_uuid_en", val, sizeof(val))) staged.filter_uuid_en = (atoi(val) != 0) ? 1 : 0;
+    if (get_form_param(body, "filter_uuid", val, sizeof(val))) strlcpy(staged.filter_uuid, val, sizeof(staged.filter_uuid));
+    if (get_form_param(body, "filter_major_en", val, sizeof(val))) staged.filter_major_en = (atoi(val) != 0) ? 1 : 0;
+    if (get_form_param(body, "filter_unknown_en", val, sizeof(val))) staged.filter_unknown_en = (atoi(val) != 0) ? 1 : 0;
     if (get_form_param(body, "filter_major", val, sizeof(val))) {
         long v = strtol(val, nullptr, 10);
         if (v > 65535) v = 65535;
         if (v < 0) v = 0;
         if (strlen(val) > 0) {
-            snprintf(g_config.filter_major, sizeof(g_config.filter_major), "%ld", v);
+            snprintf(staged.filter_major, sizeof(staged.filter_major), "%ld", v);
         } else {
-            g_config.filter_major[0] = '\0';
+            staged.filter_major[0] = '\0';
         }
     }
-    if (get_form_param(body, "rssi_min", val, sizeof(val))) g_config.rssi_min = atoi(val);
+    if (get_form_param(body, "rssi_min", val, sizeof(val))) {
+        int rm = atoi(val);
+        if (rm > 0) rm = -rm;
+        if (rm < -100) rm = -100;
+        if (rm > -30) rm = -30;
+        staged.rssi_min = rm;
+    }
     if (role == UserRole::ADMIN) {
         if (get_form_param(body, "batch_max", val, sizeof(val))) {
             int bm = atoi(val);
             if (bm < 10) bm = 10;
             if (bm > 150) bm = 150;
-            g_config.batch_max = bm;
+            staged.batch_max = bm;
         }
-        if (get_form_param(body, "batch_flush", val, sizeof(val))) g_config.batch_flush = atoi(val);
-        if (get_form_param(body, "data_ttl", val, sizeof(val))) g_config.data_ttl = atoi(val);
+        if (get_form_param(body, "batch_flush", val, sizeof(val))) {
+            int bf = atoi(val);
+            if (bf < 50) bf = 50;
+            if (bf > 2000) bf = 2000;
+            staged.batch_flush = bf;
+        }
+        if (get_form_param(body, "data_ttl", val, sizeof(val))) {
+            int dt = atoi(val);
+            if (dt < 1000) dt = 1000;
+            if (dt > 30000) dt = 30000;
+            staged.data_ttl = dt;
+        }
         if (get_form_param(body, "hb_interval", val, sizeof(val))) {
             int hb = atoi(val);
             if (hb < 1) hb = 1;
             if (hb > 300) hb = 300;
-            g_config.hb_interval = hb;
+            staged.hb_interval = hb;
         }
     }
-    if (get_form_param(body, "restart_schedule", val, sizeof(val))) strlcpy(g_config.restart_schedule, val, sizeof(g_config.restart_schedule));
-    if (get_form_param(body, "discon_rst", val, sizeof(val))) g_config.discon_rst = atoi(val);
+    if (get_form_param(body, "restart_schedule", val, sizeof(val))) strlcpy(staged.restart_schedule, val, sizeof(staged.restart_schedule));
+    if (get_form_param(body, "discon_rst", val, sizeof(val))) {
+        int dr = atoi(val);
+        if (dr < 1) dr = 1;
+        if (dr > 60) dr = 60;
+        staged.discon_rst = dr;
+    }
     if (get_form_param(body, "ntp_server", val, sizeof(val))) {
-        char cleanVal[sizeof(g_config.ntp_server)] = {0};
+        char cleanVal[sizeof(staged.ntp_server)] = {0};
         size_t cIdx = 0;
         for (size_t i = 0; val[i] != '\0' && cIdx + 1 < sizeof(cleanVal); i++) {
             if (val[i] > 32 && val[i] <= 126) {
@@ -854,23 +934,22 @@ static esp_err_t api_config_settings_handler(httpd_req_t *req) {
             }
         }
         if (cleanVal[0] == '\0') {
-            strlcpy(g_config.ntp_server, "pool.ntp.org", sizeof(g_config.ntp_server));
+            strlcpy(staged.ntp_server, "pool.ntp.org", sizeof(staged.ntp_server));
         } else {
-            strlcpy(g_config.ntp_server, cleanVal, sizeof(g_config.ntp_server));
+            strlcpy(staged.ntp_server, cleanVal, sizeof(staged.ntp_server));
         }
-        Network::NetworkManager::updateSntpServer(g_config.ntp_server);
     }
 
-    Core::ConfigStore::saveConfigSettings();
-    Network::MqttService::updateTopicNames();
+    Core::ConfigStore::saveConfigSettings(staged);
+    s_auth_reboot_required = true;
 
     char detCfg[80];
-    snprintf(detCfg, sizeof(detCfg), "Pengaturan Sistem Disimpan oleh %s",
+    snprintf(detCfg, sizeof(detCfg), "Pengaturan Sistem Disimpan oleh %s (Staged NVS)",
              role == UserRole::ADMIN ? "Admin" : "Engineer");
     Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::CONFIG_UPDATE, detCfg);
 
     httpd_resp_set_type(req, "text/plain");
-    httpd_resp_send(req, "Gateway configuration updated successfully.", HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, "Configuration committed to NVS. Reboot required to apply changes.", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
@@ -907,6 +986,17 @@ static esp_err_t api_system_version_handler(httpd_req_t *req) {
 
     uint64_t uptime_sec = esp_timer_get_time() / 1000000ULL;
     const char *net_mode = (g_config.connection_mode == 1) ? "Ethernet" : "Wi-Fi";
+    const char *staged_net_mode = net_mode;
+    if (s_auth_reboot_required) {
+        nvs_handle_t hNet;
+        if (nvs_open("cfg_net", NVS_READONLY, &hNet) == ESP_OK) {
+            uint32_t m = (uint32_t)g_config.connection_mode;
+            if (nvs_get_u32(hNet, "mode", &m) == ESP_OK) {
+                staged_net_mode = (m == 1) ? "Ethernet" : "Wi-Fi";
+            }
+            nvs_close(hNet);
+        }
+    }
     bool eth_hw = Network::NetworkManager::isEthernetHardwareDetected();
     auto *drv = Network::NetworkManager::getEthernetDriver();
 
@@ -946,7 +1036,7 @@ static esp_err_t api_system_version_handler(httpd_req_t *req) {
         Network::NetworkManager::isConnected() ? "true" : "false",
         Network::NetworkManager::isNtpSynced() ? "true" : "false",
         g_config.ntp_server[0] != '\0' ? g_config.ntp_server : "pool.ntp.org",
-        net_mode, net_mode, net_mode,
+        net_mode, net_mode, staged_net_mode,
         s_auth_reboot_required ? "true" : "false"
     );
     if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK) return ESP_FAIL;
@@ -1766,6 +1856,7 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
     uint8_t chunk[2048];
     size_t received_bytes = 0;
     bool is_first_chunk = true;
+    int timeout_retries = 0;
 
     while (received_bytes < req->content_len) {
         size_t to_read = req->content_len - received_bytes;
@@ -1773,12 +1864,15 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
 
         int r = httpd_req_recv(req, reinterpret_cast<char *>(chunk), to_read);
         if (r <= 0) {
-            if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
+            if (r == HTTPD_SOCK_ERR_TIMEOUT) {
+                if (++timeout_retries <= 6 && Ota::is_in_progress()) continue;
+            }
             Ota::abort();
             httpd_resp_set_status(req, "500 Internal Server Error");
             httpd_resp_send(req, "Connection interrupted during upload stream.", HTTPD_RESP_USE_STRLEN);
             return ESP_FAIL;
         }
+        timeout_retries = 0;
 
         if (is_first_chunk) {
             if (!Ota::begin(target, total_size, chunk, r, err_buf, sizeof(err_buf))) {

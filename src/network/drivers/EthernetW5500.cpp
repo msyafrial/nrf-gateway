@@ -174,7 +174,7 @@ bool EthernetW5500::begin(uint32_t ip, uint32_t gw, uint32_t mask,
     devcfg.spics_io_num = Pins::W5500_CS;
     devcfg.queue_size = 20;
 
-    // 4. Instansiasi MAC & PHY W5500
+    // 4. Instansiasi MAC, PHY & Install Ethernet Driver W5500 (dengan retry anti-brownout/power-on glitch)
     eth_w5500_config_t w5500_config = ETH_W5500_DEFAULT_CONFIG(SPI3_HOST, &devcfg);
     w5500_config.base.int_gpio_num = Pins::W5500_INT;
 
@@ -182,32 +182,38 @@ bool EthernetW5500::begin(uint32_t ip, uint32_t gw, uint32_t mask,
     mac_config.rx_task_stack_size = 3072; // Dihemat dari 4096 ke 3072 (+1 KB DRAM, aman untuk W5500 SPI RX polling & LwIP input)
     mac_config.rx_task_prio = 8; // Prioritas 8 (di atas MQTT 6) agar pemrosesan ACK & PINGRESP instan tanpa starvation
 
-    esp_eth_mac_t *mac = esp_eth_mac_new_w5500(&w5500_config, &mac_config);
-    if (!mac) {
-        ESP_LOGE(TAG, "Gagal membuat MAC instance W5500!");
-        s_hardwareDetected = false;
-        return false;
-    }
-
     eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
     phy_config.phy_addr = -1;
     phy_config.reset_gpio_num = Pins::W5500_RST;
 
-    esp_eth_phy_t *phy = esp_eth_phy_new_w5500(&phy_config);
-    if (!phy) {
-        ESP_LOGE(TAG, "Gagal membuat PHY instance W5500!");
-        mac->del(mac);
-        s_hardwareDetected = false;
-        return false;
-    }
-
-    // 5. Install Ethernet Driver
-    esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac, phy);
-    ret = esp_eth_driver_install(&eth_config, &s_eth_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Gagal install Ethernet driver: 0x%x", ret);
+    bool driverInstalled = false;
+    for (int attempt = 1; attempt <= 3; ++attempt) {
+        if (attempt > 1) {
+            ESP_LOGW(TAG, "Percobaan ulang inisialisasi hardware W5500 (%d/3)...", attempt);
+            preInit();
+        }
+        esp_eth_mac_t *mac = esp_eth_mac_new_w5500(&w5500_config, &mac_config);
+        if (!mac) {
+            continue;
+        }
+        esp_eth_phy_t *phy = esp_eth_phy_new_w5500(&phy_config);
+        if (!phy) {
+            mac->del(mac);
+            continue;
+        }
+        esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac, phy);
+        ret = esp_eth_driver_install(&eth_config, &s_eth_handle);
+        if (ret == ESP_OK) {
+            driverInstalled = true;
+            break;
+        }
+        ESP_LOGW(TAG, "Gagal install Ethernet driver pada percobaan %d/3: 0x%x", attempt, ret);
         mac->del(mac);
         phy->del(phy);
+    }
+
+    if (!driverInstalled) {
+        ESP_LOGE(TAG, "Gagal inisialisasi chip W5500 setelah 3 percobaan!");
         s_hardwareDetected = false;
         return false;
     }

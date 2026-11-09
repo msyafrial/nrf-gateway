@@ -971,7 +971,8 @@ void NetworkManager::getActiveWifiSsid(char* outBuf, size_t maxLen) {
 }
 
 void NetworkManager::rollbackPendingNetworkConfig() {
-    Core::ConfigStore::loadConfig();
+    Core::ConfigStore::saveConfigAuth(g_config);
+    Core::ConfigStore::saveConfigSettings(g_config);
 }
 
 bool NetworkManager::isNtpSynced() {
@@ -1216,7 +1217,7 @@ void NetworkManager::checkApInactivityTimeout() {
     uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
 
     // Jadwal delayed stop
-    if (s_pendingApStopMillis > 0 && now >= s_pendingApStopMillis) {
+    if (s_pendingApStopMillis > 0 && (int32_t)(now - s_pendingApStopMillis) >= 0) {
         stopConfigAP();
         return;
     }

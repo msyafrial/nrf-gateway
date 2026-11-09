@@ -76,8 +76,8 @@ void MicroDhcpServer::stop() {
     s_running = false;
     s_hasActiveClientLease = false;
 
-    // Tunggu task berhenti dengan batas waktu 500ms
-    for (int i = 0; i < 25 && s_taskHandle != nullptr; ++i) {
+    // Tunggu task berhenti dengan batas waktu 800ms (> 500ms SO_RCVTIMEO)
+    for (int i = 0; i < 40 && s_taskHandle != nullptr; ++i) {
         vTaskDelay(pdMS_TO_TICKS(20));
     }
     s_taskHandle = nullptr;

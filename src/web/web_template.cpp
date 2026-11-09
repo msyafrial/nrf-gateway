@@ -7,6 +7,7 @@
 #include <esp_timer.h>
 
 #include "web_template.hpp"
+#include "web_routes.hpp"
 #include "emergency_page.hpp"
 #include "web_server.hpp"
 #include "app_config.hpp"
@@ -82,7 +83,7 @@ static void html_escape(const char *src, char *dst, size_t max_len) {
     dst[out_idx] = '\0';
 }
 
-bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len, UserRole role) {
+static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, size_t max_len, UserRole role, const AppConfig &cfg) {
     if (!out_buf || max_len == 0) return false;
     out_buf[0] = '\0';
 
@@ -118,7 +119,7 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len, 
     } else if (key == "mac_label") {
         snprintf(out_buf, max_len, (g_config.connection_mode == 1 || Network::NetworkManager::isEthernetDirectPcMode()) ? "MAC Address (LAN)" : "MAC Address (Wi-Fi)");
     } else if (key == "connection_mode") {
-        snprintf(out_buf, max_len, "%d", g_config.connection_mode);
+        snprintf(out_buf, max_len, "%d", cfg.connection_mode);
     } else if (key == "net_status") {
         bool is_conn = Network::NetworkManager::isConnected();
         if (Network::NetworkManager::isEthernetDirectPcMode()) {
@@ -395,99 +396,99 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len, 
     } else if (key == "user") {
         snprintf(out_buf, max_len, (role == UserRole::ENGINEER) ? "Engineer" : "Administrator");
     } else if (key == "admin_user") {
-        html_escape(g_config.admin_user, out_buf, max_len);
+        html_escape(cfg.admin_user, out_buf, max_len);
     } else if (key == "admin_pass") {
         snprintf(out_buf, max_len, "••••••••");
     } else if (key == "user_user") {
-        html_escape(g_config.user_user, out_buf, max_len);
+        html_escape(cfg.user_user, out_buf, max_len);
     } else if (key == "user_pass") {
         snprintf(out_buf, max_len, "••••••••");
     } else if (key == "w_ssid") {
-        html_escape(g_config.w_ssid, out_buf, max_len);
+        html_escape(cfg.w_ssid, out_buf, max_len);
     } else if (key == "w_password") {
         snprintf(out_buf, max_len, "••••••••");
     } else if (key == "w_dhcp") {
-        snprintf(out_buf, max_len, "%d", g_config.w_dhcp ? 1 : 0);
+        snprintf(out_buf, max_len, "%d", cfg.w_dhcp ? 1 : 0);
     } else if (key == "w_dhcp_1_selected") {
-        snprintf(out_buf, max_len, "%s", (g_config.w_dhcp != 0) ? "selected" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.w_dhcp != 0) ? "selected" : "");
     } else if (key == "w_dhcp_0_selected") {
-        snprintf(out_buf, max_len, "%s", (g_config.w_dhcp == 0) ? "selected" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.w_dhcp == 0) ? "selected" : "");
     } else if (key == "w_ip") {
-        html_escape(g_config.w_ip, out_buf, max_len);
+        html_escape(cfg.w_ip, out_buf, max_len);
     } else if (key == "w_gateway") {
-        html_escape(g_config.w_gateway, out_buf, max_len);
+        html_escape(cfg.w_gateway, out_buf, max_len);
     } else if (key == "w_subnet") {
-        html_escape(g_config.w_subnet, out_buf, max_len);
+        html_escape(cfg.w_subnet, out_buf, max_len);
     } else if (key == "w_dns") {
-        html_escape(g_config.w_dns, out_buf, max_len);
+        html_escape(cfg.w_dns, out_buf, max_len);
     } else if (key == "w_dns2") {
-        html_escape(g_config.w_dns2, out_buf, max_len);
+        html_escape(cfg.w_dns2, out_buf, max_len);
     } else if (key == "eth_dhcp") {
-        snprintf(out_buf, max_len, "%d", g_config.eth_dhcp ? 1 : 0);
+        snprintf(out_buf, max_len, "%d", cfg.eth_dhcp ? 1 : 0);
     } else if (key == "eth_dhcp_1_selected") {
-        snprintf(out_buf, max_len, "%s", (g_config.eth_dhcp != 0) ? "selected" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.eth_dhcp != 0) ? "selected" : "");
     } else if (key == "eth_dhcp_0_selected") {
-        snprintf(out_buf, max_len, "%s", (g_config.eth_dhcp == 0) ? "selected" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.eth_dhcp == 0) ? "selected" : "");
     } else if (key == "eth_ip") {
-        html_escape(g_config.eth_ip, out_buf, max_len);
+        html_escape(cfg.eth_ip, out_buf, max_len);
     } else if (key == "eth_gateway") {
-        html_escape(g_config.eth_gateway, out_buf, max_len);
+        html_escape(cfg.eth_gateway, out_buf, max_len);
     } else if (key == "eth_subnet") {
-        html_escape(g_config.eth_subnet, out_buf, max_len);
+        html_escape(cfg.eth_subnet, out_buf, max_len);
     } else if (key == "eth_dns") {
-        html_escape(g_config.eth_dns, out_buf, max_len);
+        html_escape(cfg.eth_dns, out_buf, max_len);
     } else if (key == "eth_dns2") {
-        html_escape(g_config.eth_dns2, out_buf, max_len);
+        html_escape(cfg.eth_dns2, out_buf, max_len);
     } else if (key == "ap_password") {
         snprintf(out_buf, max_len, "••••••••");
     } else if (key == "mqtt_host") {
-        html_escape(g_config.mqtt_host, out_buf, max_len);
+        html_escape(cfg.mqtt_host, out_buf, max_len);
     } else if (key == "mqtt_port") {
-        snprintf(out_buf, max_len, "%d", g_config.mqtt_port);
+        snprintf(out_buf, max_len, "%d", cfg.mqtt_port);
     } else if (key == "mqtt_client_id") {
         Core::ConfigStore::getMqttClientId(out_buf, max_len);
     } else if (key == "id_module") {
         Core::ConfigStore::getModuleId(out_buf, max_len);
     } else if (key == "mqtt_user") {
-        html_escape(g_config.mqtt_user, out_buf, max_len);
+        html_escape(cfg.mqtt_user, out_buf, max_len);
     } else if (key == "mqtt_password") {
         snprintf(out_buf, max_len, "••••••••");
     } else if (key == "mqtt_use_ssl") {
-        snprintf(out_buf, max_len, "%s", g_config.mqtt_use_ssl ? "1" : "0");
+        snprintf(out_buf, max_len, "%s", cfg.mqtt_use_ssl ? "1" : "0");
     } else if (key == "mqtt_ssl_checked") {
-        snprintf(out_buf, max_len, "%s", g_config.mqtt_use_ssl ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", cfg.mqtt_use_ssl ? "checked" : "");
     } else if (key == "mqtt_qos") {
-        snprintf(out_buf, max_len, "%d", g_config.mqtt_qos);
+        snprintf(out_buf, max_len, "%d", cfg.mqtt_qos);
     } else if (key == "mqtt_qos_0_selected") {
-        snprintf(out_buf, max_len, "%s", (g_config.mqtt_qos == 0) ? "selected" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.mqtt_qos == 0) ? "selected" : "");
     } else if (key == "mqtt_qos_1_selected") {
-        snprintf(out_buf, max_len, "%s", (g_config.mqtt_qos != 0) ? "selected" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.mqtt_qos != 0) ? "selected" : "");
     } else if (key == "mqtt_keepalive") {
-        snprintf(out_buf, max_len, "%d", (g_config.mqtt_keepalive >= 5 && g_config.mqtt_keepalive <= 65535) ? g_config.mqtt_keepalive : 30);
+        snprintf(out_buf, max_len, "%d", (cfg.mqtt_keepalive >= 5 && cfg.mqtt_keepalive <= 65535) ? cfg.mqtt_keepalive : 30);
     } else if (key == "telem_mask") {
-        snprintf(out_buf, max_len, "%u", (unsigned int)g_config.telem_mask);
+        snprintf(out_buf, max_len, "%u", (unsigned int)cfg.telem_mask);
     } else if (key == "telem_uuid_checked") {
-        snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_UUID) ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.telem_mask & TELEM_MASK_UUID) ? "checked" : "");
     } else if (key == "telem_major_checked") {
-        snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_MAJOR) ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.telem_mask & TELEM_MASK_MAJOR) ? "checked" : "");
     } else if (key == "telem_minor_checked") {
-        snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_MINOR) ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.telem_mask & TELEM_MASK_MINOR) ? "checked" : "");
     } else if (key == "telem_rssi_checked") {
-        snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_RSSI) ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.telem_mask & TELEM_MASK_RSSI) ? "checked" : "");
     } else if (key == "telem_batt_checked") {
-        snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_BATT) ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.telem_mask & TELEM_MASK_BATT) ? "checked" : "");
     } else if (key == "telem_time_checked") {
-        snprintf(out_buf, max_len, "%s", (g_config.telem_mask & TELEM_MASK_TIME) ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.telem_mask & TELEM_MASK_TIME) ? "checked" : "");
     } else if (key == "scan_mode") {
-        snprintf(out_buf, max_len, "%d", (g_config.scan_mode == 2) ? 2 : 1);
+        snprintf(out_buf, max_len, "%d", (cfg.scan_mode == 2) ? 2 : 1);
     } else if (key == "scan_mode_passive_checked") {
-        snprintf(out_buf, max_len, "%s", (g_config.scan_mode != 2) ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.scan_mode != 2) ? "checked" : "");
     } else if (key == "scan_mode_active_checked") {
-        snprintf(out_buf, max_len, "%s", (g_config.scan_mode == 2) ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.scan_mode == 2) ? "checked" : "");
     } else if (key == "scan_mode_passive_active") {
-        snprintf(out_buf, max_len, "%s", (g_config.scan_mode != 2) ? "active" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.scan_mode != 2) ? "active" : "");
     } else if (key == "scan_mode_active_active") {
-        snprintf(out_buf, max_len, "%s", (g_config.scan_mode == 2) ? "active" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.scan_mode == 2) ? "active" : "");
     } else if (key == "scan_mode_text") {
         snprintf(out_buf, max_len, "%s", (g_config.scan_mode == 2) ? "Active" : "Passive");
     } else if (key == "scan_mode_color") {
@@ -495,55 +496,55 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len, 
     } else if (key == "queue_max" || key == "beacon_queue_max") {
         snprintf(out_buf, max_len, "%u", (unsigned int)BEACON_QUEUE_MAX);
     } else if (key == "filter_uuid_en") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_uuid_en ? "1" : "0");
+        snprintf(out_buf, max_len, "%s", cfg.filter_uuid_en ? "1" : "0");
     } else if (key == "filter_uuid_checked") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_uuid_en ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", cfg.filter_uuid_en ? "checked" : "");
     } else if (key == "uuid_container_dimmed") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_uuid_en ? "" : "dimmed");
+        snprintf(out_buf, max_len, "%s", cfg.filter_uuid_en ? "" : "dimmed");
     } else if (key == "filter_uuid_disabled") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_uuid_en ? "" : "disabled");
+        snprintf(out_buf, max_len, "%s", cfg.filter_uuid_en ? "" : "disabled");
     } else if (key == "filter_uuid") {
-        html_escape(g_config.filter_uuid, out_buf, max_len);
+        html_escape(cfg.filter_uuid, out_buf, max_len);
     } else if (key == "uuid_badge_class") {
-        size_t ulen = strlen(g_config.filter_uuid);
+        size_t ulen = strlen(cfg.filter_uuid);
         snprintf(out_buf, max_len, "%s", ulen == 32 ? "uuid-badge valid" : (ulen == 0 ? "uuid-badge neutral" : "uuid-badge invalid"));
     } else if (key == "uuid_badge_text") {
-        size_t ulen = strlen(g_config.filter_uuid);
+        size_t ulen = strlen(cfg.filter_uuid);
         if (ulen == 32) snprintf(out_buf, max_len, "32/32 Hex Valid");
         else if (ulen == 0) snprintf(out_buf, max_len, "0/32 Hex");
         else snprintf(out_buf, max_len, "%u/32 Hex", static_cast<unsigned>(ulen));
     } else if (key == "filter_unknown_en") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_unknown_en ? "1" : "0");
+        snprintf(out_buf, max_len, "%s", cfg.filter_unknown_en ? "1" : "0");
     } else if (key == "filter_unknown_checked") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_unknown_en ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", cfg.filter_unknown_en ? "checked" : "");
     } else if (key == "unknown_badge_class") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_unknown_en ? "valid" : "neutral");
+        snprintf(out_buf, max_len, "%s", cfg.filter_unknown_en ? "valid" : "neutral");
     } else if (key == "unknown_badge_text") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_unknown_en ? "Active" : "Disabled");
+        snprintf(out_buf, max_len, "%s", cfg.filter_unknown_en ? "Active" : "Disabled");
     } else if (key == "filter_major_en") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_major_en ? "1" : "0");
+        snprintf(out_buf, max_len, "%s", cfg.filter_major_en ? "1" : "0");
     } else if (key == "filter_major_checked") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_major_en ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", cfg.filter_major_en ? "checked" : "");
     } else if (key == "major_container_dimmed") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_major_en ? "" : "dimmed");
+        snprintf(out_buf, max_len, "%s", cfg.filter_major_en ? "" : "dimmed");
     } else if (key == "filter_major_disabled") {
-        snprintf(out_buf, max_len, "%s", g_config.filter_major_en ? "" : "disabled");
+        snprintf(out_buf, max_len, "%s", cfg.filter_major_en ? "" : "disabled");
     } else if (key == "filter_major") {
-        html_escape(g_config.filter_major, out_buf, max_len);
+        html_escape(cfg.filter_major, out_buf, max_len);
     } else if (key == "major_badge_class") {
-        size_t mlen = strlen(g_config.filter_major);
+        size_t mlen = strlen(cfg.filter_major);
         if (mlen == 0) {
             snprintf(out_buf, max_len, "uuid-badge neutral");
         } else {
-            long val = strtol(g_config.filter_major, nullptr, 10);
+            long val = strtol(cfg.filter_major, nullptr, 10);
             snprintf(out_buf, max_len, "%s", (val >= 0 && val <= 65535) ? "uuid-badge valid" : "uuid-badge invalid");
         }
     } else if (key == "major_badge_text") {
-        size_t mlen = strlen(g_config.filter_major);
+        size_t mlen = strlen(cfg.filter_major);
         if (mlen == 0) {
             snprintf(out_buf, max_len, "0 - 65535");
         } else {
-            long val = strtol(g_config.filter_major, nullptr, 10);
+            long val = strtol(cfg.filter_major, nullptr, 10);
             if (val >= 0 && val <= 65535) {
                 snprintf(out_buf, max_len, "Major %ld Valid", val);
             } else {
@@ -551,14 +552,14 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len, 
             }
         }
     } else if (key == "rssi_min") {
-        snprintf(out_buf, max_len, "%d", g_config.rssi_min);
+        snprintf(out_buf, max_len, "%d", cfg.rssi_min);
     } else if (key == "rssi_val_abs" || key == "rssi_slider_val") {
-        int abs_val = abs(g_config.rssi_min);
+        int abs_val = abs(cfg.rssi_min);
         if (abs_val < 30) abs_val = 30;
         if (abs_val > 100) abs_val = 100;
         snprintf(out_buf, max_len, "%d", abs_val);
     } else if (key == "rssi_slider_bg") {
-        int abs_val = abs(g_config.rssi_min);
+        int abs_val = abs(cfg.rssi_min);
         if (abs_val < 30) abs_val = 30;
         if (abs_val > 100) abs_val = 100;
         int pct = static_cast<int>(((abs_val - 30.0f) / 70.0f) * 100.0f);
@@ -566,25 +567,25 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len, 
                  "linear-gradient(to right, #0284c7 0%%, #38bdf8 %d%%, #1e293b %d%%, #1e293b 100%%)",
                  pct, pct);
     } else if (key == "rssi_cat_class") {
-        int abs_val = abs(g_config.rssi_min);
+        int abs_val = abs(cfg.rssi_min);
         if (abs_val <= 60) snprintf(out_buf, max_len, "rssi-cat-badge near");
         else if (abs_val <= 80) snprintf(out_buf, max_len, "rssi-cat-badge mid");
         else if (abs_val <= 95) snprintf(out_buf, max_len, "rssi-cat-badge far");
         else snprintf(out_buf, max_len, "rssi-cat-badge max");
     } else if (key == "rssi_cat_text") {
-        int abs_val = abs(g_config.rssi_min);
+        int abs_val = abs(cfg.rssi_min);
         if (abs_val <= 60) snprintf(out_buf, max_len, "Kuat / Dekat");
         else if (abs_val <= 80) snprintf(out_buf, max_len, "Standar");
         else if (abs_val <= 95) snprintf(out_buf, max_len, "Luas / Jauh");
         else snprintf(out_buf, max_len, "Maksimal");
     } else if (key == "batch_max") {
-        snprintf(out_buf, max_len, "%d", g_config.batch_max);
+        snprintf(out_buf, max_len, "%d", cfg.batch_max);
     } else if (key == "batch_flush") {
-        snprintf(out_buf, max_len, "%d", g_config.batch_flush);
+        snprintf(out_buf, max_len, "%d", cfg.batch_flush);
     } else if (key == "data_ttl") {
-        snprintf(out_buf, max_len, "%d", g_config.data_ttl);
+        snprintf(out_buf, max_len, "%d", cfg.data_ttl);
     } else if (key == "hb_interval") {
-        snprintf(out_buf, max_len, "%d", (g_config.hb_interval >= 1 && g_config.hb_interval <= 300) ? g_config.hb_interval : 5);
+        snprintf(out_buf, max_len, "%d", (cfg.hb_interval >= 1 && cfg.hb_interval <= 300) ? cfg.hb_interval : 5);
     } else if (key == "mqtt_topic_prefix") {
         char dev_prefix[32] = {0};
         const char* raw_model = g_config.device_model[0] ? g_config.device_model : "ar";
@@ -618,20 +619,24 @@ bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len, 
         if (pIdx == 0) strlcpy(dev_prefix, "ar", sizeof(dev_prefix));
         snprintf(out_buf, max_len, "%s/data/%s", dev_prefix, dev_id);
     } else if (key == "restart_schedule") {
-        html_escape(g_config.restart_schedule, out_buf, max_len);
+        html_escape(cfg.restart_schedule, out_buf, max_len);
     } else if (key == "restart_sch_checked") {
-        snprintf(out_buf, max_len, "%s", strlen(g_config.restart_schedule) >= 5 ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", strlen(cfg.restart_schedule) >= 5 ? "checked" : "");
     } else if (key == "restart_sch_container_dimmed") {
-        snprintf(out_buf, max_len, "%s", strlen(g_config.restart_schedule) >= 5 ? "" : "dimmed");
+        snprintf(out_buf, max_len, "%s", strlen(cfg.restart_schedule) >= 5 ? "" : "dimmed");
     } else if (key == "discon_rst") {
-        snprintf(out_buf, max_len, "%d", g_config.discon_rst);
+        snprintf(out_buf, max_len, "%d", cfg.discon_rst);
     } else if (key == "ntp_server") {
-        html_escape(g_config.ntp_server, out_buf, max_len);
+        html_escape(cfg.ntp_server, out_buf, max_len);
     } else {
         return false;
     }
 
     return true;
+}
+
+bool get_placeholder_value(std::string_view key, char *out_buf, size_t max_len, UserRole role) {
+    return get_placeholder_value_with_cfg(key, out_buf, max_len, role, g_config);
 }
 
 esp_err_t stream_emergency_page(httpd_req_t *req) {
@@ -744,11 +749,20 @@ esp_err_t stream_template_file(httpd_req_t *req, const char *filepath) {
         char in_buf[512];
         char out_buf[1024];
         char val[1024];
+        AppConfig staged_cfg;
     };
     std::unique_ptr<StreamBuffer> sbuf(new (std::nothrow) StreamBuffer());
     if (!sbuf) {
         fclose(f);
         return stream_emergency_page(req);
+    }
+
+    const AppConfig *cfg_ref = &g_config;
+    if (Routes::is_reboot_required() &&
+        (strcmp(filepath, "/storage/auth.html") == 0 || strcmp(filepath, "/storage/settings.html") == 0)) {
+        sbuf->staged_cfg = g_config;
+        Core::ConfigStore::loadConfigFromNvs(sbuf->staged_cfg, false);
+        cfg_ref = &sbuf->staged_cfg;
     }
 
     UserRole req_role = Session::validate(req, nullptr, 0, false);
@@ -794,7 +808,7 @@ esp_err_t stream_template_file(httpd_req_t *req, const char *filepath) {
             if (lookahead_len > 0) {
                 if (c == '%') {
                     lookahead[lookahead_len] = '\0';
-                    if (get_placeholder_value(std::string_view(lookahead + 1), val, sizeof(sbuf->val), req_role)) {
+                    if (get_placeholder_value_with_cfg(std::string_view(lookahead + 1), val, sizeof(sbuf->val), req_role, *cfg_ref)) {
                         append_val(val);
                     } else {
                         // Not a placeholder, output verbatim

@@ -14,6 +14,7 @@
 #include "ota_service.hpp"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -24,9 +25,14 @@ using namespace Iotaru;
 static Network::EthernetW5500 s_ethW5500;
 
 static void supervisorTask(void *pvParameters) {
+    esp_task_wdt_add(NULL);
     uint32_t loopCount = 0;
+    uint32_t nrfZeroIngressSecs = 0;
+    uint32_t lastNrfFrames = Core::BeaconPipeline::getTotalFramesIngress();
+
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_task_wdt_reset();
 
         // 1. Tick network & watchdog timers & EEPROM lifetime stats
         Network::NetworkManager::tickWatchdog();
@@ -60,13 +66,34 @@ static void supervisorTask(void *pvParameters) {
                      (unsigned int)Core::BeaconPipeline::getQueueLoad());
         }
 
-        // 5. Health monitor nRF52840 (jika nRF masih di mode STOPPED / restart)
+        // 5. Health monitor & Self-Healing nRF52840
+        uint8_t targetScanMode = (g_config.scan_mode == 2) ? 0x02 : 0x01;
         uint8_t currentNrfState = Core::BeaconPipeline::getNrfScanState();
-        if (currentNrfState == 0) {
+        uint32_t curNrfFrames = Core::BeaconPipeline::getTotalFramesIngress();
+
+        if (curNrfFrames != lastNrfFrames) {
+            lastNrfFrames = curNrfFrames;
+            nrfZeroIngressSecs = 0;
+        } else {
+            nrfZeroIngressSecs++;
+        }
+
+        if (currentNrfState != targetScanMode) {
             if (loopCount % 3 == 0) {
-                uint8_t targetScanMode = (g_config.scan_mode == 2) ? 0x02 : 0x01;
-                ESP_LOGI(TAG, "nRF52840 masih di mode STOPPED. Mengirim ulang perintah scan (Mode %u)...", targetScanMode);
+                ESP_LOGI(TAG, "nRF52840 state (%u) != target (%u). Mengirim ulang perintah scan...",
+                         currentNrfState, targetScanMode);
                 Bsp::UartManager::sendScanCommand(targetScanMode);
+            }
+        } else if (nrfZeroIngressSecs >= 15) {
+            if (nrfZeroIngressSecs == 15 || nrfZeroIngressSecs == 30) {
+                ESP_LOGD(TAG, "UART nRF52840 idle %lu detik -> polling status & re-sync scan mode",
+                         (unsigned long)nrfZeroIngressSecs);
+                Bsp::UartManager::sendGetStatusCommand();
+                Bsp::UartManager::sendScanCommand(targetScanMode);
+            } else if (nrfZeroIngressSecs >= 45) {
+                ESP_LOGW(TAG, "nRF52840 tidak merespons polling selama 45 detik! Memicu CMD_SOFT_REBOOT...");
+                Bsp::UartManager::sendSoftRebootCommand();
+                nrfZeroIngressSecs = 0;
             }
         }
     }
@@ -164,6 +191,17 @@ extern "C" void app_main(void) {
     // 9. Tandai Booting Dasar Selesai & Batalkan OTA Rollback jika stabil
     Bsp::LedManager::finishBoot();
     Web::Ota::mark_app_valid();
+
+    // Konfigurasi Hardware Task Watchdog Timer (TWDT) 15 detik dengan auto-panic reboot
+    esp_task_wdt_config_t twdt_cfg = {
+        .timeout_ms = 15000,
+        .idle_core_mask = (1 << 0) | (1 << 1),
+        .trigger_panic = true,
+    };
+    if (esp_task_wdt_reconfigure(&twdt_cfg) != ESP_OK) {
+        esp_task_wdt_init(&twdt_cfg);
+    }
+
     ESP_LOGI(TAG, "Pondasi sistem, MQTT, & Web Server siap dan aktif.");
 
     // 10. Jalankan Supervisor Task di Core 1 (Prioritas 2 di latar belakang)

@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_task_wdt.h"
 #include "esp_crc.h"
 #include "esp_crt_bundle.h"
 #include "freertos/FreeRTOS.h"
@@ -547,6 +548,11 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
 
         case MQTT_EVENT_DATA: {
             s_lastInboundActivityMs.store((uint32_t)(esp_timer_get_time() / 1000));
+            if (event->current_data_offset != 0 || event->data_len != event->total_data_len) {
+                ESP_LOGW(TAG, "Fragmented MQTT payload ignored (offset=%d, len=%d, total=%d)",
+                         event->current_data_offset, event->data_len, event->total_data_len);
+                break;
+            }
             if (event->topic && event->topic_len > 0) {
                 // Catat downlink wire bytes dari broker (termasuk TCP/IP dan MAC overhead)
                 size_t varLen = 2 + event->topic_len + event->data_len;
@@ -595,11 +601,14 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
                     uint32_t seqVal = static_cast<uint32_t>(seqItem->valuedouble);
                     const char* authStr = authItem->valuestring;
 
+                    char safeCmd[32] = {0};
+                    sanitizeToken(cmdStr, safeCmd, sizeof(safeCmd), true);
+
                     // 1. Verifikasi Hash Dinamis SHA-256 (admin_user:admin_pass:cmd:seq)
                     if (!verifyDynamicAuth(cmdStr, seqVal, authStr)) {
-                        ESP_LOGW(TAG, "Otentikasi perintah MQTT GAGAL! cmd='%s', seq=%u", cmdStr, (unsigned int)seqVal);
+                        ESP_LOGW(TAG, "Otentikasi perintah MQTT GAGAL! cmd='%s', seq=%u", safeCmd, (unsigned int)seqVal);
                         char errBuf[128];
-                        snprintf(errBuf, sizeof(errBuf), "{\"res\":\"err\",\"code\":2,\"cmd\":\"%s\",\"seq\":%u}", cmdStr, (unsigned int)seqVal);
+                        snprintf(errBuf, sizeof(errBuf), "{\"res\":\"err\",\"code\":2,\"cmd\":\"%s\",\"seq\":%u}", safeCmd, (unsigned int)seqVal);
                         pubResponse(errBuf);
                         cJSON_Delete(root);
                         break;
@@ -610,7 +619,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
                     if (!checkAndRecordSeq(seqVal, isCritical)) {
                         ESP_LOGW(TAG, "Perintah MQTT Ditolak: Duplicate Sequence #%u terdeteksi!", (unsigned int)seqVal);
                         char errBuf[128];
-                        snprintf(errBuf, sizeof(errBuf), "{\"res\":\"err\",\"code\":3,\"cmd\":\"%s\",\"seq\":%u}", cmdStr, (unsigned int)seqVal);
+                        snprintf(errBuf, sizeof(errBuf), "{\"res\":\"err\",\"code\":3,\"cmd\":\"%s\",\"seq\":%u}", safeCmd, (unsigned int)seqVal);
                         pubResponse(errBuf);
                         cJSON_Delete(root);
                         break;
@@ -641,7 +650,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
                         }, "reboot_task", 3072, nullptr, 5, nullptr, 1);
                     } else {
                         char errBuf[128];
-                        snprintf(errBuf, sizeof(errBuf), "{\"res\":\"err\",\"code\":4,\"cmd\":\"%s\",\"seq\":%u}", cmdStr, (unsigned int)seqVal);
+                        snprintf(errBuf, sizeof(errBuf), "{\"res\":\"err\",\"code\":4,\"cmd\":\"%s\",\"seq\":%u}", safeCmd, (unsigned int)seqVal);
                         pubResponse(errBuf);
                     }
 
@@ -666,12 +675,15 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
 }
 
 void MqttService::mqttPublisherTask(void* pvParameters) {
+    esp_task_wdt_add(NULL);
     uint32_t lastFlushTime = (uint32_t)(esp_timer_get_time() / 1000);
     size_t batchLen = 0;
     size_t batchCount = 0;
+    uint32_t consecPubFail = 0;
     QueueHandle_t bQueue = Core::BeaconPipeline::getQueue();
 
     for (;;) {
+        esp_task_wdt_reset();
         uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
 
         // 0. Kalibrasi Laju Bandwidth per Detik Riil (Rolling 1000ms Sampling Window)
@@ -689,6 +701,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
 
         // 1. Cek konektivitas jaringan
         if (!NetworkManager::isConnected()) {
+            consecPubFail = 0;
             if (batchCount > 0) {
                 Core::BeaconPipeline::recordMqttFailed(batchCount);
                 batchLen = 0;
@@ -705,6 +718,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
 
         // 2. Cek konektivitas MQTT
         if (!s_mqttConnected) {
+            consecPubFail = 0;
             if (batchCount > 0) {
                 Core::BeaconPipeline::recordMqttFailed(batchCount);
                 batchLen = 0;
@@ -733,6 +747,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                                                         (const char*)s_batchBuffer,
                                                         batchLen, qos, 0);
                     if (msgId >= 0) {
+                        consecPubFail = 0;
                         if (qos == 0) {
                             s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
                         }
@@ -741,6 +756,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                         Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
                         s_statLastBatchPktCount = batchCount;
                     } else {
+                        consecPubFail++;
                         Core::BeaconPipeline::recordMqttFailed(batchCount);
                     }
                 } else {
@@ -778,6 +794,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                                                         (const char*)s_batchBuffer,
                                                         batchLen, qos, 0);
                     if (msgId >= 0) {
+                        consecPubFail = 0;
                         if (qos == 0) {
                             s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
                         }
@@ -786,6 +803,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                         Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
                         s_statLastBatchPktCount = batchCount;
                     } else {
+                        consecPubFail++;
                         Core::BeaconPipeline::recordMqttFailed(batchCount);
                     }
                 } else {
@@ -796,6 +814,20 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                 batchCount = 0;
                 lastFlushTime = now;
             }
+        }
+
+        // 4b. Half-Open TCP / Outbox Full Failsafe Watchdog
+        uint32_t lastInbound = s_lastInboundActivityMs.load(std::memory_order_relaxed);
+        bool pubackStalled = (g_config.mqtt_qos == 1 &&
+                              Core::BeaconPipeline::getMqttSpeed() > 0 &&
+                              lastInbound > 0 &&
+                              (now - lastInbound) > 90000);
+        if (consecPubFail >= 10 || pubackStalled) {
+            ESP_LOGW(TAG, "Watchdog MQTT: %s -> Memicu forceReconnect()!",
+                     (consecPubFail >= 10) ? "10x gagal publish beruntun (Outbox penuh)" : "Tiada PUBACK >90s (Half-open TCP)");
+            consecPubFail = 0;
+            s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
+            forceReconnect();
         }
 
         // 5. Periodic Gateway Heartbeat (tiap 5000 ms / 5 detik) ke topik <prefix>/hb

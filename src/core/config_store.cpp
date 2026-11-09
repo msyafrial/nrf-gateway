@@ -536,83 +536,85 @@ void ConfigStore::initNvsConfiguration() {
     ESP_LOGI(TAG, "Seluruh NVS operasional siap & cfg_valid=true dikomit.");
 }
 
-void ConfigStore::loadConfig() {
+void ConfigStore::loadConfigFromNvs(AppConfig& targetCfg, bool allowMigration) {
     nvs_handle_t h;
 
-    // cfg_auth (Otomatis migrasi plaintext ke AES-128 berbasis hardware key MAC)
+    // cfg_auth (Otomatis migrasi plaintext ke AES-128 berbasis hardware key MAC jika allowMigration)
     bool needAuthMigration = false;
-    if (nvs_open("cfg_auth", NVS_READWRITE, &h) == ESP_OK) {
-        nvsGetStr(h, "adm_user", g_config.admin_user, sizeof(g_config.admin_user), "admin");
+    if (nvs_open("cfg_auth", allowMigration ? NVS_READWRITE : NVS_READONLY, &h) == ESP_OK) {
+        nvsGetStr(h, "adm_user", targetCfg.admin_user, sizeof(targetCfg.admin_user), "admin");
 
         char rawAdmPass[192] = {0};
         nvsGetStr(h, "adm_pass", rawAdmPass, sizeof(rawAdmPass), "admin");
-        decryptSecret(rawAdmPass, g_config.admin_pass, sizeof(g_config.admin_pass));
-        if (strncmp(rawAdmPass, "cbc:", 4) != 0 && strlen(g_config.admin_pass) > 0) {
+        decryptSecret(rawAdmPass, targetCfg.admin_pass, sizeof(targetCfg.admin_pass));
+        if (allowMigration && strncmp(rawAdmPass, "cbc:", 4) != 0 && strlen(targetCfg.admin_pass) > 0) {
             char encBuf[192];
-            encryptSecret(g_config.admin_pass, encBuf, sizeof(encBuf));
+            encryptSecret(targetCfg.admin_pass, encBuf, sizeof(encBuf));
             nvs_set_str(h, "adm_pass", encBuf);
             needAuthMigration = true;
         }
 
-        nvsGetStr(h, "tek_user", g_config.user_user, sizeof(g_config.user_user), "user");
+        nvsGetStr(h, "tek_user", targetCfg.user_user, sizeof(targetCfg.user_user), "user");
 
         char rawTekPass[192] = {0};
         nvsGetStr(h, "tek_pass", rawTekPass, sizeof(rawTekPass), "user");
-        decryptSecret(rawTekPass, g_config.user_pass, sizeof(g_config.user_pass));
-        if (strncmp(rawTekPass, "cbc:", 4) != 0 && strlen(g_config.user_pass) > 0) {
+        decryptSecret(rawTekPass, targetCfg.user_pass, sizeof(targetCfg.user_pass));
+        if (allowMigration && strncmp(rawTekPass, "cbc:", 4) != 0 && strlen(targetCfg.user_pass) > 0) {
             char encBuf[192];
-            encryptSecret(g_config.user_pass, encBuf, sizeof(encBuf));
+            encryptSecret(targetCfg.user_pass, encBuf, sizeof(encBuf));
             nvs_set_str(h, "tek_pass", encBuf);
             needAuthMigration = true;
         }
 
-        if (needAuthMigration) {
+        if (allowMigration && needAuthMigration) {
             nvs_commit(h);
             ESP_LOGI(TAG, "Kredensial auth berhasil dimigrasi ke enkripsi hardware AES-CBC (256-bit entropy).");
         }
         nvs_close(h);
     } else {
-        strlcpy(g_config.admin_user, "admin", sizeof(g_config.admin_user));
-        strlcpy(g_config.admin_pass, "admin", sizeof(g_config.admin_pass));
-        strlcpy(g_config.user_user, "user", sizeof(g_config.user_user));
-        strlcpy(g_config.user_pass, "user", sizeof(g_config.user_pass));
+        strlcpy(targetCfg.admin_user, "admin", sizeof(targetCfg.admin_user));
+        strlcpy(targetCfg.admin_pass, "admin", sizeof(targetCfg.admin_pass));
+        strlcpy(targetCfg.user_user, "user", sizeof(targetCfg.user_user));
+        strlcpy(targetCfg.user_pass, "user", sizeof(targetCfg.user_pass));
     }
-    ESP_LOGI(TAG, "Auth Config Aktif: Admin='%s', Engineer='%s'", g_config.admin_user, g_config.user_user);
+    if (allowMigration) {
+        ESP_LOGI(TAG, "Auth Config Aktif: Admin='%s', Engineer='%s'", targetCfg.admin_user, targetCfg.user_user);
+    }
 
     // cfg_net
-    if (nvs_open("cfg_net", NVS_READWRITE, &h) == ESP_OK) {
-        g_config.connection_mode = (int)nvsGetU32(h, "mode", 1);
-        nvsGetStr(h, "w_ssid", g_config.w_ssid, sizeof(g_config.w_ssid), "");
-        nvsGetStr(h, "w_pass", g_config.w_password, sizeof(g_config.w_password), "");
-        g_config.w_dhcp = (int)nvsGetU32(h, "w_dhcp", 1);
-        nvsGetStr(h, "w_ip", g_config.w_ip, sizeof(g_config.w_ip), "192.168.1.100");
-        nvsGetStr(h, "w_gw", g_config.w_gateway, sizeof(g_config.w_gateway), "192.168.1.1");
-        nvsGetStr(h, "w_sn", g_config.w_subnet, sizeof(g_config.w_subnet), "255.255.255.0");
-        nvsGetStr(h, "w_dns", g_config.w_dns, sizeof(g_config.w_dns), "8.8.8.8");
-        nvsGetStr(h, "w_dns2", g_config.w_dns2, sizeof(g_config.w_dns2), "");
-        g_config.eth_dhcp = (int)nvsGetU32(h, "eth_dhcp", 1);
-        nvsGetStr(h, "eth_ip", g_config.eth_ip, sizeof(g_config.eth_ip), "192.168.1.150");
-        nvsGetStr(h, "eth_gw", g_config.eth_gateway, sizeof(g_config.eth_gateway), "192.168.1.1");
-        nvsGetStr(h, "eth_sn", g_config.eth_subnet, sizeof(g_config.eth_subnet), "255.255.255.0");
-        nvsGetStr(h, "eth_dns", g_config.eth_dns, sizeof(g_config.eth_dns), "8.8.8.8");
-        nvsGetStr(h, "eth_dns2", g_config.eth_dns2, sizeof(g_config.eth_dns2), "");
-        nvsGetStr(h, "ap_pass", g_config.ap_password, sizeof(g_config.ap_password), "12345678");
+    if (nvs_open("cfg_net", allowMigration ? NVS_READWRITE : NVS_READONLY, &h) == ESP_OK) {
+        targetCfg.connection_mode = (int)nvsGetU32(h, "mode", 1);
+        nvsGetStr(h, "w_ssid", targetCfg.w_ssid, sizeof(targetCfg.w_ssid), "");
+        nvsGetStr(h, "w_pass", targetCfg.w_password, sizeof(targetCfg.w_password), "");
+        targetCfg.w_dhcp = (int)nvsGetU32(h, "w_dhcp", 1);
+        nvsGetStr(h, "w_ip", targetCfg.w_ip, sizeof(targetCfg.w_ip), "192.168.1.100");
+        nvsGetStr(h, "w_gw", targetCfg.w_gateway, sizeof(targetCfg.w_gateway), "192.168.1.1");
+        nvsGetStr(h, "w_sn", targetCfg.w_subnet, sizeof(targetCfg.w_subnet), "255.255.255.0");
+        nvsGetStr(h, "w_dns", targetCfg.w_dns, sizeof(targetCfg.w_dns), "8.8.8.8");
+        nvsGetStr(h, "w_dns2", targetCfg.w_dns2, sizeof(targetCfg.w_dns2), "");
+        targetCfg.eth_dhcp = (int)nvsGetU32(h, "eth_dhcp", 1);
+        nvsGetStr(h, "eth_ip", targetCfg.eth_ip, sizeof(targetCfg.eth_ip), "192.168.1.150");
+        nvsGetStr(h, "eth_gw", targetCfg.eth_gateway, sizeof(targetCfg.eth_gateway), "192.168.1.1");
+        nvsGetStr(h, "eth_sn", targetCfg.eth_subnet, sizeof(targetCfg.eth_subnet), "255.255.255.0");
+        nvsGetStr(h, "eth_dns", targetCfg.eth_dns, sizeof(targetCfg.eth_dns), "8.8.8.8");
+        nvsGetStr(h, "eth_dns2", targetCfg.eth_dns2, sizeof(targetCfg.eth_dns2), "");
+        nvsGetStr(h, "ap_pass", targetCfg.ap_password, sizeof(targetCfg.ap_password), "12345678");
 
         // Self-healing jika ada field IP di NVS yang korup atau berisi string non-IP
         bool healedNet = false;
-        if (!isValidIpv4Str(g_config.w_ip)) { strlcpy(g_config.w_ip, "192.168.1.100", sizeof(g_config.w_ip)); nvs_set_str(h, "w_ip", g_config.w_ip); healedNet = true; }
-        if (!isValidIpv4Str(g_config.w_gateway)) { strlcpy(g_config.w_gateway, "192.168.1.1", sizeof(g_config.w_gateway)); nvs_set_str(h, "w_gw", g_config.w_gateway); healedNet = true; }
-        if (!isValidIpv4Str(g_config.w_subnet, true)) { strlcpy(g_config.w_subnet, "255.255.255.0", sizeof(g_config.w_subnet)); nvs_set_str(h, "w_sn", g_config.w_subnet); healedNet = true; }
-        if (g_config.w_dns[0] != '\0' && !isValidIpv4Str(g_config.w_dns)) { strlcpy(g_config.w_dns, "8.8.8.8", sizeof(g_config.w_dns)); nvs_set_str(h, "w_dns", g_config.w_dns); healedNet = true; }
-        if (g_config.w_dns2[0] != '\0' && !isValidIpv4Str(g_config.w_dns2)) { g_config.w_dns2[0] = '\0'; nvs_set_str(h, "w_dns2", ""); healedNet = true; }
+        if (!isValidIpv4Str(targetCfg.w_ip)) { strlcpy(targetCfg.w_ip, "192.168.1.100", sizeof(targetCfg.w_ip)); if (allowMigration) nvs_set_str(h, "w_ip", targetCfg.w_ip); healedNet = true; }
+        if (!isValidIpv4Str(targetCfg.w_gateway)) { strlcpy(targetCfg.w_gateway, "192.168.1.1", sizeof(targetCfg.w_gateway)); if (allowMigration) nvs_set_str(h, "w_gw", targetCfg.w_gateway); healedNet = true; }
+        if (!isValidIpv4Str(targetCfg.w_subnet, true)) { strlcpy(targetCfg.w_subnet, "255.255.255.0", sizeof(targetCfg.w_subnet)); if (allowMigration) nvs_set_str(h, "w_sn", targetCfg.w_subnet); healedNet = true; }
+        if (targetCfg.w_dns[0] != '\0' && !isValidIpv4Str(targetCfg.w_dns)) { strlcpy(targetCfg.w_dns, "8.8.8.8", sizeof(targetCfg.w_dns)); if (allowMigration) nvs_set_str(h, "w_dns", targetCfg.w_dns); healedNet = true; }
+        if (targetCfg.w_dns2[0] != '\0' && !isValidIpv4Str(targetCfg.w_dns2)) { targetCfg.w_dns2[0] = '\0'; if (allowMigration) nvs_set_str(h, "w_dns2", ""); healedNet = true; }
 
-        if (!isValidIpv4Str(g_config.eth_ip)) { strlcpy(g_config.eth_ip, "192.168.1.150", sizeof(g_config.eth_ip)); nvs_set_str(h, "eth_ip", g_config.eth_ip); healedNet = true; }
-        if (!isValidIpv4Str(g_config.eth_gateway)) { strlcpy(g_config.eth_gateway, "192.168.1.1", sizeof(g_config.eth_gateway)); nvs_set_str(h, "eth_gw", g_config.eth_gateway); healedNet = true; }
-        if (!isValidIpv4Str(g_config.eth_subnet, true)) { strlcpy(g_config.eth_subnet, "255.255.255.0", sizeof(g_config.eth_subnet)); nvs_set_str(h, "eth_sn", g_config.eth_subnet); healedNet = true; }
-        if (g_config.eth_dns[0] != '\0' && !isValidIpv4Str(g_config.eth_dns)) { strlcpy(g_config.eth_dns, "8.8.8.8", sizeof(g_config.eth_dns)); nvs_set_str(h, "eth_dns", g_config.eth_dns); healedNet = true; }
-        if (g_config.eth_dns2[0] != '\0' && !isValidIpv4Str(g_config.eth_dns2)) { g_config.eth_dns2[0] = '\0'; nvs_set_str(h, "eth_dns2", ""); healedNet = true; }
+        if (!isValidIpv4Str(targetCfg.eth_ip)) { strlcpy(targetCfg.eth_ip, "192.168.1.150", sizeof(targetCfg.eth_ip)); if (allowMigration) nvs_set_str(h, "eth_ip", targetCfg.eth_ip); healedNet = true; }
+        if (!isValidIpv4Str(targetCfg.eth_gateway)) { strlcpy(targetCfg.eth_gateway, "192.168.1.1", sizeof(targetCfg.eth_gateway)); if (allowMigration) nvs_set_str(h, "eth_gw", targetCfg.eth_gateway); healedNet = true; }
+        if (!isValidIpv4Str(targetCfg.eth_subnet, true)) { strlcpy(targetCfg.eth_subnet, "255.255.255.0", sizeof(targetCfg.eth_subnet)); if (allowMigration) nvs_set_str(h, "eth_sn", targetCfg.eth_subnet); healedNet = true; }
+        if (targetCfg.eth_dns[0] != '\0' && !isValidIpv4Str(targetCfg.eth_dns)) { strlcpy(targetCfg.eth_dns, "8.8.8.8", sizeof(targetCfg.eth_dns)); if (allowMigration) nvs_set_str(h, "eth_dns", targetCfg.eth_dns); healedNet = true; }
+        if (targetCfg.eth_dns2[0] != '\0' && !isValidIpv4Str(targetCfg.eth_dns2)) { targetCfg.eth_dns2[0] = '\0'; if (allowMigration) nvs_set_str(h, "eth_dns2", ""); healedNet = true; }
 
-        if (healedNet) {
+        if (allowMigration && healedNet) {
             nvs_commit(h);
             ESP_LOGW(TAG, "Self-healing cfg_net: memulihkan field IPv4 yang tidak valid ke default aman.");
         }
@@ -620,21 +622,21 @@ void ConfigStore::loadConfig() {
     }
 
     // cfg_mqtt (NVS_READWRITE untuk auto-migrasi enkripsi mqtt_password)
-    if (nvs_open("cfg_mqtt", NVS_READWRITE, &h) == ESP_OK) {
-        nvsGetStr(h, "host", g_config.mqtt_host, sizeof(g_config.mqtt_host), "socket.cubeacon.com");
-        g_config.mqtt_port = (int)nvsGetU32(h, "port", 1884);
-        nvsGetStr(h, "user", g_config.mqtt_user, sizeof(g_config.mqtt_user), "");
-        g_config.mqtt_use_ssl = (int)nvsGetU32(h, "use_ssl", 0);
-        g_config.mqtt_qos = (int)nvsGetU32(h, "qos", 1);
-        g_config.mqtt_keepalive = (int)nvsGetU32(h, "keepalive", 30);
-        g_config.telem_mask = nvsGetU32(h, "telem_mask", TELEM_MASK_DEFAULT);
+    if (nvs_open("cfg_mqtt", allowMigration ? NVS_READWRITE : NVS_READONLY, &h) == ESP_OK) {
+        nvsGetStr(h, "host", targetCfg.mqtt_host, sizeof(targetCfg.mqtt_host), "socket.cubeacon.com");
+        targetCfg.mqtt_port = (int)nvsGetU32(h, "port", 1884);
+        nvsGetStr(h, "user", targetCfg.mqtt_user, sizeof(targetCfg.mqtt_user), "");
+        targetCfg.mqtt_use_ssl = (int)nvsGetU32(h, "use_ssl", 0);
+        targetCfg.mqtt_qos = (int)nvsGetU32(h, "qos", 1);
+        targetCfg.mqtt_keepalive = (int)nvsGetU32(h, "keepalive", 30);
+        targetCfg.telem_mask = nvsGetU32(h, "telem_mask", TELEM_MASK_DEFAULT);
 
         char rawMqttPass[192] = {0};
         nvsGetStr(h, "pass", rawMqttPass, sizeof(rawMqttPass), "");
-        decryptSecret(rawMqttPass, g_config.mqtt_password, sizeof(g_config.mqtt_password));
-        if (strncmp(rawMqttPass, "cbc:", 4) != 0 && strlen(g_config.mqtt_password) > 0) {
+        decryptSecret(rawMqttPass, targetCfg.mqtt_password, sizeof(targetCfg.mqtt_password));
+        if (allowMigration && strncmp(rawMqttPass, "cbc:", 4) != 0 && strlen(targetCfg.mqtt_password) > 0) {
             char encMqtt[192];
-            encryptSecret(g_config.mqtt_password, encMqtt, sizeof(encMqtt));
+            encryptSecret(targetCfg.mqtt_password, encMqtt, sizeof(encMqtt));
             nvs_set_str(h, "pass", encMqtt);
             nvs_commit(h);
             ESP_LOGI(TAG, "Password MQTT berhasil dimigrasi ke format enkripsi AES-CBC.");
@@ -644,85 +646,91 @@ void ConfigStore::loadConfig() {
 
     // cfg_gate
     if (nvs_open("cfg_gate", NVS_READONLY, &h) == ESP_OK) {
-        g_config.scan_mode = (int)nvsGetU32(h, "scan_mode", 1);
-        nvsGetStr(h, "dev_model", g_config.device_model, sizeof(g_config.device_model), CONFIG_DEVICE_MODEL);
-        nvsGetStr(h, "dev_ver", g_config.device_version, sizeof(g_config.device_version), CONFIG_DEVICE_BOARD_VER);
-        g_config.filter_uuid_en = (int)nvsGetU32(h, "uuid_en", 0);
-        nvsGetStr(h, "uuid", g_config.filter_uuid, sizeof(g_config.filter_uuid), "FDA50693A4E24FB1AFCFC6EB07647825");
-        parseHexUUID(g_config.filter_uuid, g_config.filter_uuid_bytes);
-        g_config.filter_major_en = (int)nvsGetU32(h, "major_en", 0);
-        nvsGetStr(h, "major", g_config.filter_major, sizeof(g_config.filter_major), "");
-        g_config.filter_unknown_en = (int)nvsGetU32(h, "unk_en", 0);
-        g_config.rssi_min = (int)nvsGetI32(h, "rssi_min", -100);
-        g_config.batch_max = (int)nvsGetU32(h, "batch_max", 50);
-        if (g_config.batch_max < 10) g_config.batch_max = 10;
-        if (g_config.batch_max > 150) g_config.batch_max = 150;
-        g_config.batch_flush = (int)nvsGetU32(h, "batch_flush", 300);
-        g_config.data_ttl = (int)nvsGetU32(h, "data_ttl", 1000);
-        g_config.hb_interval = (int)nvsGetU32(h, "hb_interval", 5);
-        nvsGetStr(h, "restart_sch", g_config.restart_schedule, sizeof(g_config.restart_schedule), "03:00");
-        g_config.discon_rst = (int)nvsGetU32(h, "discon_rst", 30);
-        nvsGetStr(h, "ntp_server", g_config.ntp_server, sizeof(g_config.ntp_server), "pool.ntp.org");
+        targetCfg.scan_mode = (int)nvsGetU32(h, "scan_mode", 1);
+        nvsGetStr(h, "dev_model", targetCfg.device_model, sizeof(targetCfg.device_model), CONFIG_DEVICE_MODEL);
+        nvsGetStr(h, "dev_ver", targetCfg.device_version, sizeof(targetCfg.device_version), CONFIG_DEVICE_BOARD_VER);
+        targetCfg.filter_uuid_en = (int)nvsGetU32(h, "uuid_en", 0);
+        nvsGetStr(h, "uuid", targetCfg.filter_uuid, sizeof(targetCfg.filter_uuid), "FDA50693A4E24FB1AFCFC6EB07647825");
+        parseHexUUID(targetCfg.filter_uuid, targetCfg.filter_uuid_bytes);
+        targetCfg.filter_major_en = (int)nvsGetU32(h, "major_en", 0);
+        nvsGetStr(h, "major", targetCfg.filter_major, sizeof(targetCfg.filter_major), "");
+        targetCfg.filter_unknown_en = (int)nvsGetU32(h, "unk_en", 0);
+        targetCfg.rssi_min = (int)nvsGetI32(h, "rssi_min", -100);
+        targetCfg.batch_max = (int)nvsGetU32(h, "batch_max", 50);
+        if (targetCfg.batch_max < 10) targetCfg.batch_max = 10;
+        if (targetCfg.batch_max > 150) targetCfg.batch_max = 150;
+        targetCfg.batch_flush = (int)nvsGetU32(h, "batch_flush", 300);
+        targetCfg.data_ttl = (int)nvsGetU32(h, "data_ttl", 1000);
+        targetCfg.hb_interval = (int)nvsGetU32(h, "hb_interval", 5);
+        nvsGetStr(h, "restart_sch", targetCfg.restart_schedule, sizeof(targetCfg.restart_schedule), "03:00");
+        targetCfg.discon_rst = (int)nvsGetU32(h, "discon_rst", 30);
+        nvsGetStr(h, "ntp_server", targetCfg.ntp_server, sizeof(targetCfg.ntp_server), "pool.ntp.org");
         nvs_close(h);
     }
 
-    ESP_LOGI(TAG, "Konfigurasi berhasil dimuat: Model=%s, Mode=%s, Broker=%s:%d (SSL: %s, QoS: %d, KeepAlive: %ds)",
-             g_config.device_model,
-             (g_config.connection_mode == 1) ? "Ethernet" : "Wi-Fi",
-             g_config.mqtt_host, g_config.mqtt_port,
-             g_config.mqtt_use_ssl ? "YA" : "TIDAK",
-             g_config.mqtt_qos, g_config.mqtt_keepalive);
+    if (allowMigration) {
+        ESP_LOGI(TAG, "Konfigurasi berhasil dimuat: Model=%s, Mode=%s, Broker=%s:%d (SSL: %s, QoS: %d, KeepAlive: %ds)",
+                 targetCfg.device_model,
+                 (targetCfg.connection_mode == 1) ? "Ethernet" : "Wi-Fi",
+                 targetCfg.mqtt_host, targetCfg.mqtt_port,
+                 targetCfg.mqtt_use_ssl ? "YA" : "TIDAK",
+                 targetCfg.mqtt_qos, targetCfg.mqtt_keepalive);
+    }
 }
 
-void ConfigStore::saveConfigAuth() {
+void ConfigStore::loadConfig() {
+    loadConfigFromNvs(g_config, true);
+}
+
+void ConfigStore::saveConfigAuth(const AppConfig& srcCfg) {
     nvs_handle_t h;
     if (nvs_open("cfg_auth", NVS_READWRITE, &h) == ESP_OK) {
-        nvs_set_str(h, "adm_user", g_config.admin_user);
+        nvs_set_str(h, "adm_user", srcCfg.admin_user);
 
         char encAdmPass[192];
-        encryptSecret(g_config.admin_pass, encAdmPass, sizeof(encAdmPass));
+        encryptSecret(srcCfg.admin_pass, encAdmPass, sizeof(encAdmPass));
         nvs_set_str(h, "adm_pass", encAdmPass);
 
-        nvs_set_str(h, "tek_user", g_config.user_user);
+        nvs_set_str(h, "tek_user", srcCfg.user_user);
 
         char encTekPass[192];
-        encryptSecret(g_config.user_pass, encTekPass, sizeof(encTekPass));
+        encryptSecret(srcCfg.user_pass, encTekPass, sizeof(encTekPass));
         nvs_set_str(h, "tek_pass", encTekPass);
 
         nvs_commit(h);
         nvs_close(h);
     }
     if (nvs_open("cfg_net", NVS_READWRITE, &h) == ESP_OK) {
-        nvs_set_u32(h, "mode", g_config.connection_mode);
-        nvs_set_str(h, "w_ssid", g_config.w_ssid);
-        nvs_set_str(h, "w_pass", g_config.w_password);
-        nvs_set_u32(h, "w_dhcp", g_config.w_dhcp);
-        nvs_set_str(h, "w_ip", g_config.w_ip);
-        nvs_set_str(h, "w_gw", g_config.w_gateway);
-        nvs_set_str(h, "w_sn", g_config.w_subnet);
-        nvs_set_str(h, "w_dns", g_config.w_dns);
-        nvs_set_str(h, "w_dns2", g_config.w_dns2);
-        nvs_set_u32(h, "eth_dhcp", g_config.eth_dhcp);
-        nvs_set_str(h, "eth_ip", g_config.eth_ip);
-        nvs_set_str(h, "eth_gw", g_config.eth_gateway);
-        nvs_set_str(h, "eth_sn", g_config.eth_subnet);
-        nvs_set_str(h, "eth_dns", g_config.eth_dns);
-        nvs_set_str(h, "eth_dns2", g_config.eth_dns2);
-        nvs_set_str(h, "ap_pass", g_config.ap_password);
+        nvs_set_u32(h, "mode", srcCfg.connection_mode);
+        nvs_set_str(h, "w_ssid", srcCfg.w_ssid);
+        nvs_set_str(h, "w_pass", srcCfg.w_password);
+        nvs_set_u32(h, "w_dhcp", srcCfg.w_dhcp);
+        nvs_set_str(h, "w_ip", srcCfg.w_ip);
+        nvs_set_str(h, "w_gw", srcCfg.w_gateway);
+        nvs_set_str(h, "w_sn", srcCfg.w_subnet);
+        nvs_set_str(h, "w_dns", srcCfg.w_dns);
+        nvs_set_str(h, "w_dns2", srcCfg.w_dns2);
+        nvs_set_u32(h, "eth_dhcp", srcCfg.eth_dhcp);
+        nvs_set_str(h, "eth_ip", srcCfg.eth_ip);
+        nvs_set_str(h, "eth_gw", srcCfg.eth_gateway);
+        nvs_set_str(h, "eth_sn", srcCfg.eth_subnet);
+        nvs_set_str(h, "eth_dns", srcCfg.eth_dns);
+        nvs_set_str(h, "eth_dns2", srcCfg.eth_dns2);
+        nvs_set_str(h, "ap_pass", srcCfg.ap_password);
         nvs_commit(h);
         nvs_close(h);
     }
     if (nvs_open("cfg_mqtt", NVS_READWRITE, &h) == ESP_OK) {
-        nvs_set_str(h, "host", g_config.mqtt_host);
-        nvs_set_u32(h, "port", (uint32_t)g_config.mqtt_port);
-        nvs_set_str(h, "user", g_config.mqtt_user);
-        nvs_set_u32(h, "use_ssl", (uint32_t)g_config.mqtt_use_ssl);
-        nvs_set_u32(h, "qos", (uint32_t)g_config.mqtt_qos);
-        nvs_set_u32(h, "keepalive", (uint32_t)g_config.mqtt_keepalive);
-        nvs_set_u32(h, "telem_mask", g_config.telem_mask);
+        nvs_set_str(h, "host", srcCfg.mqtt_host);
+        nvs_set_u32(h, "port", (uint32_t)srcCfg.mqtt_port);
+        nvs_set_str(h, "user", srcCfg.mqtt_user);
+        nvs_set_u32(h, "use_ssl", (uint32_t)srcCfg.mqtt_use_ssl);
+        nvs_set_u32(h, "qos", (uint32_t)srcCfg.mqtt_qos);
+        nvs_set_u32(h, "keepalive", (uint32_t)srcCfg.mqtt_keepalive);
+        nvs_set_u32(h, "telem_mask", srcCfg.telem_mask);
 
         char encMqttPass[192];
-        encryptSecret(g_config.mqtt_password, encMqttPass, sizeof(encMqttPass));
+        encryptSecret(srcCfg.mqtt_password, encMqttPass, sizeof(encMqttPass));
         nvs_set_str(h, "pass", encMqttPass);
 
         nvs_commit(h);
@@ -731,28 +739,38 @@ void ConfigStore::saveConfigAuth() {
     ESP_LOGI(TAG, "Konfigurasi Auth, Network & MQTT berhasil disimpan ke NVS.");
 }
 
-void ConfigStore::saveConfigSettings() {
+void ConfigStore::saveConfigAuth() {
+    saveConfigAuth(g_config);
+}
+
+void ConfigStore::saveConfigSettings(const AppConfig& srcCfg) {
     nvs_handle_t h;
     if (nvs_open("cfg_gate", NVS_READWRITE, &h) == ESP_OK) {
-        nvs_set_u32(h, "scan_mode", g_config.scan_mode);
-        nvs_set_u32(h, "uuid_en", g_config.filter_uuid_en);
-        nvs_set_str(h, "uuid", g_config.filter_uuid);
-        nvs_set_u32(h, "major_en", g_config.filter_major_en);
-        nvs_set_str(h, "major", g_config.filter_major);
-        nvs_set_u32(h, "unk_en", g_config.filter_unknown_en);
-        nvs_set_i32(h, "rssi_min", g_config.rssi_min);
-        nvs_set_u32(h, "batch_max", g_config.batch_max);
-        nvs_set_u32(h, "batch_flush", g_config.batch_flush);
-        nvs_set_u32(h, "data_ttl", g_config.data_ttl);
-        nvs_set_u32(h, "hb_interval", g_config.hb_interval);
-        nvs_set_str(h, "restart_sch", g_config.restart_schedule);
-        nvs_set_u32(h, "discon_rst", g_config.discon_rst);
-        nvs_set_str(h, "ntp_server", g_config.ntp_server);
+        nvs_set_u32(h, "scan_mode", srcCfg.scan_mode);
+        nvs_set_u32(h, "uuid_en", srcCfg.filter_uuid_en);
+        nvs_set_str(h, "uuid", srcCfg.filter_uuid);
+        nvs_set_u32(h, "major_en", srcCfg.filter_major_en);
+        nvs_set_str(h, "major", srcCfg.filter_major);
+        nvs_set_u32(h, "unk_en", srcCfg.filter_unknown_en);
+        nvs_set_i32(h, "rssi_min", srcCfg.rssi_min);
+        nvs_set_u32(h, "batch_max", srcCfg.batch_max);
+        nvs_set_u32(h, "batch_flush", srcCfg.batch_flush);
+        nvs_set_u32(h, "data_ttl", srcCfg.data_ttl);
+        nvs_set_u32(h, "hb_interval", srcCfg.hb_interval);
+        nvs_set_str(h, "restart_sch", srcCfg.restart_schedule);
+        nvs_set_u32(h, "discon_rst", srcCfg.discon_rst);
+        nvs_set_str(h, "ntp_server", srcCfg.ntp_server);
         nvs_commit(h);
         nvs_close(h);
     }
-    parseHexUUID(g_config.filter_uuid, g_config.filter_uuid_bytes);
+    if (&srcCfg == &g_config) {
+        parseHexUUID(g_config.filter_uuid, g_config.filter_uuid_bytes);
+    }
     ESP_LOGI(TAG, "Pengaturan Gateway berhasil disimpan ke NVS.");
+}
+
+void ConfigStore::saveConfigSettings() {
+    saveConfigSettings(g_config);
 }
 
 void ConfigStore::resetConfigToFactory() {

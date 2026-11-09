@@ -61,8 +61,8 @@ void MicroDnsServer::stop() {
 
     s_running = false;
 
-    // Tunggu task berhenti dengan batas waktu 500ms
-    for (int i = 0; i < 25 && s_taskHandle != nullptr; ++i) {
+    // Tunggu task berhenti dengan batas waktu 800ms (> 500ms SO_RCVTIMEO)
+    for (int i = 0; i < 40 && s_taskHandle != nullptr; ++i) {
         vTaskDelay(pdMS_TO_TICKS(20));
     }
     s_taskHandle = nullptr;
@@ -139,20 +139,32 @@ void MicroDnsServer::taskWorker(void* arg) {
             continue;
         }
 
-        // Parse Question Name (QNAME)
+        // Parse Question Name (QNAME) - dukung label normal & RFC 1035 compression pointer (0xC0)
         size_t offset = sizeof(DnsHeader);
-        while (offset < (size_t)len && rx_buf[offset] != 0) {
-            uint8_t label_len = rx_buf[offset++];
-            if (label_len > 63 || (offset + label_len) > (size_t)len) {
+        bool qname_valid = false;
+        while (offset < (size_t)len) {
+            uint8_t label_len = rx_buf[offset];
+            if (label_len == 0) {
+                offset++;
+                qname_valid = true;
                 break;
             }
-            offset += label_len;
+            if ((label_len & 0xC0) == 0xC0) {
+                if (offset + 2 <= (size_t)len) {
+                    offset += 2;
+                    qname_valid = true;
+                }
+                break;
+            }
+            if (label_len > 63 || (offset + 1 + label_len) > (size_t)len) {
+                break;
+            }
+            offset += 1 + label_len;
         }
 
-        if (offset >= (size_t)len || rx_buf[offset] != 0) {
+        if (!qname_valid) {
             continue; // Malformed QNAME
         }
-        offset++; // Lewati byte null terminasi 0x00
 
         if (offset + 4 > (size_t)len) {
             continue; // Kurang QTYPE atau QCLASS
@@ -160,6 +172,10 @@ void MicroDnsServer::taskWorker(void* arg) {
 
         uint16_t qtype = (static_cast<uint16_t>(rx_buf[offset]) << 8) | rx_buf[offset + 1];
         offset += 4; // Lewati QTYPE (2B) dan QCLASS (2B)
+
+        if (offset + 16 > sizeof(tx_buf)) {
+            continue; // Cegah buffer overflow tx_buf (384B)
+        }
 
         // Salin Header & Question asli ke buffer balasan
         memcpy(tx_buf, rx_buf, offset);

@@ -39,17 +39,21 @@ static void uartEventTask(void *pvParameters) {
                 case UART_FIFO_OVF:
                     ESP_LOGW(TAG, "Hardware UART FIFO overflow!");
                     Core::BeaconPipeline::recordDroppedBeacon("UART", "HwFifoOvf", 0, DropReason::QUEUE_OVERFLOW);
+                    Core::BeaconPipeline::resetStreamParser();
                     uart_flush_input(UART_NUM_2);
                     xQueueReset(s_uartEventQueue);
                     break;
                 case UART_BUFFER_FULL:
                     ESP_LOGW(TAG, "Driver UART Ring Buffer full!");
                     Core::BeaconPipeline::recordDroppedBeacon("UART", "RingBufFull", 0, DropReason::QUEUE_OVERFLOW);
+                    Core::BeaconPipeline::resetStreamParser();
                     uart_flush_input(UART_NUM_2);
                     xQueueReset(s_uartEventQueue);
                     break;
                 case UART_FRAME_ERR:
                     ESP_LOGW(TAG, "UART Frame Error terdeteksi! Periksa jalur fisik (kabel TX/RX terbalik, floating GND, atau kontak kendor).");
+                    Core::BeaconPipeline::resetStreamParser();
+                    uart_flush_input(UART_NUM_2);
                     break;
                 case UART_PARITY_ERR:
                     ESP_LOGW(TAG, "UART Parity Error terdeteksi!");
@@ -112,6 +116,34 @@ esp_err_t UartManager::sendScanCommand(uint8_t mode_cmd) {
              (mode_cmd == 2) ? "ACTIVE" : (mode_cmd == 1) ? "PASSIVE" : "STOP",
              (written == sizeof(frame)) ? "OK" : "GAGAL", written);
 
+    return (written == sizeof(frame)) ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t UartManager::sendGetStatusCommand() {
+    ControlCmdFrame frame = {};
+    frame.header = 0x55; // CMD_HEADER_BYTE
+    frame.cmd_id = 0x02; // CMD_GET_STATUS
+    frame.param  = 0x00;
+    frame.reserved = 0x00;
+    frame.crc = frame.cmd_id ^ frame.param ^ frame.reserved;
+
+    int written = uart_write_bytes(UART_NUM_2, (const char*)&frame, sizeof(frame));
+    uart_wait_tx_done(UART_NUM_2, pdMS_TO_TICKS(100));
+    return (written == sizeof(frame)) ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t UartManager::sendSoftRebootCommand() {
+    ControlCmdFrame frame = {};
+    frame.header = 0x55; // CMD_HEADER_BYTE
+    frame.cmd_id = 0x03; // CMD_SOFT_REBOOT
+    frame.param  = 0x55; // Magic confirmation byte
+    frame.reserved = 0x00;
+    frame.crc = frame.cmd_id ^ frame.param ^ frame.reserved;
+
+    int written = uart_write_bytes(UART_NUM_2, (const char*)&frame, sizeof(frame));
+    uart_wait_tx_done(UART_NUM_2, pdMS_TO_TICKS(100));
+    ESP_LOGW(TAG, "Kirim CMD_SOFT_REBOOT ke nRF52840 -> Tx status: %s",
+             (written == sizeof(frame)) ? "OK" : "GAGAL");
     return (written == sizeof(frame)) ? ESP_OK : ESP_FAIL;
 }
 

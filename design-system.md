@@ -5149,3 +5149,32 @@ Setiap berkas master HTML terotentikasi (`index.html`, `test.html`, `log.html`, 
    - **Preservasi Static IP Saat Link Down**: Pada `ETHERNET_EVENT_DISCONNECTED`, reset `0.0.0.0` hanya dijalankan bila `g_config.eth_dhcp != 0`. Pada mode Static IP, `ip_info` dipertahankan di `eth_netif` agar `IP_EVENT_ETH_GOT_IP` otomatis terpicu saat kabel dicolok kembali.
    - **Dukungan Static IP Lintas Mode & Secondary DNS Wi-Fi**: Static IP Ethernet tetap dihormati baik pada mode Ethernet maupun Wi-Fi, dan `w_dns2` diterapkan ke `ESP_NETIF_DNS_BACKUP` serta dipulihkan pada `restoreWifiDnsAndDefaultRoute()`.
    - **Validasi IPv4 Backend & Self-Healing NVS**: Endpoint `/api/v1/config/auth` memvalidasi format IPv4 (`is_valid_ipv4`) sebelum komit NVS, dan `ConfigStore::loadConfig()` otomatis memulihkan field IPv4 yang korup ke default aman.
+
+
+## 140. Arsitektur Staged-in-NVS (Apply-on-Reboot Only) & Standarisasi Failsafe Industri (20 Point Hardening)
+
+### 1. Kebijakan Konfigurasi Staged-in-NVS (`0 Byte` Overhead RAM Permanen)
+- **Prinsip Operasional**: Seluruh perubahan pada **Auth Settings** (`POST /api/v1/config/auth`) maupun **Device Settings** (`POST /api/v1/config/settings`) disimpan langsung ke penyimpanan non-volatil (NVS: namespace `cfg_auth`, `cfg_net`, `cfg_mqtt`, `cfg_gate`) **tanpa memodifikasi `g_config` aktif di RAM** dan **tanpa memicu efek samping runtime** (`updateSntpServer`, `updateTopicNames`, `parseHexUUID` pada `g_config.filter_uuid_bytes`) hingga perangkat di-reboot.
+- **Alokasi Memori Sementara (`0 Byte` `.bss` Permanen)**:
+  - Saat request penyimpanan diterima (`web_routes.cpp`), handler mengalokasikan `std::unique_ptr<AppConfig> cfgPtr` sementara di heap (~2 KB), memuat state staged terakhir dari NVS via `ConfigStore::loadConfigFromNvs(*cfgPtr, false)`, memvalidasi & meng-clamp seluruh parameter, menulis kembali ke NVS via `ConfigStore::saveConfigAuth(*cfgPtr)` atau `ConfigStore::saveConfigSettings(*cfgPtr)`, lalu membebaskan `cfgPtr` seketika saat request selesai.
+  - Saat halaman `/auth` atau `/settings` dirender ketika `Routes::is_reboot_required() == true`, `stream_template_file()` (`web_template.cpp`) memuat konfigurasi staged dari NVS ke dalam `StreamBuffer::staged_cfg` sehingga form HTML selalu menampilkan nilai terbaru yang baru disimpan user, sedangkan halaman Overview (`/`), telemetri runtime, MQTT, dan filter BLE tetap membaca `g_config` aktif.
+- **Mekanisme Discard / Rollback 100% Utuh**:
+  - Ketika tombol **Discard** (`POST /api/v1/config/network/discard`) ditekan atau auto-rollback terjadi, firmware menyalin kembali `g_config` aktif yang belum tersentuh di RAM ke seluruh namespace NVS (`ConfigStore::saveConfigAuth(g_config)` dan `ConfigStore::saveConfigSettings(g_config)`), mereset `s_auth_reboot_required = false`, dan mengembalikan JSON `{"status":"ok","reverted_mode":...,"reverted_ssid":...}` yang dibutuhkan oleh `app.js.gz`.
+
+### 2. Hardening Failsafe Standar Industri (ESP32 & nRF52840)
+1. **Keamanan HTTP & OTA (`web_routes.cpp`, `ota_service.cpp`)**:
+   - **Loop Penerimaan Body HTTP (`recv_full_post_body`)**: Mengakumulasi `httpd_req_recv()` hingga `received == req->content_len` untuk mengatasi fragmentasi paket TCP pada jaringan lambat, serta menolak payload berlebih dengan `413 Content Too Large`.
+   - **Batas Timeout Upload OTA**: Membatasi retry `HTTPD_SOCK_ERR_TIMEOUT` maksimal 6 kali (30 detik) dan memblokir upload konfigurasi saat `Ota::is_in_progress()` bernilai `true`.
+   - **Auto-Remount LittleFS Pasca-Verifikasi OTA**: Memanggil `Server::remountStorage()` setelah `esp_vfs_littlefs_unregister("storage")` pada `ota_service.cpp` agar Web UI tetap terlayani jika reboot tertunda.
+   - **Clamping Numerik Ketat**: Membatasi `mqtt_port` (`1..65535`), `rssi_min` (`-100..-30`), `batch_flush` (`50..2000`), `data_ttl` (`1000..30000`), dan `discon_rst` (`1..60`).
+2. **Watchdog & Pemulihan Lintas-Chip (`main.cpp`, `bsp_uart.cpp`, `beacon_pipeline.cpp`, `nrf52840/src/main.c`)**:
+   - **ESP-IDF Hardware Task Watchdog (`esp_task_wdt`)**: Mengaktifkan TWDT 15 detik (`trigger_panic = true`) dan mendaftarkan `supervisorTask` serta `mqttPublisherTask`.
+   - **Auto-Recovery & State Sync nRF52840**: `s_totalFramesIngress` kini menghitung baik frame `0xAA` (`BeaconFrame`) maupun `0xBB` (`ControlRspFrame`). Jika tidak ada frame masuk selama 15/30 detik, ESP32 mengirim `sendGetStatusCommand()` dan menyinkronkan ulang mode scan; jika tetap mati selama 45 detik, ESP32 mengirim `sendSoftRebootCommand()` (`0xFF`).
+   - **Reset Parser UART pada Overflow**: Memanggil `BeaconPipeline::resetStreamParser()` saat terjadi `UART_FIFO_OVF`, `UART_BUFFER_FULL`, atau `UART_FRAME_ERR`.
+   - **Atomik Telemetri & Watchdog Dual-Thread nRF52840**: Mengubah `s_readSpeed`, `s_scanSpeed`, `s_dropSpeed`, `s_mqttSpeed`, dan `s_mqttBatchSpeed` menjadi `std::atomic<uint32_t>`, serta memverifikasi `tx_thread_heartbeat` pada loop WDT nRF52840.
+3. **Jaringan, MQTT, & Bus Periferal (`micro_dns_server.cpp`, `udp_discovery.cpp`, `EthernetW5500.cpp`, `mqtt_service.cpp`, `bsp_at24c256.cpp`, `net_log_service.cpp`)**:
+   - **Kompresi Pointer DNS (`0xC0`) & Guard Buffer**: Mendukung pointer kompresi RFC 1035 pada `MicroDnsServer` dan memeriksa batas `tx_buf` sebelum menyalin RDATA.
+   - **Graceful Socket Teardown**: Menaikkan iterasi tunggu `stop()` menjadi 40×20ms (800ms > 500ms `SO_RCVTIMEO`) pada `MicroDnsServer`, `MicroDhcpServer`, dan `UdpDiscoveryService`.
+   - **UDP Discovery Fallback & Dynamic UI Version**: `UdpDiscoveryService` otomatis menggunakan IP/MAC lokal Ethernet (`getEthernetIpRaw()` / `getEthernetMac()`) saat uplink Wi-Fi belum aktif, dan mengambil `"ui_version"` dinamis dari `Web::Template::get_ui_version()`.
+   - **Retry Inisialisasi Hardware W5500 & Bus Reset I2C EEPROM**: Menambahkan 3× retry dengan reset pulse `preInit()` pada `EthernetW5500::begin()`, serta memanggil `i2c_master_bus_reset()` saat terjadi `ESP_ERR_TIMEOUT` pada `At24c256`.
+   - **Deteksi Half-Open Socket MQTT & Sanitasi JSON**: Memicu `forceReconnect()` jika terjadi 10 kegagalan publish berturut-turut atau stall PUBACK QoS 1 > 90 detik, menolak paket MQTT terfragmentasi, dan menyanitasi `cmdStr` sebelum menyusun JSON respons error.

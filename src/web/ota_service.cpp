@@ -392,6 +392,7 @@ bool finalize(char *out_err, size_t err_len) {
         }
 
         ESP_LOGI(TAG, "Verifikasi LittleFS SUKSES! Partisi siap digunakan.");
+        Server::remountStorage();
         Server::set_maintenance_mode(false);
     }
 

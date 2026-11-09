@@ -15,6 +15,7 @@ public:
     
     // Core 0 fast ingestion processor
     static void processBytes(const uint8_t* buffer, size_t len);
+    static void resetStreamParser();
     
     // Antrean & Buffer Telemetri
     static void push(const BeaconPacket& packet);
