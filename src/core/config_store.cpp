@@ -414,8 +414,8 @@ void ConfigStore::initNvsConfiguration() {
         nvs_erase_all(hDest);
         if (hasMasterNet) {
             nvsCopyU32(hMaster, hDest, "mode", 1); // Default: 1 (Ethernet)
-            nvsCopyStr(hMaster, hDest, "w_ssid", "");
-            nvsCopyStr(hMaster, hDest, "w_pass", "");
+            nvsCopyStr(hMaster, hDest, "w_ssid", "cubeacon");
+            nvsCopyStr(hMaster, hDest, "w_pass", "cubeacon1234");
             nvsCopyU32(hMaster, hDest, "w_dhcp", 1);
             nvsCopyStr(hMaster, hDest, "w_ip", "192.168.1.100");
             nvsCopyStr(hMaster, hDest, "w_gw", "192.168.1.1");
@@ -432,8 +432,8 @@ void ConfigStore::initNvsConfiguration() {
             nvs_close(hMaster);
         } else {
             nvs_set_u32(hDest, "mode", 1);
-            nvs_set_str(hDest, "w_ssid", "");
-            nvs_set_str(hDest, "w_pass", "");
+            nvs_set_str(hDest, "w_ssid", "cubeacon");
+            nvs_set_str(hDest, "w_pass", "cubeacon1234");
             nvs_set_u32(hDest, "w_dhcp", 1);
             nvs_set_str(hDest, "w_ip", "192.168.1.100");
             nvs_set_str(hDest, "w_gw", "192.168.1.1");
@@ -458,21 +458,21 @@ void ConfigStore::initNvsConfiguration() {
     if (nvs_open("cfg_mqtt", NVS_READWRITE, &hDest) == ESP_OK) {
         nvs_erase_all(hDest);
         if (hasMasterMqtt) {
-            nvsCopyStr(hMaster, hDest, "host", "socket.cubeacon.com");
-            nvsCopyU32(hMaster, hDest, "port", 1884);
-            nvsCopyStr(hMaster, hDest, "user", "");
-            nvsCopyStr(hMaster, hDest, "pass", "");
-            nvsCopyU32(hMaster, hDest, "use_ssl", 0);
+            nvsCopyStr(hMaster, hDest, "host", "broker.freemqtt.com");
+            nvsCopyU32(hMaster, hDest, "port", 8883);
+            nvsCopyStr(hMaster, hDest, "user", "freemqtt");
+            nvsCopyStr(hMaster, hDest, "pass", "public");
+            nvsCopyU32(hMaster, hDest, "use_ssl", 1);
             nvsCopyU32(hMaster, hDest, "qos", 1);
             nvsCopyU32(hMaster, hDest, "keepalive", 30);
             nvsCopyU32(hMaster, hDest, "telem_mask", TELEM_MASK_DEFAULT);
             nvs_close(hMaster);
         } else {
-            nvs_set_str(hDest, "host", "socket.cubeacon.com");
-            nvs_set_u32(hDest, "port", 1884);
-            nvs_set_str(hDest, "user", "");
-            nvs_set_str(hDest, "pass", "");
-            nvs_set_u32(hDest, "use_ssl", 0);
+            nvs_set_str(hDest, "host", "broker.freemqtt.com");
+            nvs_set_u32(hDest, "port", 8883);
+            nvs_set_str(hDest, "user", "freemqtt");
+            nvs_set_str(hDest, "pass", "public");
+            nvs_set_u32(hDest, "use_ssl", 1);
             nvs_set_u32(hDest, "qos", 1);
             nvs_set_u32(hDest, "keepalive", 30);
             nvs_set_u32(hDest, "telem_mask", TELEM_MASK_DEFAULT);
@@ -497,7 +497,7 @@ void ConfigStore::initNvsConfiguration() {
             nvsCopyU32(hMaster, hDest, "unk_en", 0);
             nvsCopyI32(hMaster, hDest, "rssi_min", -100);
             nvsCopyU32(hMaster, hDest, "batch_max", 50);
-            nvsCopyU32(hMaster, hDest, "batch_flush", 300);
+            nvsCopyU32(hMaster, hDest, "batch_flush", 150);
             nvsCopyU32(hMaster, hDest, "data_ttl", 1000);
             nvsCopyU32(hMaster, hDest, "hb_interval", 5);
             nvsCopyStr(hMaster, hDest, "restart_sch", "03:00");
@@ -515,7 +515,7 @@ void ConfigStore::initNvsConfiguration() {
             nvs_set_u32(hDest, "unk_en", 0);
             nvs_set_i32(hDest, "rssi_min", -100);
             nvs_set_u32(hDest, "batch_max", 50);
-            nvs_set_u32(hDest, "batch_flush", 300);
+            nvs_set_u32(hDest, "batch_flush", 150);
             nvs_set_u32(hDest, "data_ttl", 1000);
             nvs_set_u32(hDest, "hb_interval", 5);
             nvs_set_str(hDest, "restart_sch", "03:00");
@@ -584,8 +584,8 @@ void ConfigStore::loadConfigFromNvs(AppConfig& targetCfg, bool allowMigration) {
     // cfg_net
     if (nvs_open("cfg_net", allowMigration ? NVS_READWRITE : NVS_READONLY, &h) == ESP_OK) {
         targetCfg.connection_mode = (int)nvsGetU32(h, "mode", 1);
-        nvsGetStr(h, "w_ssid", targetCfg.w_ssid, sizeof(targetCfg.w_ssid), "");
-        nvsGetStr(h, "w_pass", targetCfg.w_password, sizeof(targetCfg.w_password), "");
+        nvsGetStr(h, "w_ssid", targetCfg.w_ssid, sizeof(targetCfg.w_ssid), "cubeacon");
+        nvsGetStr(h, "w_pass", targetCfg.w_password, sizeof(targetCfg.w_password), "cubeacon1234");
         targetCfg.w_dhcp = (int)nvsGetU32(h, "w_dhcp", 1);
         nvsGetStr(h, "w_ip", targetCfg.w_ip, sizeof(targetCfg.w_ip), "192.168.1.100");
         nvsGetStr(h, "w_gw", targetCfg.w_gateway, sizeof(targetCfg.w_gateway), "192.168.1.1");
@@ -619,20 +619,37 @@ void ConfigStore::loadConfigFromNvs(AppConfig& targetCfg, bool allowMigration) {
             ESP_LOGW(TAG, "Self-healing cfg_net: memulihkan field IPv4 yang tidak valid ke default aman.");
         }
         nvs_close(h);
+    } else {
+        targetCfg.connection_mode = 1;
+        strlcpy(targetCfg.w_ssid, "cubeacon", sizeof(targetCfg.w_ssid));
+        strlcpy(targetCfg.w_password, "cubeacon1234", sizeof(targetCfg.w_password));
+        targetCfg.w_dhcp = 1;
+        strlcpy(targetCfg.w_ip, "192.168.1.100", sizeof(targetCfg.w_ip));
+        strlcpy(targetCfg.w_gateway, "192.168.1.1", sizeof(targetCfg.w_gateway));
+        strlcpy(targetCfg.w_subnet, "255.255.255.0", sizeof(targetCfg.w_subnet));
+        strlcpy(targetCfg.w_dns, "8.8.8.8", sizeof(targetCfg.w_dns));
+        targetCfg.w_dns2[0] = '\0';
+        targetCfg.eth_dhcp = 1;
+        strlcpy(targetCfg.eth_ip, "192.168.1.150", sizeof(targetCfg.eth_ip));
+        strlcpy(targetCfg.eth_gateway, "192.168.1.1", sizeof(targetCfg.eth_gateway));
+        strlcpy(targetCfg.eth_subnet, "255.255.255.0", sizeof(targetCfg.eth_subnet));
+        strlcpy(targetCfg.eth_dns, "8.8.8.8", sizeof(targetCfg.eth_dns));
+        targetCfg.eth_dns2[0] = '\0';
+        strlcpy(targetCfg.ap_password, "12345678", sizeof(targetCfg.ap_password));
     }
 
     // cfg_mqtt (NVS_READWRITE untuk auto-migrasi enkripsi mqtt_password)
     if (nvs_open("cfg_mqtt", allowMigration ? NVS_READWRITE : NVS_READONLY, &h) == ESP_OK) {
-        nvsGetStr(h, "host", targetCfg.mqtt_host, sizeof(targetCfg.mqtt_host), "socket.cubeacon.com");
-        targetCfg.mqtt_port = (int)nvsGetU32(h, "port", 1884);
-        nvsGetStr(h, "user", targetCfg.mqtt_user, sizeof(targetCfg.mqtt_user), "");
-        targetCfg.mqtt_use_ssl = (int)nvsGetU32(h, "use_ssl", 0);
+        nvsGetStr(h, "host", targetCfg.mqtt_host, sizeof(targetCfg.mqtt_host), "broker.freemqtt.com");
+        targetCfg.mqtt_port = (int)nvsGetU32(h, "port", 8883);
+        nvsGetStr(h, "user", targetCfg.mqtt_user, sizeof(targetCfg.mqtt_user), "freemqtt");
+        targetCfg.mqtt_use_ssl = (int)nvsGetU32(h, "use_ssl", 1);
         targetCfg.mqtt_qos = (int)nvsGetU32(h, "qos", 1);
         targetCfg.mqtt_keepalive = (int)nvsGetU32(h, "keepalive", 30);
         targetCfg.telem_mask = nvsGetU32(h, "telem_mask", TELEM_MASK_DEFAULT);
 
         char rawMqttPass[192] = {0};
-        nvsGetStr(h, "pass", rawMqttPass, sizeof(rawMqttPass), "");
+        nvsGetStr(h, "pass", rawMqttPass, sizeof(rawMqttPass), "public");
         decryptSecret(rawMqttPass, targetCfg.mqtt_password, sizeof(targetCfg.mqtt_password));
         if (allowMigration && strncmp(rawMqttPass, "cbc:", 4) != 0 && strlen(targetCfg.mqtt_password) > 0) {
             char encMqtt[192];
@@ -642,6 +659,15 @@ void ConfigStore::loadConfigFromNvs(AppConfig& targetCfg, bool allowMigration) {
             ESP_LOGI(TAG, "Password MQTT berhasil dimigrasi ke format enkripsi AES-CBC.");
         }
         nvs_close(h);
+    } else {
+        strlcpy(targetCfg.mqtt_host, "broker.freemqtt.com", sizeof(targetCfg.mqtt_host));
+        targetCfg.mqtt_port = 8883;
+        strlcpy(targetCfg.mqtt_user, "freemqtt", sizeof(targetCfg.mqtt_user));
+        strlcpy(targetCfg.mqtt_password, "public", sizeof(targetCfg.mqtt_password));
+        targetCfg.mqtt_use_ssl = 1;
+        targetCfg.mqtt_qos = 1;
+        targetCfg.mqtt_keepalive = 30;
+        targetCfg.telem_mask = TELEM_MASK_DEFAULT;
     }
 
     // cfg_gate
@@ -659,13 +685,31 @@ void ConfigStore::loadConfigFromNvs(AppConfig& targetCfg, bool allowMigration) {
         targetCfg.batch_max = (int)nvsGetU32(h, "batch_max", 50);
         if (targetCfg.batch_max < 10) targetCfg.batch_max = 10;
         if (targetCfg.batch_max > 150) targetCfg.batch_max = 150;
-        targetCfg.batch_flush = (int)nvsGetU32(h, "batch_flush", 300);
+        targetCfg.batch_flush = (int)nvsGetU32(h, "batch_flush", 150);
         targetCfg.data_ttl = (int)nvsGetU32(h, "data_ttl", 1000);
         targetCfg.hb_interval = (int)nvsGetU32(h, "hb_interval", 5);
         nvsGetStr(h, "restart_sch", targetCfg.restart_schedule, sizeof(targetCfg.restart_schedule), "03:00");
         targetCfg.discon_rst = (int)nvsGetU32(h, "discon_rst", 30);
         nvsGetStr(h, "ntp_server", targetCfg.ntp_server, sizeof(targetCfg.ntp_server), "pool.ntp.org");
         nvs_close(h);
+    } else {
+        targetCfg.scan_mode = 1;
+        strlcpy(targetCfg.device_model, CONFIG_DEVICE_MODEL, sizeof(targetCfg.device_model));
+        strlcpy(targetCfg.device_version, CONFIG_DEVICE_BOARD_VER, sizeof(targetCfg.device_version));
+        targetCfg.filter_uuid_en = 0;
+        strlcpy(targetCfg.filter_uuid, "FDA50693A4E24FB1AFCFC6EB07647825", sizeof(targetCfg.filter_uuid));
+        parseHexUUID(targetCfg.filter_uuid, targetCfg.filter_uuid_bytes);
+        targetCfg.filter_major_en = 0;
+        targetCfg.filter_major[0] = '\0';
+        targetCfg.filter_unknown_en = 0;
+        targetCfg.rssi_min = -100;
+        targetCfg.batch_max = 50;
+        targetCfg.batch_flush = 150;
+        targetCfg.data_ttl = 1000;
+        targetCfg.hb_interval = 5;
+        strlcpy(targetCfg.restart_schedule, "03:00", sizeof(targetCfg.restart_schedule));
+        targetCfg.discon_rst = 30;
+        strlcpy(targetCfg.ntp_server, "pool.ntp.org", sizeof(targetCfg.ntp_server));
     }
 
     if (allowMigration) {

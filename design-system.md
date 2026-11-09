@@ -5178,3 +5178,30 @@ Setiap berkas master HTML terotentikasi (`index.html`, `test.html`, `log.html`, 
    - **UDP Discovery Fallback & Dynamic UI Version**: `UdpDiscoveryService` otomatis menggunakan IP/MAC lokal Ethernet (`getEthernetIpRaw()` / `getEthernetMac()`) saat uplink Wi-Fi belum aktif, dan mengambil `"ui_version"` dinamis dari `Web::Template::get_ui_version()`.
    - **Retry Inisialisasi Hardware W5500 & Bus Reset I2C EEPROM**: Menambahkan 3× retry dengan reset pulse `preInit()` pada `EthernetW5500::begin()`, serta memanggil `i2c_master_bus_reset()` saat terjadi `ESP_ERR_TIMEOUT` pada `At24c256`.
    - **Deteksi Half-Open Socket MQTT & Sanitasi JSON**: Memicu `forceReconnect()` jika terjadi 10 kegagalan publish berturut-turut atau stall PUBACK QoS 1 > 90 detik, menolak paket MQTT terfragmentasi, dan menyanitasi `cmdStr` sebelum menyusun JSON respons error.
+
+
+## 141. Standarisasi 1:1 Failsafe NVS Hardcode C++ & Default Ethernet Uplink
+
+### 1. Penyelarasan Mode Jaringan Default (Ethernet-First Uplink)
+- **Konfigurasi Master (`nvs_config.csv`)**: Mengubah nilai `network.mode` dari `0` (Wi-Fi) menjadi **`1` (Ethernet)** sehingga saat pertama kali dinyalakan atau pasca factory reset, gateway langsung memprioritaskan koneksi jaringan kabel LAN W5500 yang stabil dan berkecepatan tinggi.
+- **Konfigurasi C++ (`config_store.cpp`)**: Menyelaraskan seluruh fallback default di `initNvsConfiguration()` dan `loadConfigFromNvs()` ke `mode = 1` (Ethernet).
+
+### 2. Sinkronisasi Penuh Parameter Failsafe 1:1 dengan `nvs_config.csv`
+- **Kredensial Wi-Fi Cadangan**:
+  - `w_ssid`: Diselaraskan menjadi `"cubeacon"`.
+  - `w_pass`: Diselaraskan menjadi `"cubeacon1234"`.
+  - Memastikan jika administrator berpindah ke mode Wi-Fi, perangkat langsung memiliki kredensial default yang valid tanpa input kosong.
+- **Broker MQTT TLS Public**:
+  - `host`: `"broker.freemqtt.com"`
+  - `port`: `8883` (MQTTS TLS)
+  - `user`: `"freemqtt"`
+  - `pass`: `"public"`
+  - `use_ssl`: `1` (TLS Aktif)
+  - Menggantikan parameter legacy (`socket.cubeacon.com:1884`) dengan broker cloud modern berbasis TLS.
+- **Throughput Gateway**:
+  - `batch_flush`: Diselaraskan menjadi **`150`** ms (sesuai target low-latency data ingestion).
+
+### 3. Pengamanan Gagal Total Hardware NVS (*Fail-Hard Guard*)
+- Pada [`src/core/config_store.cpp`](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/core/config_store.cpp), menambahkan blok penanganan `else` pada pemanggilan `nvs_open("cfg_net")`, `nvs_open("cfg_mqtt")`, dan `nvs_open("cfg_gate")` di fungsi `loadConfigFromNvs()`.
+- Jika chip flash atau partisi NVS mengalami kerusakan fisik total (*open error*), variabel `g_config` di RAM tidak akan bernilai `0` atau string kosong, melainkan langsung terisi penuh dengan parameter standar operasional yang aman (`mode = 1`, Ethernet DHCP aktif, AP default aktif).
+- **Overhead RAM Statis**: Terverifikasi **tepat `0 Byte`** penambahan RAM (tetap di **36.1% / 118.380 bytes**).

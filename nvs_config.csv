@@ -5,7 +5,7 @@ adm_pass,data,string,admin
 tek_user,data,string,user
 tek_pass,data,string,user
 network,namespace,,
-mode,data,u32,0
+mode,data,u32,1
 w_ssid,data,string,cubeacon
 w_pass,data,string,cubeacon1234
 w_dhcp,data,u32,1
