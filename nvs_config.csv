@@ -40,7 +40,7 @@ major_en,data,u32,0
 major,data,string,
 unk_en,data,u32,0
 rssi_min,data,i32,-100
-batch_max,data,u32,50
+batch_max,data,u32,150
 batch_flush,data,u32,150
 data_ttl,data,u32,1000
 hb_interval,data,u32,5

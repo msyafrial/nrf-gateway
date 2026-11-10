@@ -496,7 +496,7 @@ void ConfigStore::initNvsConfiguration() {
             nvsCopyStr(hMaster, hDest, "major", "");
             nvsCopyU32(hMaster, hDest, "unk_en", 0);
             nvsCopyI32(hMaster, hDest, "rssi_min", -100);
-            nvsCopyU32(hMaster, hDest, "batch_max", 50);
+            nvsCopyU32(hMaster, hDest, "batch_max", 150);
             nvsCopyU32(hMaster, hDest, "batch_flush", 150);
             nvsCopyU32(hMaster, hDest, "data_ttl", 1000);
             nvsCopyU32(hMaster, hDest, "hb_interval", 5);
@@ -514,7 +514,7 @@ void ConfigStore::initNvsConfiguration() {
             nvs_set_str(hDest, "major", "");
             nvs_set_u32(hDest, "unk_en", 0);
             nvs_set_i32(hDest, "rssi_min", -100);
-            nvs_set_u32(hDest, "batch_max", 50);
+            nvs_set_u32(hDest, "batch_max", 150);
             nvs_set_u32(hDest, "batch_flush", 150);
             nvs_set_u32(hDest, "data_ttl", 1000);
             nvs_set_u32(hDest, "hb_interval", 5);
@@ -682,7 +682,7 @@ void ConfigStore::loadConfigFromNvs(AppConfig& targetCfg, bool allowMigration) {
         nvsGetStr(h, "major", targetCfg.filter_major, sizeof(targetCfg.filter_major), "");
         targetCfg.filter_unknown_en = (int)nvsGetU32(h, "unk_en", 0);
         targetCfg.rssi_min = (int)nvsGetI32(h, "rssi_min", -100);
-        targetCfg.batch_max = (int)nvsGetU32(h, "batch_max", 50);
+        targetCfg.batch_max = (int)nvsGetU32(h, "batch_max", 150);
         if (targetCfg.batch_max < 10) targetCfg.batch_max = 10;
         if (targetCfg.batch_max > 150) targetCfg.batch_max = 150;
         targetCfg.batch_flush = (int)nvsGetU32(h, "batch_flush", 150);
@@ -703,7 +703,7 @@ void ConfigStore::loadConfigFromNvs(AppConfig& targetCfg, bool allowMigration) {
         targetCfg.filter_major[0] = '\0';
         targetCfg.filter_unknown_en = 0;
         targetCfg.rssi_min = -100;
-        targetCfg.batch_max = 50;
+        targetCfg.batch_max = 150;
         targetCfg.batch_flush = 150;
         targetCfg.data_ttl = 1000;
         targetCfg.hb_interval = 5;

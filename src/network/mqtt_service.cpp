@@ -184,7 +184,7 @@ static uint32_t s_lastHeartbeatMs = 0;
 static std::atomic<uint32_t> s_lastInboundActivityMs{0};
 static char s_lastError[64]       = "None";
 
-static uint8_t s_batchBuffer[MQTT_BATCH_BUFFER_SIZE];
+alignas(4) static uint8_t s_batchBuffer[MQTT_BATCH_BUFFER_SIZE];
 static std::atomic<size_t> s_statBatchBufferLoad{0};
 static std::atomic<size_t> s_statLastBatchPktCount{0};
 static std::atomic<uint32_t> s_statWireBytesAcc{0};
@@ -200,14 +200,14 @@ static inline void recordWireBytes(uint32_t bytes) {
 static size_t calculatePubackWireBytes() {
     size_t mqttPubackLen = 4; // 2B MQTT Header (0x40, 0x02) + 2B MsgID
     size_t tcpIpLen = 40;     // 20B IPv4 + 20B TCP
-    size_t l2Len = NetworkManager::isEthernetActive() ? 18 : 36;
+    size_t l2Len = (g_config.connection_mode == 1) ? 18 : 36;
     return mqttPubackLen + tcpIpLen + l2Len;
 }
 
 static size_t calculateSubackWireBytes() {
     size_t mqttSubackLen = 5; // 2B MQTT Header + 2B MsgID + 1B ReturnCode
     size_t tcpIpLen = 40;     // 20B IPv4 + 20B TCP
-    size_t l2Len = NetworkManager::isEthernetActive() ? 18 : 36;
+    size_t l2Len = (g_config.connection_mode == 1) ? 18 : 36;
     return mqttSubackLen + tcpIpLen + l2Len;
 }
 
@@ -234,71 +234,8 @@ static size_t calculateWireBytes(size_t topicLen, size_t payloadLen, uint8_t qos
     size_t fixHeaderLen = 1 + (varLen < 128 ? 1 : ((varLen < 16384) ? 2 : 3));
     size_t mqttTotal = fixHeaderLen + varLen;
     size_t tcpIpLen = 40; // 20B IPv4 + 20B TCP
-    size_t l2Len = NetworkManager::isEthernetActive() ? 18 : 36;
+    size_t l2Len = (g_config.connection_mode == 1) ? 18 : 36;
     return mqttTotal + tcpIpLen + l2Len;
-}
-
-bool MqttService::buildBinaryPayload(const BeaconPacket& p, uint8_t* outBuf, size_t outBufMaxLen, size_t& outLen) {
-    if (!outBuf) return false;
-
-    // Bitmask dinamis v2 (Bit 7 selalu 1)
-    uint8_t mask = TELEM_MASK_V2_FLAG | (uint8_t)(g_config.telem_mask & 0x3F);
-
-    // Hitung ukuran total yang dibutuhkan
-    size_t reqLen = 1; // 1 byte mask
-    if (mask & TELEM_MASK_UUID)  reqLen += 16;
-    if (mask & TELEM_MASK_MAJOR) reqLen += 2;
-    if (mask & TELEM_MASK_MINOR) reqLen += 2;
-    if (mask & TELEM_MASK_RSSI)  reqLen += 1;
-    if (mask & TELEM_MASK_BATT)  reqLen += 1;
-    if (mask & TELEM_MASK_TIME)  reqLen += 4;
-
-    if (outBufMaxLen < reqLen) return false;
-
-    size_t idx = 0;
-    outBuf[idx++] = mask;
-
-    // 1. Proximity UUID (16 Byte)
-    if (mask & TELEM_MASK_UUID) {
-        memcpy(outBuf + idx, p.uuid, 16);
-        idx += 16;
-    }
-
-    // 2. Major (2 Byte, Big-Endian)
-    if (mask & TELEM_MASK_MAJOR) {
-        outBuf[idx++] = (uint8_t)(p.major >> 8);
-        outBuf[idx++] = (uint8_t)(p.major & 0xFF);
-    }
-
-    // 3. Minor (2 Byte, Big-Endian)
-    if (mask & TELEM_MASK_MINOR) {
-        outBuf[idx++] = (uint8_t)(p.minor >> 8);
-        outBuf[idx++] = (uint8_t)(p.minor & 0xFF);
-    }
-
-    // 4. RSSI (1 Byte Bertanda)
-    if (mask & TELEM_MASK_RSSI) {
-        outBuf[idx++] = (int8_t)p.rssi;
-    }
-
-    // 5. Battery (1 Byte Persentase)
-    if (mask & TELEM_MASK_BATT) {
-        outBuf[idx++] = (p.type == BeaconType::IBEACON_EXT || p.type == BeaconType::MINEW_B) ? p.battery : 0;
-    }
-
-    // 6. Timestamp (4 Byte, Big-Endian) - Menggunakan Epoch NTP riil jika ada, atau uptime detik
-    if (mask & TELEM_MASK_TIME) {
-        time_t nowSec = 0;
-        time(&nowSec);
-        uint32_t ts = (nowSec > 1600000000) ? (uint32_t)nowSec : (uint32_t)(esp_timer_get_time() / 1000000);
-        outBuf[idx++] = (uint8_t)((ts >> 24) & 0xFF);
-        outBuf[idx++] = (uint8_t)((ts >> 16) & 0xFF);
-        outBuf[idx++] = (uint8_t)((ts >> 8) & 0xFF);
-        outBuf[idx++] = (uint8_t)(ts & 0xFF);
-    }
-
-    outLen = idx;
-    return true;
 }
 
 void MqttService::updateTopicNames() {
@@ -358,8 +295,7 @@ static void buildStatusPayload(const char* status, char* outBuf, size_t maxLen) 
     Core::ConfigStore::getDeviceId(device_id, sizeof(device_id));
 
     // Mode saat ini: "ethernet" atau "wifi"
-    const char* mode = NetworkManager::isEthernetActive() ? "ethernet" :
-                       (g_config.connection_mode == 1 ? "ethernet" : "wifi");
+    const char* mode = (g_config.connection_mode == 1) ? "ethernet" : "wifi";
 
     char ipwlan[16] = {0};
     NetworkManager::getWifiIpRaw(ipwlan, sizeof(ipwlan));
@@ -558,7 +494,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
                 size_t varLen = 2 + event->topic_len + event->data_len;
                 size_t fixHeaderLen = 1 + (varLen < 128 ? 1 : ((varLen < 16384) ? 2 : 3));
                 size_t tcpIpLen = 40;
-                size_t l2Len = NetworkManager::isEthernetActive() ? 18 : 36;
+                size_t l2Len = (g_config.connection_mode == 1) ? 18 : 36;
                 recordWireBytes(fixHeaderLen + varLen + tcpIpLen + l2Len);
 
                 // Exact topic matching untuk mencegah sub-topic collision (VULN-SEC-08)
@@ -728,109 +664,136 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
             continue;
         }
 
-        // 3. Tarik paket dari antrean Core Pipeline
+        constexpr size_t frameLen = sizeof(MqttBleFrame44); // 44 bytes dengan Unix Timestamp (Solusi 3)
+
+        // 3. Flush jika batch sudah penuh dari iterasi sebelumnya (atau tertahan backpressure)
+        if (batchCount >= (size_t)g_config.batch_max || (batchLen + frameLen > MQTT_BATCH_BUFFER_SIZE)) {
+            int qos = (g_config.mqtt_qos == 0) ? 0 : 1;
+            int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicData,
+                                                (const char*)s_batchBuffer,
+                                                batchLen, qos, 0);
+            if (msgId >= 0) {
+                consecPubFail = 0;
+                if (qos == 0) {
+                    s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
+                }
+                recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
+                Bsp::LedManager::triggerTrafficBlip();
+                Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
+                s_statLastBatchPktCount = batchCount;
+                batchLen = 0;
+                batchCount = 0;
+                lastFlushTime = now;
+            } else {
+                consecPubFail++;
+                if (consecPubFail >= 25) {
+                    Core::BeaconPipeline::recordMqttFailed(batchCount);
+                    batchLen = 0;
+                    batchCount = 0;
+                    lastFlushTime = now;
+                } else {
+                    // Non-destructive backpressure: tahan s_batchBuffer, beri jeda untuk PUBACK
+                    vTaskDelay(pdMS_TO_TICKS(10));
+                    continue;
+                }
+            }
+        }
+
+        // 4. Tarik paket dari antrean Core Pipeline hingga mencapai batch_max
+        time_t nowSec = time(NULL);
+        uint32_t nowEpoch = (nowSec > 1700000000) ? static_cast<uint32_t>(nowSec) : 0;
+        uint32_t netNowEpoch = (nowEpoch > 0) ? lwip_htonl(nowEpoch) : 0;
         BeaconPacket packet;
-        while (bQueue != nullptr && xQueueReceive(bQueue, &packet, 0) == pdTRUE) {
+
+        while (batchCount < (size_t)g_config.batch_max &&
+               (batchLen + frameLen <= MQTT_BATCH_BUFFER_SIZE) &&
+               bQueue != nullptr && xQueueReceive(bQueue, &packet, 0) == pdTRUE) {
             uint32_t age = now - packet.timestamp;
             if (g_config.data_ttl > 0 && age > (uint32_t)g_config.data_ttl) {
                 Core::BeaconPipeline::recordDroppedBeacon(packet, DropReason::TTL_EXPIRED);
                 continue; // Buang paket kadaluarsa dan catat ke DropLog
             }
 
-            constexpr size_t frameLen = sizeof(MqttBleFrame44); // 44 bytes dengan Unix Timestamp (Solusi 3)
-            // Periksa apakah batch saat ini sudah penuh sebelum menambah item baru
-            if ((batchLen + frameLen > MQTT_BATCH_BUFFER_SIZE) ||
-                (batchCount >= (size_t)g_config.batch_max)) {
-                if (s_mqttConnected) {
-                    int qos = (g_config.mqtt_qos == 0) ? 0 : 1;
-                    int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicData,
-                                                        (const char*)s_batchBuffer,
-                                                        batchLen, qos, 0);
-                    if (msgId >= 0) {
-                        consecPubFail = 0;
-                        if (qos == 0) {
-                            s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
-                        }
-                        recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
-                        Bsp::LedManager::triggerTrafficBlip();
-                        Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
-                        s_statLastBatchPktCount = batchCount;
-                    } else {
-                        consecPubFail++;
-                        Core::BeaconPipeline::recordMqttFailed(batchCount);
-                    }
-                } else {
-                    Core::BeaconPipeline::recordMqttFailed(batchCount);
-                }
-                // Reset batch buffer selalu dilakukan untuk mencegah buffer overflow
-                batchLen = 0;
-                batchCount = 0;
-                lastFlushTime = now;
-            }
-
-            // Susun frame MQTT 44-byte (Solusi 3: injeksi Unix Timestamp epoch detik)
-            time_t nowSec = time(NULL);
-            uint32_t epochOut = (nowSec > 1700000000) ? static_cast<uint32_t>(nowSec) : (packet.timestamp / 1000);
-
-            const RawBleBinaryFrame* raw = reinterpret_cast<const RawBleBinaryFrame*>(packet.raw_frame);
             MqttBleFrame44* outFrame = reinterpret_cast<MqttBleFrame44*>(s_batchBuffer + batchLen);
-            outFrame->timestamp = lwip_htonl(epochOut);
-            std::memcpy(outFrame->mac, raw->mac, 6);
-            outFrame->adv_type = raw->adv_type;
-            outFrame->rssi = raw->rssi;
-            outFrame->payload_len = raw->payload_len;
-            std::memcpy(outFrame->payload, raw->payload, 31);
+            outFrame->timestamp = (netNowEpoch > 0) ? netNowEpoch : lwip_htonl(packet.timestamp / 1000);
+            std::memcpy(outFrame->mac, &packet.raw_frame[1], 40);
             batchLen += frameLen;
             batchCount++;
         }
 
-        // 4. Timer-based Batch Flush
+        // 5. Coba langsung publish jika batch sudah terkumpul penuh
         now = (uint32_t)(esp_timer_get_time() / 1000);
-        if (batchCount > 0) {
-            if ((now - lastFlushTime) >= (uint32_t)g_config.batch_flush) {
-                if (s_mqttConnected) {
-                    int qos = (g_config.mqtt_qos == 0) ? 0 : 1;
-                    int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicData,
-                                                        (const char*)s_batchBuffer,
-                                                        batchLen, qos, 0);
-                    if (msgId >= 0) {
-                        consecPubFail = 0;
-                        if (qos == 0) {
-                            s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
-                        }
-                        recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
-                        Bsp::LedManager::triggerTrafficBlip();
-                        Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
-                        s_statLastBatchPktCount = batchCount;
-                    } else {
-                        consecPubFail++;
-                        Core::BeaconPipeline::recordMqttFailed(batchCount);
-                    }
-                } else {
-                    Core::BeaconPipeline::recordMqttFailed(batchCount);
+        if (batchCount >= (size_t)g_config.batch_max || (batchLen + frameLen > MQTT_BATCH_BUFFER_SIZE)) {
+            int qos = (g_config.mqtt_qos == 0) ? 0 : 1;
+            int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicData,
+                                                (const char*)s_batchBuffer,
+                                                batchLen, qos, 0);
+            if (msgId >= 0) {
+                consecPubFail = 0;
+                if (qos == 0) {
+                    s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
                 }
-                // Reset batch buffer selalu dilakukan agar data basi tidak menumpuk saat offline
+                recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
+                Bsp::LedManager::triggerTrafficBlip();
+                Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
+                s_statLastBatchPktCount = batchCount;
                 batchLen = 0;
                 batchCount = 0;
                 lastFlushTime = now;
+            } else {
+                consecPubFail++;
+                if (consecPubFail >= 25) {
+                    Core::BeaconPipeline::recordMqttFailed(batchCount);
+                    batchLen = 0;
+                    batchCount = 0;
+                    lastFlushTime = now;
+                }
+            }
+        }
+        // 6. Timer-based Batch Flush
+        else if (batchCount > 0 && ((now - lastFlushTime) >= (uint32_t)g_config.batch_flush)) {
+            int qos = (g_config.mqtt_qos == 0) ? 0 : 1;
+            int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicData,
+                                                (const char*)s_batchBuffer,
+                                                batchLen, qos, 0);
+            if (msgId >= 0) {
+                consecPubFail = 0;
+                if (qos == 0) {
+                    s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
+                }
+                recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
+                Bsp::LedManager::triggerTrafficBlip();
+                Core::BeaconPipeline::recordMqttPublish(batchCount, 1);
+                s_statLastBatchPktCount = batchCount;
+                batchLen = 0;
+                batchCount = 0;
+                lastFlushTime = now;
+            } else {
+                consecPubFail++;
+                if (consecPubFail >= 25) {
+                    Core::BeaconPipeline::recordMqttFailed(batchCount);
+                    batchLen = 0;
+                    batchCount = 0;
+                    lastFlushTime = now;
+                }
             }
         }
 
-        // 4b. Half-Open TCP / Outbox Full Failsafe Watchdog
+        // 7. Half-Open TCP / Outbox Full Failsafe Watchdog
         uint32_t lastInbound = s_lastInboundActivityMs.load(std::memory_order_relaxed);
         bool pubackStalled = (g_config.mqtt_qos == 1 &&
                               Core::BeaconPipeline::getMqttSpeed() > 0 &&
                               lastInbound > 0 &&
                               (now - lastInbound) > 90000);
-        if (consecPubFail >= 10 || pubackStalled) {
+        if (consecPubFail >= 25 || pubackStalled) {
             ESP_LOGW(TAG, "Watchdog MQTT: %s -> Memicu forceReconnect()!",
-                     (consecPubFail >= 10) ? "10x gagal publish beruntun (Outbox penuh)" : "Tiada PUBACK >90s (Half-open TCP)");
+                     (consecPubFail >= 25) ? "25x gagal publish beruntun (Outbox penuh)" : "Tiada PUBACK >90s (Half-open TCP)");
             consecPubFail = 0;
             s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
             forceReconnect();
         }
 
-        // 5. Periodic Gateway Heartbeat (tiap 5000 ms / 5 detik) ke topik <prefix>/hb
+        // 8. Periodic Gateway Heartbeat (tiap 5000 ms / 5 detik) ke topik <prefix>/hb
         if (s_mqttConnected) {
             uint32_t nowMs = (uint32_t)(esp_timer_get_time() / 1000);
             uint32_t hbMs = (g_config.hb_interval >= 1 && g_config.hb_interval <= 300)
@@ -843,7 +806,15 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
         }
 
         s_statBatchBufferLoad = batchCount;
-        vTaskDelay(pdMS_TO_TICKS(10));
+
+        // 9. Adaptive Task Delay: jika antrean antri banyak, yield 1 tick; jika sepi, jeda adaptif
+        if (bQueue != nullptr && uxQueueMessagesWaiting(bQueue) >= (UBaseType_t)g_config.batch_max) {
+            vTaskDelay(1);
+        } else if (batchCount > 0) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
     }
 }
 

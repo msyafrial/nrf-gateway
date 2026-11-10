@@ -19,10 +19,10 @@ static QueueHandle_t s_beaconQueue = nullptr;
 static SemaphoreHandle_t s_beaconBufMutex = nullptr;
 
 static LiveBeaconItem s_liveBeaconBuf[LIVE_FIFO_MAX];
-static size_t s_liveBeaconCount = 0;
+static std::atomic<size_t> s_liveBeaconCount{0};
 
 static DroppedBeaconItem s_droppedBeaconBuf[DROPPED_FIFO_MAX];
-static size_t s_droppedBeaconCount = 0;
+static std::atomic<size_t> s_droppedBeaconCount{0};
 
 static std::atomic<uint8_t> s_nrfScanState{0}; // 0 = STOPPED / Disconnected bawaan (hanya berubah saat terima ACK dari nRF)
 
@@ -53,14 +53,57 @@ static uint32_t s_lastDropSnap = 0;
 static uint32_t s_lastMqttPublishedSnap = 0;
 static uint32_t s_lastMqttBatchSnap = 0;
 
-// Internal streaming state machine buffer
-static uint8_t s_rxBuf[512];
-static size_t  s_rxBufLen = 0;
+// Internal streaming remainder buffer (hemat 448B .bss RAM, zero-copy parsing)
+static uint8_t s_rxRem[64];
+static size_t  s_rxRemLen = 0;
+
+static constexpr char HEX_LUT[] = "0123456789ABCDEF";
+
+static inline void fastBytesToHex(const uint8_t* in, size_t inLen, char* outHex) {
+    for (size_t i = 0; i < inLen; ++i) {
+        outHex[i * 2]     = HEX_LUT[(in[i] >> 4) & 0x0F];
+        outHex[i * 2 + 1] = HEX_LUT[in[i] & 0x0F];
+    }
+    outHex[inLen * 2] = '\0';
+}
+
+static inline void fastMacToStr(const uint8_t* mac, char* outStr) {
+    if (!mac) {
+        outStr[0] = '-';
+        outStr[1] = '\0';
+        return;
+    }
+    for (int i = 0; i < 6; ++i) {
+        outStr[i * 3]     = HEX_LUT[(mac[i] >> 4) & 0x0F];
+        outStr[i * 3 + 1] = HEX_LUT[mac[i] & 0x0F];
+        if (i < 5) outStr[i * 3 + 2] = ':';
+    }
+    outStr[17] = '\0';
+}
+
+static const char* getBeaconTypeCode(BeaconType type) {
+    switch (type) {
+        case BeaconType::IBEACON:     return "iBeacon";
+        case BeaconType::IBEACON_EXT: return "ibeacon_ext";
+        case BeaconType::EDDYSTONE:   return "Eddystone";
+        case BeaconType::MOKO_SENSOR:
+        case BeaconType::MOKO_ALARM:  return "MOKO";
+        default:                      return "BLE";
+    }
+}
+
+static void formatTag(char* outTag, size_t maxLen, bool has_major, uint16_t major, uint16_t minor, const uint8_t* mac) {
+    if (has_major) {
+        snprintf(outTag, maxLen, "%05u-%05u", major, minor);
+    } else if (mac) {
+        snprintf(outTag, maxLen, "%02X%02X", mac[4], mac[5]);
+    } else {
+        strlcpy(outTag, "-", maxLen);
+    }
+}
 
 struct ParsedAdvInfo {
     BeaconType type = BeaconType::RAW_BLE;
-    char       code[16] = "BLE";
-    char       tag[24] = "-";
     uint8_t    battery = 0;
     uint16_t   major = 0;
     uint16_t   minor = 0;
@@ -91,30 +134,24 @@ static ParsedAdvInfo parseAdvStructures(const uint8_t* payload, uint8_t len) {
             if (companyId == 0x004C) { // Apple Inc.
                 if (dataLen >= 23 && adData[2] == 0x02 && adData[3] == 0x15) {
                     info.type = BeaconType::IBEACON;
-                    strlcpy(info.code, "iBeacon", sizeof(info.code));
                     info.has_uuid = true;
                     std::memcpy(info.uuid, &adData[4], 16);
                     info.has_major = true;
                     info.major = (uint16_t)((adData[20] << 8) | adData[21]);
                     info.minor = (uint16_t)((adData[22] << 8) | adData[23]);
-                    snprintf(info.tag, sizeof(info.tag), "%05u-%05u", info.major, info.minor);
                 } else if (dataLen >= 23 && adData[2] == 0x01) {
                     info.type = BeaconType::IBEACON_EXT;
-                    strlcpy(info.code, "ibeacon_ext", sizeof(info.code));
                     info.has_uuid = true;
                     std::memcpy(info.uuid, &adData[4], 16);
                     info.has_major = true;
                     info.major = (uint16_t)((adData[20] << 8) | adData[21]);
                     info.minor = (uint16_t)((adData[22] << 8) | adData[23]);
-                    snprintf(info.tag, sizeof(info.tag), "%05u-%05u", info.major, info.minor);
                 }
             } else if (companyId == 0x0008 || companyId == 0xFEAA || companyId == 0xAAFE ||
                        (dataLen >= 10 && adData[0] == 0x24 && adData[1] == 0x01) ||
                        (dataLen >= 12 && adData[0] == 0x15 && adData[1] == 0x02)) {
                 if (info.type == BeaconType::RAW_BLE) {
                     info.type = BeaconType::MOKO_SENSOR;
-                    strlcpy(info.code, "MOKO", sizeof(info.code));
-                    snprintf(info.tag, sizeof(info.tag), "Mfg:%04X", companyId);
                 }
             }
         }
@@ -123,28 +160,21 @@ static ParsedAdvInfo parseAdvStructures(const uint8_t* payload, uint8_t len) {
             uint16_t serviceUuid = (uint16_t)(adData[0] | (adData[1] << 8));
             if (serviceUuid == 0xFEAA) { // Eddystone
                 info.type = BeaconType::EDDYSTONE;
-                strlcpy(info.code, "Eddystone", sizeof(info.code));
                 if (dataLen >= 3) {
                     uint8_t frameType = adData[2];
                     if (frameType == 0x00 && dataLen >= 19) { // UID
                         info.has_uuid = true;
                         std::memcpy(info.uuid, &adData[3], 16);
-                        strlcpy(info.tag, "UID", sizeof(info.tag));
-                    } else if (frameType == 0x10) { // URL
-                        strlcpy(info.tag, "URL", sizeof(info.tag));
                     } else if (frameType == 0x20 && dataLen >= 5) { // TLM
                         uint16_t vbatt = (uint16_t)((adData[3] << 8) | adData[4]);
                         if (vbatt >= 2000 && vbatt <= 3300) {
                             info.battery = (uint8_t)(((vbatt - 2000) * 100) / 1300);
                             info.has_battery = true;
                         }
-                        strlcpy(info.tag, "TLM", sizeof(info.tag));
                     }
                 }
             } else if (serviceUuid == 0xEA01) { // Official MOKO BXP Device/Sensor Info
                 info.type = BeaconType::MOKO_SENSOR;
-                strlcpy(info.code, "MOKO", sizeof(info.code));
-                strlcpy(info.tag, "BXP-Info", sizeof(info.tag));
                 if (dataLen >= 20 && adData[2] == 0x80) {
                     uint16_t vbatt = (uint16_t)((adData[18] << 8) | adData[19]);
                     if (vbatt >= 2000 && vbatt <= 3300) {
@@ -154,39 +184,19 @@ static ParsedAdvInfo parseAdvStructures(const uint8_t* payload, uint8_t len) {
                 }
             } else if (serviceUuid == 0xFEE0) { // Official MOKO BXP-B Alarm Button
                 info.type = BeaconType::MOKO_ALARM;
-                strlcpy(info.code, "MOKO", sizeof(info.code));
-                strlcpy(info.tag, "BXP-Alarm", sizeof(info.tag));
             } else if (serviceUuid == 0xEA00) { // Official MOKO BXP General Scan Response
                 info.type = BeaconType::MOKO_SENSOR;
-                strlcpy(info.code, "MOKO", sizeof(info.code));
-                strlcpy(info.tag, "BXP-ScanRsp", sizeof(info.tag));
             } else if (serviceUuid == 0xFEAB) { // Official MOKO BeaconX Pro Multi-Frame
                 info.type = BeaconType::MOKO_SENSOR;
-                strlcpy(info.code, "MOKO", sizeof(info.code));
-                uint8_t subType = (dataLen >= 3) ? adData[2] : 0x00;
-                if (subType == 0x40) strlcpy(info.tag, "BXP-Info", sizeof(info.tag));
-                else if (subType == 0x60) strlcpy(info.tag, "BXP-Acc", sizeof(info.tag));
-                else if (subType == 0x70) strlcpy(info.tag, "BXP-TH", sizeof(info.tag));
-                else strlcpy(info.tag, "BXP-Pro", sizeof(info.tag));
             } else if (dataLen >= 22) { // Official Minew Format B (ibeacon_ext)
                 info.type = BeaconType::IBEACON_EXT;
-                strlcpy(info.code, "ibeacon_ext", sizeof(info.code));
                 info.has_uuid = true;
                 std::memcpy(info.uuid, &adData[0], 16);
                 info.has_major = true;
                 info.major = (uint16_t)((adData[16] << 8) | adData[17]);
                 info.minor = (uint16_t)((adData[18] << 8) | adData[19]);
-                snprintf(info.tag, sizeof(info.tag), "%05u-%05u", info.major, info.minor);
                 info.battery = adData[21];
                 info.has_battery = true;
-            }
-        }
-        // 3. Complete/Shortened Local Name (0x08, 0x09)
-        else if ((adType == 0x08 || adType == 0x09) && dataLen > 0) {
-            if (info.type == BeaconType::RAW_BLE && info.tag[0] == '-') {
-                size_t cpyLen = std::min((size_t)dataLen, sizeof(info.tag) - 1);
-                std::memcpy(info.tag, adData, cpyLen);
-                info.tag[cpyLen] = '\0';
             }
         }
 
@@ -202,14 +212,13 @@ static void handleRawBleFrame(const RawBleBinaryFrame* frame) {
 
     ParsedAdvInfo adv = parseAdvStructures(frame->payload, frame->payload_len);
 
-    if (adv.tag[0] == '-' && adv.tag[1] == '\0') {
-        snprintf(adv.tag, sizeof(adv.tag), "%02X%02X", frame->mac[4], frame->mac[5]);
-    }
-
     // 1. Filter RSSI Universal
     bool passRssi = (frame->rssi >= (int8_t)g_config.rssi_min);
     if (!passRssi) {
-        BeaconPipeline::recordDroppedBeacon(adv.code, adv.tag, frame->rssi, DropReason::RSSI_OUT_OF_RANGE,
+        char tag[24];
+        formatTag(tag, sizeof(tag), adv.has_major, adv.major, adv.minor, frame->mac);
+        BeaconPipeline::recordDroppedBeacon(getBeaconTypeCode(adv.type), tag, frame->rssi,
+                                            DropReason::RSSI_OUT_OF_RANGE,
                                             frame->mac, reinterpret_cast<const uint8_t*>(frame));
         return;
     }
@@ -217,7 +226,10 @@ static void handleRawBleFrame(const RawBleBinaryFrame* frame) {
     // 2. Conditional Filter UUID (HANYA jika paket memiliki UUID)
     if (g_config.filter_uuid_en && adv.has_uuid) {
         if (std::memcmp(adv.uuid, g_config.filter_uuid_bytes, 16) != 0) {
-            BeaconPipeline::recordDroppedBeacon(adv.code, adv.tag, frame->rssi, DropReason::UUID_MISMATCH,
+            char tag[24];
+            formatTag(tag, sizeof(tag), adv.has_major, adv.major, adv.minor, frame->mac);
+            BeaconPipeline::recordDroppedBeacon(getBeaconTypeCode(adv.type), tag, frame->rssi,
+                                                DropReason::UUID_MISMATCH,
                                                 frame->mac, reinterpret_cast<const uint8_t*>(frame));
             return;
         }
@@ -226,7 +238,10 @@ static void handleRawBleFrame(const RawBleBinaryFrame* frame) {
     // 3. Conditional Filter Major (HANYA jika paket memiliki Major)
     if (g_config.filter_major_en && adv.has_major) {
         if (!Iotaru::matchMajorFilter(adv.major, g_config.filter_major)) {
-            BeaconPipeline::recordDroppedBeacon(adv.code, adv.tag, frame->rssi, DropReason::MAJOR_MISMATCH,
+            char tag[24];
+            formatTag(tag, sizeof(tag), adv.has_major, adv.major, adv.minor, frame->mac);
+            BeaconPipeline::recordDroppedBeacon(getBeaconTypeCode(adv.type), tag, frame->rssi,
+                                                DropReason::MAJOR_MISMATCH,
                                                 frame->mac, reinterpret_cast<const uint8_t*>(frame));
             return;
         }
@@ -240,7 +255,10 @@ static void handleRawBleFrame(const RawBleBinaryFrame* frame) {
                         adv.type == BeaconType::MOKO_SENSOR ||
                         adv.type == BeaconType::MOKO_ALARM);
         if (!isKnown) {
-            BeaconPipeline::recordDroppedBeacon(adv.code, adv.tag, frame->rssi, DropReason::UNKNOWN_FORMAT,
+            char tag[24];
+            formatTag(tag, sizeof(tag), adv.has_major, adv.major, adv.minor, frame->mac);
+            BeaconPipeline::recordDroppedBeacon(getBeaconTypeCode(adv.type), tag, frame->rssi,
+                                                DropReason::UNKNOWN_FORMAT,
                                                 frame->mac, reinterpret_cast<const uint8_t*>(frame));
             return;
         }
@@ -254,18 +272,10 @@ static void handleRawBleFrame(const RawBleBinaryFrame* frame) {
     packet.type = adv.type;
     packet.rssi = frame->rssi;
     packet.battery = adv.battery;
+    packet.has_major = adv.has_major;
     packet.major = adv.major;
     packet.minor = adv.minor;
-    packet.has_uuid = adv.has_uuid;
-    packet.has_major = adv.has_major;
-    packet.adv_type = frame->adv_type;
-    std::memcpy(packet.mac, frame->mac, 6);
     std::memcpy(packet.raw_frame, frame, 42);
-    if (adv.has_uuid) {
-        std::memcpy(packet.uuid, adv.uuid, 16);
-    } else {
-        std::memset(packet.uuid, 0, 16);
-    }
 
     BeaconPipeline::push(packet);
     BeaconPipeline::recordLiveBeacon(packet);
@@ -300,33 +310,26 @@ void BeaconPipeline::push(const BeaconPacket& packet) {
 }
 
 void BeaconPipeline::recordLiveBeacon(const BeaconPacket& p) {
-    if (s_beaconBufMutex != nullptr && xSemaphoreTake(s_beaconBufMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-        if (s_liveBeaconCount < LIVE_FIFO_MAX) {
-            LiveBeaconItem& item = s_liveBeaconBuf[s_liveBeaconCount++];
-            if (p.type == BeaconType::IBEACON) {
-                strncpy(item.code, "iBeacon", sizeof(item.code) - 1);
-            } else if (p.type == BeaconType::IBEACON_EXT) {
-                strncpy(item.code, "ibeacon_ext", sizeof(item.code) - 1);
-            } else if (p.type == BeaconType::EDDYSTONE) {
-                strncpy(item.code, "Eddystone", sizeof(item.code) - 1);
-            } else if (p.type == BeaconType::MOKO_SENSOR || p.type == BeaconType::MOKO_ALARM) {
-                strncpy(item.code, "MOKO", sizeof(item.code) - 1);
-            } else {
-                strncpy(item.code, "BLE", sizeof(item.code) - 1);
-            }
+    if (s_liveBeaconCount.load(std::memory_order_relaxed) >= LIVE_FIFO_MAX) {
+        return; // Fast-path: bypass mutex lock entirely jika FIFO sudah penuh
+    }
+
+    if (s_beaconBufMutex != nullptr && xSemaphoreTake(s_beaconBufMutex, pdMS_TO_TICKS(2)) == pdTRUE) {
+        size_t count = s_liveBeaconCount.load(std::memory_order_relaxed);
+        if (count < LIVE_FIFO_MAX) {
+            LiveBeaconItem& item = s_liveBeaconBuf[count];
+            strncpy(item.code, getBeaconTypeCode(p.type), sizeof(item.code) - 1);
             item.code[sizeof(item.code) - 1] = '\0';
 
-            if (p.has_major) {
-                snprintf(item.tag, sizeof(item.tag), "%05u-%05u", p.major, p.minor);
-            } else {
-                snprintf(item.tag, sizeof(item.tag), "%02X%02X", p.mac[4], p.mac[5]);
-            }
+            const RawBleBinaryFrame* raw = reinterpret_cast<const RawBleBinaryFrame*>(p.raw_frame);
+            formatTag(item.tag, sizeof(item.tag), p.has_major, p.major, p.minor, raw->mac);
 
             item.rssi = p.rssi;
             item.batt = p.battery;
-            item.adv_type = p.adv_type;
-            std::memcpy(item.mac, p.mac, 6);
+            item.adv_type = raw->adv_type;
+            std::memcpy(item.mac, raw->mac, 6);
             std::memcpy(item.raw_frame, p.raw_frame, 42);
+            s_liveBeaconCount.store(count + 1, std::memory_order_relaxed);
         }
         xSemaphoreGive(s_beaconBufMutex);
     }
@@ -359,67 +362,112 @@ void BeaconPipeline::flushQueue() {
     }
 }
 
-// Fast Stream State Machine (Core 0)
+// Fast Zero-Copy Stream State Machine (Core 0)
 void BeaconPipeline::resetStreamParser() {
-    s_rxBufLen = 0;
+    s_rxRemLen = 0;
 }
 
 void BeaconPipeline::processBytes(const uint8_t* buffer, size_t len) {
     if (!buffer || len == 0) return;
 
     size_t inIdx = 0;
-    while (inIdx < len) {
-        size_t toCopy = std::min(len - inIdx, sizeof(s_rxBuf) - s_rxBufLen);
-        if (toCopy > 0) {
-            std::memcpy(s_rxBuf + s_rxBufLen, buffer + inIdx, toCopy);
-            s_rxBufLen += toCopy;
-            inIdx += toCopy;
+
+    // 1. Jika ada sisa byte dari chunk sebelumnya di s_rxRem, lengkapi frame terlebih dahulu
+    while (s_rxRemLen > 0 && inIdx < len) {
+        if (s_rxRem[0] != 0xAA && s_rxRem[0] != 0xBB) {
+            size_t headPos = 0;
+            for (size_t i = 1; i < s_rxRemLen; ++i) {
+                if (s_rxRem[i] == 0xAA || s_rxRem[i] == 0xBB) {
+                    headPos = i;
+                    break;
+                }
+            }
+            if (headPos > 0) {
+                std::memmove(s_rxRem, s_rxRem + headPos, s_rxRemLen - headPos);
+                s_rxRemLen -= headPos;
+            } else {
+                s_rxRemLen = 0;
+                break;
+            }
         }
 
-        size_t readIdx = 0;
-        while (readIdx < s_rxBufLen) {
-            uint8_t h = s_rxBuf[readIdx];
-            if (h == 0xAA) {
-                if (s_rxBufLen - readIdx < sizeof(RawBleBinaryFrame)) {
-                    break; // Tunggu kelengkapan 42B
-                }
-                const uint8_t* ptr = s_rxBuf + readIdx;
-                if (Utils::verifyRawBleChecksum(ptr)) {
-                    const RawBleBinaryFrame* frame = reinterpret_cast<const RawBleBinaryFrame*>(ptr);
-                    handleRawBleFrame(frame);
-                    readIdx += sizeof(RawBleBinaryFrame);
+        if (s_rxRem[0] == 0xAA) {
+            size_t needed = sizeof(RawBleBinaryFrame) - s_rxRemLen;
+            size_t take = std::min(needed, len - inIdx);
+            std::memcpy(s_rxRem + s_rxRemLen, buffer + inIdx, take);
+            s_rxRemLen += take;
+            inIdx += take;
+
+            if (s_rxRemLen == sizeof(RawBleBinaryFrame)) {
+                if (Utils::verifyRawBleChecksum(s_rxRem)) {
+                    handleRawBleFrame(reinterpret_cast<const RawBleBinaryFrame*>(s_rxRem));
+                    s_rxRemLen = 0;
                 } else {
                     s_checksumErrors.fetch_add(1, std::memory_order_relaxed);
-                    readIdx++;
+                    std::memmove(s_rxRem, s_rxRem + 1, sizeof(RawBleBinaryFrame) - 1);
+                    s_rxRemLen = sizeof(RawBleBinaryFrame) - 1;
                 }
-            } else if (h == 0xBB) {
-                if (s_rxBufLen - readIdx < sizeof(ControlRspFrame)) {
-                    break; // Tunggu kelengkapan 4B
-                }
-                const uint8_t* ptr = s_rxBuf + readIdx;
-                if (Utils::verifyControlRspChecksum(ptr)) {
-                    const ControlRspFrame* rsp = reinterpret_cast<const ControlRspFrame*>(ptr);
+            }
+        } else if (s_rxRem[0] == 0xBB) {
+            size_t needed = sizeof(ControlRspFrame) - s_rxRemLen;
+            size_t take = std::min(needed, len - inIdx);
+            std::memcpy(s_rxRem + s_rxRemLen, buffer + inIdx, take);
+            s_rxRemLen += take;
+            inIdx += take;
+
+            if (s_rxRemLen == sizeof(ControlRspFrame)) {
+                if (Utils::verifyControlRspChecksum(s_rxRem)) {
+                    const ControlRspFrame* rsp = reinterpret_cast<const ControlRspFrame*>(s_rxRem);
                     s_nrfScanState.store(rsp->scan_state, std::memory_order_relaxed);
                     s_totalFramesIngress.fetch_add(1, std::memory_order_relaxed);
                     ESP_LOGI(TAG, "nRF52840 Status Rsp: type=0x%02X, state=%u", rsp->rsp_type, rsp->scan_state);
-                    readIdx += sizeof(ControlRspFrame);
+                    s_rxRemLen = 0;
                 } else {
-                    readIdx++;
+                    std::memmove(s_rxRem, s_rxRem + 1, sizeof(ControlRspFrame) - 1);
+                    s_rxRemLen = sizeof(ControlRspFrame) - 1;
                 }
-            } else {
-                readIdx++;
             }
         }
+    }
 
-        if (readIdx > 0) {
-            size_t remaining = s_rxBufLen - readIdx;
-            if (remaining > 0) {
-                std::memmove(s_rxBuf, s_rxBuf + readIdx, remaining);
+    // 2. Proses frame utuh secara zero-copy langsung dari pointer buffer
+    while (inIdx < len) {
+        uint8_t h = buffer[inIdx];
+        if (h == 0xAA) {
+            if (len - inIdx < sizeof(RawBleBinaryFrame)) {
+                size_t rem = len - inIdx;
+                std::memcpy(s_rxRem, buffer + inIdx, rem);
+                s_rxRemLen = rem;
+                break;
             }
-            s_rxBufLen = remaining;
-        } else if (s_rxBufLen == sizeof(s_rxBuf)) {
-            std::memmove(s_rxBuf, s_rxBuf + 1, sizeof(s_rxBuf) - 1);
-            s_rxBufLen = sizeof(s_rxBuf) - 1;
+            const uint8_t* ptr = buffer + inIdx;
+            if (Utils::verifyRawBleChecksum(ptr)) {
+                const RawBleBinaryFrame* frame = reinterpret_cast<const RawBleBinaryFrame*>(ptr);
+                handleRawBleFrame(frame);
+                inIdx += sizeof(RawBleBinaryFrame);
+            } else {
+                s_checksumErrors.fetch_add(1, std::memory_order_relaxed);
+                inIdx++;
+            }
+        } else if (h == 0xBB) {
+            if (len - inIdx < sizeof(ControlRspFrame)) {
+                size_t rem = len - inIdx;
+                std::memcpy(s_rxRem, buffer + inIdx, rem);
+                s_rxRemLen = rem;
+                break;
+            }
+            const uint8_t* ptr = buffer + inIdx;
+            if (Utils::verifyControlRspChecksum(ptr)) {
+                const ControlRspFrame* rsp = reinterpret_cast<const ControlRspFrame*>(ptr);
+                s_nrfScanState.store(rsp->scan_state, std::memory_order_relaxed);
+                s_totalFramesIngress.fetch_add(1, std::memory_order_relaxed);
+                ESP_LOGI(TAG, "nRF52840 Status Rsp: type=0x%02X, state=%u", rsp->rsp_type, rsp->scan_state);
+                inIdx += sizeof(ControlRspFrame);
+            } else {
+                inIdx++;
+            }
+        } else {
+            inIdx++;
         }
     }
 }
@@ -429,9 +477,9 @@ size_t BeaconPipeline::copyLiveBeacons(LiveBeaconItem* outItems, size_t maxItems
     size_t count = 0;
 
     if (s_beaconBufMutex != nullptr && xSemaphoreTake(s_beaconBufMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
-        count = std::min(s_liveBeaconCount, maxItems);
+        count = std::min(s_liveBeaconCount.load(std::memory_order_relaxed), maxItems);
         std::memcpy(outItems, s_liveBeaconBuf, count * sizeof(LiveBeaconItem));
-        s_liveBeaconCount = 0;
+        s_liveBeaconCount.store(0, std::memory_order_relaxed);
         xSemaphoreGive(s_beaconBufMutex);
     }
     return count;
@@ -439,7 +487,7 @@ size_t BeaconPipeline::copyLiveBeacons(LiveBeaconItem* outItems, size_t maxItems
 
 void BeaconPipeline::flushLiveBeacons() {
     if (s_beaconBufMutex != nullptr && xSemaphoreTake(s_beaconBufMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
-        s_liveBeaconCount = 0;
+        s_liveBeaconCount.store(0, std::memory_order_relaxed);
         xSemaphoreGive(s_beaconBufMutex);
     }
 }
@@ -483,18 +531,22 @@ void BeaconPipeline::recordMqttFailed(uint32_t packetCount) {
     snprintf(pktBuf, sizeof(pktBuf), "%lu pkt", (unsigned long)packetCount);
     DropLogService::record("MQTT", pktBuf, 0, DropReason::MQTT_FAIL, packetCount);
 
-    if (s_beaconBufMutex != nullptr && xSemaphoreTake(s_beaconBufMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-        if (s_droppedBeaconCount < DROPPED_FIFO_MAX) {
-            DroppedBeaconItem& item = s_droppedBeaconBuf[s_droppedBeaconCount++];
-            strncpy(item.code, "MQTT", sizeof(item.code) - 1);
-            item.code[sizeof(item.code) - 1] = '\0';
-            snprintf(item.tag, sizeof(item.tag), "%lu pkt", (unsigned long)packetCount);
-            item.rssi = 0;
-            item.reason = DropReason::MQTT_FAIL;
-            std::memset(item.mac, 0, 6);
-            std::memset(item.raw_frame, 0, 42);
+    if (s_droppedBeaconCount.load(std::memory_order_relaxed) < DROPPED_FIFO_MAX) {
+        if (s_beaconBufMutex != nullptr && xSemaphoreTake(s_beaconBufMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+            size_t count = s_droppedBeaconCount.load(std::memory_order_relaxed);
+            if (count < DROPPED_FIFO_MAX) {
+                DroppedBeaconItem& item = s_droppedBeaconBuf[count];
+                strncpy(item.code, "MQTT", sizeof(item.code) - 1);
+                item.code[sizeof(item.code) - 1] = '\0';
+                snprintf(item.tag, sizeof(item.tag), "%lu pkt", (unsigned long)packetCount);
+                item.rssi = 0;
+                item.reason = DropReason::MQTT_FAIL;
+                std::memset(item.mac, 0, 6);
+                std::memset(item.raw_frame, 0, 42);
+                s_droppedBeaconCount.store(count + 1, std::memory_order_relaxed);
+            }
+            xSemaphoreGive(s_beaconBufMutex);
         }
-        xSemaphoreGive(s_beaconBufMutex);
     }
 }
 
@@ -514,56 +566,53 @@ void BeaconPipeline::recordDroppedBeacon(const char* code, const char* tag, int8
         case DropReason::MQTT_FAIL:         s_dropMqttFailed++; break;
     }
 
-    char macStr[18] = "-";
-    if (mac) {
-        snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    }
-    char rawStr[86] = "-";
+    char macStr[18];
+    fastMacToStr(mac, macStr);
+
+    char rawStr[86];
     if (raw42) {
-        for (int i = 0; i < 42; ++i) {
-            snprintf(rawStr + i * 2, sizeof(rawStr) - i * 2, "%02X", raw42[i]);
-        }
+        fastBytesToHex(raw42, 42, rawStr);
+    } else {
+        rawStr[0] = '-';
+        rawStr[1] = '\0';
     }
 
     DropLogService::record(code, tag, rssi, reason, 1, macStr, rawStr);
 
-    if (s_beaconBufMutex != nullptr && xSemaphoreTake(s_beaconBufMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-        if (s_droppedBeaconCount < DROPPED_FIFO_MAX) {
-            DroppedBeaconItem& item = s_droppedBeaconBuf[s_droppedBeaconCount++];
-            strncpy(item.code, code ? code : "BLE", sizeof(item.code) - 1);
-            item.code[sizeof(item.code) - 1] = '\0';
-            strncpy(item.tag, tag ? tag : "-", sizeof(item.tag) - 1);
-            item.tag[sizeof(item.tag) - 1] = '\0';
-            item.rssi = rssi;
-            item.reason = reason;
-            if (mac) {
-                std::memcpy(item.mac, mac, 6);
-            } else {
-                std::memset(item.mac, 0, 6);
+    if (s_droppedBeaconCount.load(std::memory_order_relaxed) < DROPPED_FIFO_MAX) {
+        if (s_beaconBufMutex != nullptr && xSemaphoreTake(s_beaconBufMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+            size_t count = s_droppedBeaconCount.load(std::memory_order_relaxed);
+            if (count < DROPPED_FIFO_MAX) {
+                DroppedBeaconItem& item = s_droppedBeaconBuf[count];
+                strncpy(item.code, code ? code : "BLE", sizeof(item.code) - 1);
+                item.code[sizeof(item.code) - 1] = '\0';
+                strncpy(item.tag, tag ? tag : "-", sizeof(item.tag) - 1);
+                item.tag[sizeof(item.tag) - 1] = '\0';
+                item.rssi = rssi;
+                item.reason = reason;
+                if (mac) {
+                    std::memcpy(item.mac, mac, 6);
+                } else {
+                    std::memset(item.mac, 0, 6);
+                }
+                if (raw42) {
+                    std::memcpy(item.raw_frame, raw42, 42);
+                } else {
+                    std::memset(item.raw_frame, 0, 42);
+                }
+                s_droppedBeaconCount.store(count + 1, std::memory_order_relaxed);
             }
-            if (raw42) {
-                std::memcpy(item.raw_frame, raw42, 42);
-            } else {
-                std::memset(item.raw_frame, 0, 42);
-            }
+            xSemaphoreGive(s_beaconBufMutex);
         }
-        xSemaphoreGive(s_beaconBufMutex);
     }
 }
 
 void BeaconPipeline::recordDroppedBeacon(const BeaconPacket& p, DropReason reason) {
-    const char* code = (p.type == BeaconType::IBEACON_EXT) ? "ibeacon_ext" :
-                       (p.type == BeaconType::IBEACON) ? "iBeacon" :
-                       (p.type == BeaconType::EDDYSTONE) ? "Eddystone" :
-                       (p.type == BeaconType::MOKO_SENSOR || p.type == BeaconType::MOKO_ALARM) ? "MOKO" : "BLE";
+    const char* code = getBeaconTypeCode(p.type);
+    const RawBleBinaryFrame* raw = reinterpret_cast<const RawBleBinaryFrame*>(p.raw_frame);
     char tagBuf[24];
-    if (p.has_major) {
-        snprintf(tagBuf, sizeof(tagBuf), "%05u-%05u", p.major, p.minor);
-    } else {
-        snprintf(tagBuf, sizeof(tagBuf), "%02X%02X", p.mac[4], p.mac[5]);
-    }
-    recordDroppedBeacon(code, tagBuf, p.rssi, reason, p.mac, p.raw_frame);
+    formatTag(tagBuf, sizeof(tagBuf), p.has_major, p.major, p.minor, raw->mac);
+    recordDroppedBeacon(code, tagBuf, p.rssi, reason, raw->mac, p.raw_frame);
 }
 
 size_t BeaconPipeline::copyDroppedBeacons(DroppedBeaconItem* outItems, size_t maxItems) {
@@ -571,9 +620,9 @@ size_t BeaconPipeline::copyDroppedBeacons(DroppedBeaconItem* outItems, size_t ma
     size_t count = 0;
 
     if (s_beaconBufMutex != nullptr && xSemaphoreTake(s_beaconBufMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
-        count = std::min(s_droppedBeaconCount, maxItems);
+        count = std::min(s_droppedBeaconCount.load(std::memory_order_relaxed), maxItems);
         std::memcpy(outItems, s_droppedBeaconBuf, count * sizeof(DroppedBeaconItem));
-        s_droppedBeaconCount = 0;
+        s_droppedBeaconCount.store(0, std::memory_order_relaxed);
         xSemaphoreGive(s_beaconBufMutex);
     }
     return count;
@@ -581,7 +630,7 @@ size_t BeaconPipeline::copyDroppedBeacons(DroppedBeaconItem* outItems, size_t ma
 
 void BeaconPipeline::flushDroppedBeacons() {
     if (s_beaconBufMutex != nullptr && xSemaphoreTake(s_beaconBufMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
-        s_droppedBeaconCount = 0;
+        s_droppedBeaconCount.store(0, std::memory_order_relaxed);
         xSemaphoreGive(s_beaconBufMutex);
     }
 }

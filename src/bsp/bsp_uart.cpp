@@ -78,7 +78,7 @@ esp_err_t UartManager::init() {
 
     ESP_ERROR_CHECK(uart_param_config(UART_NUM_2, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(UART_NUM_2, Pins::NRF_TX, Pins::NRF_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_2, 4096, 0, 20, &s_uartEventQueue, 0));
+    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_2, 4096, 0, 20, &s_uartEventQueue, ESP_INTR_FLAG_IRAM));
 
     // Spawn task di Core 0 dengan prioritas tinggi
     BaseType_t res = xTaskCreatePinnedToCore(

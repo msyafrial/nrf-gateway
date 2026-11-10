@@ -89,13 +89,9 @@ struct BeaconPacket {
     BeaconType type;
     int8_t     rssi;
     uint8_t    battery;
+    bool       has_major;
     uint16_t   major;
     uint16_t   minor;
-    uint8_t    uuid[16];
-    bool       has_uuid;
-    bool       has_major;
-    uint8_t    mac[6];
-    uint8_t    adv_type;
     uint8_t    raw_frame[42]; // Full raw 42-byte unaltered frame
 };
 
@@ -130,8 +126,8 @@ struct DroppedBeaconItem {
 
 constexpr size_t LIVE_FIFO_MAX = 50;
 constexpr size_t DROPPED_FIFO_MAX = 50;
-constexpr size_t BEACON_QUEUE_MAX = 150;
-constexpr size_t MQTT_BATCH_BUFFER_SIZE = 8192;
+constexpr size_t BEACON_QUEUE_MAX = 214;
+constexpr size_t MQTT_BATCH_BUFFER_SIZE = 6656;
 
 // =================================================================
 // 2. SYSTEM & HARDWARE ENUMS

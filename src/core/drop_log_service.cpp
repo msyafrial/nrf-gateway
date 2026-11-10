@@ -17,8 +17,33 @@ namespace Iotaru::Core {
 static SemaphoreHandle_t s_dropMutex = nullptr;
 static DropLogEntry s_dropLogs[MAX_DROP_LOGS];
 static size_t s_dropCount = 0;
+static size_t s_dropHead = 0; // Circular write index O(1)
 static uint32_t s_nextId = 1;
 static bool s_initialized = false;
+
+static constexpr char HEX_LUT[] = "0123456789ABCDEF";
+
+static inline void fastBytesToHex(const uint8_t* in, size_t inLen, char* outHex) {
+    for (size_t i = 0; i < inLen; ++i) {
+        outHex[i * 2]     = HEX_LUT[(in[i] >> 4) & 0x0F];
+        outHex[i * 2 + 1] = HEX_LUT[in[i] & 0x0F];
+    }
+    outHex[inLen * 2] = '\0';
+}
+
+static inline void fastMacToStr(const uint8_t* mac, char* outStr) {
+    if (!mac) {
+        outStr[0] = '-';
+        outStr[1] = '\0';
+        return;
+    }
+    for (int i = 0; i < 6; ++i) {
+        outStr[i * 3]     = HEX_LUT[(mac[i] >> 4) & 0x0F];
+        outStr[i * 3 + 1] = HEX_LUT[mac[i] & 0x0F];
+        if (i < 5) outStr[i * 3 + 2] = ':';
+    }
+    outStr[17] = '\0';
+}
 
 // Counter statistik akumulatif sesi (Atomic thread-safe Core 0 vs Core 1)
 static std::atomic<uint32_t> s_statTotalDropped{0};
@@ -35,6 +60,7 @@ void DropLogService::init() {
         s_dropMutex = xSemaphoreCreateMutex();
     }
     s_dropCount = 0;
+    s_dropHead = 0;
     s_nextId = 1;
     s_initialized = true;
     ESP_LOGI(TAG, "DropLogService diinisialisasi. Kapasitas: %u entri FIFO di RAM.", (unsigned int)MAX_DROP_LOGS);
@@ -109,27 +135,29 @@ void DropLogService::record(const char* code, const char* tag, int8_t rssi, Drop
     // Mutex take non-blocking (maksimal 2 ms) agar tidak menghambat Core 0 UART ingestion
     if (s_dropMutex != nullptr && xSemaphoreTake(s_dropMutex, pdMS_TO_TICKS(2)) == pdTRUE) {
         uint32_t uptimeSec = static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);
-        char timeStr[24] = {0};
-        formatTimestamp(timeStr, sizeof(timeStr), uptimeSec);
-
-        // Geser entri lama ke bawah (FIFO Rolling Buffer)
-        if (s_dropCount < MAX_DROP_LOGS) {
-            std::memmove(&s_dropLogs[1], &s_dropLogs[0], s_dropCount * sizeof(DropLogEntry));
-            s_dropCount++;
-        } else {
-            std::memmove(&s_dropLogs[1], &s_dropLogs[0], (MAX_DROP_LOGS - 1) * sizeof(DropLogEntry));
+        static uint32_t s_cachedUptimeSec = 0xFFFFFFFF;
+        static char s_cachedTimeStr[24] = {0};
+        if (uptimeSec != s_cachedUptimeSec) {
+            formatTimestamp(s_cachedTimeStr, sizeof(s_cachedTimeStr), uptimeSec);
+            s_cachedUptimeSec = uptimeSec;
         }
 
-        // Simpan data drop terbaru pada indeks 0
-        s_dropLogs[0].id = s_nextId++;
-        s_dropLogs[0].uptime_sec = uptimeSec;
-        strlcpy(s_dropLogs[0].time_str, timeStr, sizeof(s_dropLogs[0].time_str));
-        strlcpy(s_dropLogs[0].code, code ? code : "BLE", sizeof(s_dropLogs[0].code));
-        strlcpy(s_dropLogs[0].tag, tag ? tag : "-", sizeof(s_dropLogs[0].tag));
-        strlcpy(s_dropLogs[0].mac, mac ? mac : "-", sizeof(s_dropLogs[0].mac));
-        strlcpy(s_dropLogs[0].raw, raw ? raw : "-", sizeof(s_dropLogs[0].raw));
-        s_dropLogs[0].rssi = rssi;
-        s_dropLogs[0].reason = reason;
+        // Tulis langsung ke indeks head tanpa memmove besar (O(1) Circular Buffer)
+        size_t writeIdx = s_dropHead;
+        s_dropLogs[writeIdx].id = s_nextId++;
+        s_dropLogs[writeIdx].uptime_sec = uptimeSec;
+        strlcpy(s_dropLogs[writeIdx].time_str, s_cachedTimeStr, sizeof(s_dropLogs[writeIdx].time_str));
+        strlcpy(s_dropLogs[writeIdx].code, code ? code : "BLE", sizeof(s_dropLogs[writeIdx].code));
+        strlcpy(s_dropLogs[writeIdx].tag, tag ? tag : "-", sizeof(s_dropLogs[writeIdx].tag));
+        strlcpy(s_dropLogs[writeIdx].mac, mac ? mac : "-", sizeof(s_dropLogs[writeIdx].mac));
+        strlcpy(s_dropLogs[writeIdx].raw, raw ? raw : "-", sizeof(s_dropLogs[writeIdx].raw));
+        s_dropLogs[writeIdx].rssi = rssi;
+        s_dropLogs[writeIdx].reason = reason;
+
+        s_dropHead = (s_dropHead + 1) % MAX_DROP_LOGS;
+        if (s_dropCount < MAX_DROP_LOGS) {
+            s_dropCount++;
+        }
 
         xSemaphoreGive(s_dropMutex);
     }
@@ -141,20 +169,18 @@ void DropLogService::record(const BeaconPacket& p, DropReason reason, uint32_t c
                        (p.type == BeaconType::EDDYSTONE) ? "Eddystone" :
                        (p.type == BeaconType::MOKO_SENSOR || p.type == BeaconType::MOKO_ALARM) ? "MOKO" : "BLE";
     char tagBuf[24];
+    const RawBleBinaryFrame* raw = reinterpret_cast<const RawBleBinaryFrame*>(p.raw_frame);
     if (p.has_major) {
         snprintf(tagBuf, sizeof(tagBuf), "%05u-%05u", p.major, p.minor);
     } else {
-        snprintf(tagBuf, sizeof(tagBuf), "%02X%02X", p.mac[4], p.mac[5]);
+        snprintf(tagBuf, sizeof(tagBuf), "%02X%02X", raw->mac[4], raw->mac[5]);
     }
 
     char macStr[18];
-    snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-             p.mac[0], p.mac[1], p.mac[2], p.mac[3], p.mac[4], p.mac[5]);
+    fastMacToStr(raw->mac, macStr);
 
-    char rawStr[86] = {0};
-    for (int i = 0; i < 42; ++i) {
-        snprintf(rawStr + i * 2, sizeof(rawStr) - i * 2, "%02X", p.raw_frame[i]);
-    }
+    char rawStr[86];
+    fastBytesToHex(p.raw_frame, 42, rawStr);
 
     record(code, tagBuf, p.rssi, reason, count, macStr, rawStr);
 }
@@ -165,7 +191,11 @@ size_t DropLogService::getLogs(DropLogEntry* outEntries, size_t maxCount) {
 
     if (s_dropMutex != nullptr && xSemaphoreTake(s_dropMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
         count = std::min(s_dropCount, maxCount);
-        std::memcpy(outEntries, s_dropLogs, count * sizeof(DropLogEntry));
+        // Susun riwayat dari entri terbaru ke terlama (newest-first)
+        for (size_t i = 0; i < count; ++i) {
+            size_t srcIdx = (s_dropHead + MAX_DROP_LOGS - 1 - i) % MAX_DROP_LOGS;
+            outEntries[i] = s_dropLogs[srcIdx];
+        }
         xSemaphoreGive(s_dropMutex);
     }
     return count;
@@ -191,9 +221,10 @@ void DropLogService::clearLogs() {
     s_statMqttFailed.store(0, std::memory_order_relaxed);
     s_statUnknownFormat.store(0, std::memory_order_relaxed);
 
-    // 2. Kosongkan riwayat array log jika mutex tersedia
+    // 2. Kosongkan riwayat circular array log jika mutex tersedia
     if (s_dropMutex != nullptr && xSemaphoreTake(s_dropMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         s_dropCount = 0;
+        s_dropHead = 0;
         xSemaphoreGive(s_dropMutex);
     }
 }

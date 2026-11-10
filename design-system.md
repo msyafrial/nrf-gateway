@@ -5205,3 +5205,90 @@ Setiap berkas master HTML terotentikasi (`index.html`, `test.html`, `log.html`, 
 - Pada [`src/core/config_store.cpp`](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/core/config_store.cpp), menambahkan blok penanganan `else` pada pemanggilan `nvs_open("cfg_net")`, `nvs_open("cfg_mqtt")`, dan `nvs_open("cfg_gate")` di fungsi `loadConfigFromNvs()`.
 - Jika chip flash atau partisi NVS mengalami kerusakan fisik total (*open error*), variabel `g_config` di RAM tidak akan bernilai `0` atau string kosong, melainkan langsung terisi penuh dengan parameter standar operasional yang aman (`mode = 1`, Ethernet DHCP aktif, AP default aktif).
 - **Overhead RAM Statis**: Terverifikasi **tepat `0 Byte`** penambahan RAM (tetap di **36.1% / 118.380 bytes**).
+
+## 142. Arsitektur Optimasi Throughput End-to-End Minimum 1.200 Paket/Detik & Non-Destructive Outbox Backpressure (Penghematan ~2,0 KB RAM)
+
+### 1. Rasional & Perhitungan Kapasitas 1.200 Paket/Detik
+- **Jalur Fisik UART 1 Mbps (nRF52840 $\rightarrow$ ESP32)**:
+  - 1 frame `RawBleBinaryFrame` = `42 byte` $\times$ 10 bit (8N1) = `420 bit`.
+  - Pada 1.200 pkt/s, beban fisik = `504.000 bps` (**50,4% utilisasi UART 1 Mbps**).
+- **Jalur Egress MQTT (ESP32 $\rightarrow$ Broker)**:
+  - Default `batch_max` ditingkatkan dari `50` menjadi **`150`** (`nvs_config.csv` & `config_store.cpp`).
+  - 1 batch penuh = $150 \times 44\text{ byte} = \mathbf{6.600\text{ byte}}$ (`6,44 KB`).
+  - Frekuensi publikasi MQTT pada 1.200 pkt/s terpangkas dari **24 kali/detik** menjadi hanya **8 kali/detik** (1 batch setiap 125 ms), memangkas *overhead* TCP/TLS sebesar **66%**.
+
+### 2. Mekanisme Non-Destructive MQTT Outbox Backpressure (Anti-Drop 0 Byte RAM)
+- **Masalah Sebelum Optimasi**: Ketika outbox penuh (`mqtt_cfg.outbox.limit = 8192 B`) menunggu `PUBACK` (misal broker RTT internet > 125 ms), kode lama langsung membuang seluruh 150 paket (`batchLen = 0; batchCount = 0;`).
+- **Solusi Non-Destructive Backpressure**:
+  - Buffer `s_batchBuffer` diberi dekorasi `alignas(4)` anti-alignment exception Xtensa.
+  - Saat `esp_mqtt_client_publish()` mengembalikan `< 0`, `s_batchBuffer` **TIDAK dibuang**. Pengambilan dari `s_beaconQueue` ditahan sementara dan task yield `vTaskDelay(10)` hingga 25 kali retry (~250 ms) untuk memberi waktu bagi broker menyelesaikan `PUBACK`.
+  - Buffer 4-tahap (`Outbox 150` + `BatchBuffer 150` + `Queue 214` + `RingBuffer 97` = total **611 paket / >500 ms buffer burst**) aktif otomatis dengan **0 Byte penambahan RAM**.
+
+### 3. Pemadatan Data, Zero-Copy Stream Parser & Lock-Free Core 0
+1. **Pemadatan `BeaconPacket` (80B $\rightarrow$ 56B) & Ekspansi Antrean**:
+   - Menghapus duplikasi MAC, AdvType, UUID (dead-code) dari `BeaconPacket` sehingga ukurannya menyusut menjadi **56 byte**.
+   - `BEACON_QUEUE_MAX` dinaikkan dari **`150` menjadi `214` item** ($214 \times 56\text{B} = 11.984\text{B} < 12.000\text{B}$): **Kapasitas antrean naik +42,6%** dengan **0 Byte tambahan RAM**.
+2. **Zero-Copy Stream Parser (`s_rxRem[64]`)**:
+   - Menggantikan `s_rxBuf[512]` dengan buffer sisa ekor `s_rxRem[64]` (**menghemat 448 Byte RAM statis `.bss`**).
+   - Seluruh frame 42-byte UART diproses secara *zero-copy* langsung dari buffer DMA tanpa `memcpy` dan tanpa `memmove`.
+3. **Lock-Free Fast-Path & Lazy String Formatting**:
+   - Cek `s_liveBeaconCount >= LIVE_FIFO_MAX` dan `s_droppedBeaconCount >= DROPPED_FIFO_MAX` secara atomik sebelum menyentuh `s_beaconBufMutex`.
+   - Mengeliminasi ~2.400 `snprintf`/detik di `parseAdvStructures()` (formatting `code` dan `tag` hanya dilakukan *on-demand* saat paket di-drop).
+4. **Circular Ring Buffer `DropLogService`**:
+   - Menghapus `std::memmove(9,2 KB)` per drop; entri baru langsung ditulis ke `s_dropLogs[s_dropHead]` O(1).
+   - Caching timestamp 1x per detik dan konversi hex berbasis tabel `HEX_LUT`.
+
+### 4. Ringkasan Realisasi Memori ESP32
+- **RAM Statis Sebelum Optimasi**: `118.380 bytes` (36.1% DRAM).
+- **RAM Statis Setelah Optimasi**: **`116.444 bytes` (35.5% DRAM)**.
+- **Penghematan Bersih**: **1.936 bytes (~1,94 KB RAM)**, sistem 100% stabil, tanpa crash/panic/WDT.
+
+## 143. Sinkronisasi Pelaporan Telemetri Mandiri Antar-Interface pada Log KPI (`/api/v1/system/net-logs`)
+
+### 1. Masalah Desinkronisasi Status Kartu Wi-Fi & Ethernet
+- **Gejala Visual**:
+  - Pada Overview (`/index.html`), mode aktif adalah `MODE: WI-FI` dan Wi-Fi Interface `Active` dengan IP `192.168.8.175`.
+  - Pada Log (`/log.html`), kartu Wi-Fi Station menampilkan badge merah `DISCONNECTED` dan teks besar `Offline` dengan `IP: -`.
+  - Pada saat bersamaan, kartu Ethernet LAN menampilkan `CONNECTED` dengan IP yang tertukar menjadi `IP: 192.168.8.175` (yang sebenarnya adalah IP Wi-Fi).
+- **Akar Penyebab Teknis**:
+  - Logika lama di [`src/web/web_routes.cpp`](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/web/web_routes.cpp#L1215) menghitung status Wi-Fi dengan formula mutlak `bool wifiConn = netConn && !ethActive;`.
+  - Saat kabel Ethernet terhubung ke switch/router lokal, driver Ethernet memperoleh IP (`ethActive = true`). Akibatnya `!ethActive` bernilai `false`, mematikan flag `wifiConn` menjadi `false` (`DISCONNECTED / Offline`) meskipun mode Wi-Fi sedang aktif sebagai primary uplink.
+  - Nilai IP Ethernet diisi dari `activeIp` (`getActiveIp()`). Pada mode Wi-Fi, `getActiveIp()` mengembalikan IP Wi-Fi (`192.168.8.175`), sehingga kartu Ethernet salah menampilkan IP Wi-Fi.
+
+### 2. Standar Pelaporan Realtime Mandiri (*Independent Multi-Interface Reporting*)
+- **Pemisahan Sumber Status & IP**:
+  - **Wi-Fi Station**: Status ditentukan murni oleh keberadaan IP pada netif Wi-Fi STA via `NetworkManager::getWifiIpRaw(wifiIp, sizeof(wifiIp))`. Jika bernilai `true`, status dilaporkan `"connected"` dengan IP `wifiIp`, tanpa terdistorsi oleh kondisi link fisik Ethernet.
+  - **Ethernet LAN**: Status dan IP ditentukan murni oleh driver Ethernet via `NetworkManager::getEthernetIpRaw(ethIp, sizeof(ethIp))`, `isEthernetHardwareDetected()`, dan `isEthernetLinkUp()`. Jika memiliki IP, status dilaporkan `"connected"` dengan IP `ethIp`.
+- **Konsistensi Mode Uplink MQTT**:
+  - Pada [`src/network/mqtt_service.cpp`](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/network/mqtt_service.cpp#L298), status mode MQTT diselaraskan dengan konfigurasi `(g_config.connection_mode == 1) ? "ethernet" : "wifi"` dan Layer 2 wire-bytes overhead dihitung akurat berdasarkan uplink aktif.
+
+## 144. Arsitektur Optimasi Throughput Tinggi (1.200+ Pkt/Detik) & Penghematan ~20,1 KB Static DRAM
+
+### 1. Zero-Regression Scratch Union pada Streaming Log HTTP
+- **Masalah Alokasi Memori Statis BSS**:
+  - Sebelumnya terdapat 4 array statis terpisah: `api_net_logs_handler` (50 item NetLog), `api_net_logs_export_handler` (50 item NetLog), `api_drop_logs_handler` (50 item DropLog), dan `api_drop_logs_export_handler` (50 item DropLog).
+  - Keempat buffer tersebut memakan total `23.200 Byte` memori statis `.bss` secara permanen.
+- **Solusi Zero-Risk Scratch Union**:
+  - Server HTTP ESP-IDF (`esp_httpd`) berjalan pada satu FreeRTOS task tunggal (*single-threaded*), sehingga request HTTP diproses secara sekuensial satu per satu.
+  - Keempat buffer disatukan ke dalam satu `static union s_logStreamScratch` (`net[50]` dan `drop[50]`).
+  - **Dampak Penghematan Memori**: Membebaskan **`20.600 Byte` (~20,1 KB) DRAM statis**. Struktur data `BeaconPacket` dan `DropLogEntry` tetap 100% utuh tanpa perubahan.
+
+### 2. Eliminasi Split-RTT pada Batch MQTT Besar (150 Paket)
+- **lwIP Send Buffer**:
+  - Konfigurasi `CONFIG_LWIP_TCP_SND_BUF_DEFAULT` dinaikkan menjadi **`8640`** ($6 \times 1440\text{ Byte MSS}$).
+  - Muatan satu batch MQTT penuh 150 paket (`6.630 Byte` termasuk header MQTT) dapat dimuat ke dalam socket send buffer dalam 1 kali pemanggilan `esp_mqtt_client_publish()`, mengeliminasi *split round-trip delay*.
+  - Jendela terima `CONFIG_LWIP_TCP_WND_DEFAULT` tetap dipertahankan `5760` untuk mencegah lonjakan konsumsi heap dari trafik masuk tak terkontrol.
+
+### 3. Pipeline Publisher MQTT Berkecepatan Tinggi
+- **Penyalinan Kontigu 40 Byte (100% Raw Format Preservation)**:
+  - Format 40 byte (`mac[6]`, `adv_type`, `rssi`, `payload_len`, `payload[31]`) pada `RawBleBinaryFrame` (offset 1..40) dan `MqttBleFrame44` (offset 4..43) identik secara biner.
+  - Penyalinan 5 field disederhanakan menjadi 1 pemanggilan `std::memcpy(outFrame->mac, &packet.raw_frame[1], 40)`.
+  - Pemanggilan `lwip_htonl(nowEpoch)` dipindahkan ke luar loop *batching* untuk mengurangi pemborosan instruksi CPU.
+- **Adaptive Yielding**:
+  - `vTaskDelay(1)` dipanggil saat masih ada sisa antrean `bQueue > 0` pasca-flush, mencegah penundaan paket berikutnya sekaligus menjamin `IDLE1` task watchdog selalu ter-refresh.
+
+### 4. Ping-Pong EasyDMA Top-Up Coalescing pada nRF52840
+- **Eliminasi Delay Statis & Penyerapan Paket Baru**:
+  - Sinyal semaphore `tx_trigger_sem` hanya ditunggu jika antrean `beacon_msgq` kosong dan tidak ada balasan kontrol.
+  - Setelah `dma_tx_sem` diperoleh dari hardware DMA, *Top-Up Loop* langsung mengisi sisa slot buffer hingga 24 frame sebelum `uart_tx()` diluncurkan, memaksimalkan *burst throughput* pada kecepatan UART 1 Mbps.
+

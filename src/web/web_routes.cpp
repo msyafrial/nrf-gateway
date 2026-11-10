@@ -1199,6 +1199,13 @@ static void escape_json_string(const char *src, char *dst, size_t dst_len) {
 // -------------------------------------------------------------
 // Route Handlers: Network Event Logs REST APIs (Zero-DRAM Streaming)
 // -------------------------------------------------------------
+// Scratch buffer bersama untuk streaming riwayat log di HTTP server (Single FreeRTOS Task).
+// Menghemat ~20,1 KB DRAM statis (.bss) dengan menyatukan 4 buffer yang saling lepas (mutually exclusive).
+static union {
+    Network::NetLogEntry net[Network::MAX_NET_LOGS];
+    Core::DropLogEntry   drop[Core::MAX_DROP_LOGS];
+} s_logStreamScratch;
+
 static esp_err_t api_net_logs_handler(httpd_req_t *req) {
     if (!check_heap_safety(req, 12000)) {
         return ESP_OK;
@@ -1211,22 +1218,20 @@ static esp_err_t api_net_logs_handler(httpd_req_t *req) {
         return ESP_OK;
     }
 
-    // 1. Status Realtime Interfaces
-    char activeIp[16] = {0};
-    Network::NetworkManager::getActiveIp(activeIp, sizeof(activeIp));
+    // 1. Status Realtime Interfaces (Mandiri & Akurat untuk Tiap Interface)
+    char wifiIp[16] = {0};
+    bool wifiConn = Network::NetworkManager::getWifiIpRaw(wifiIp, sizeof(wifiIp));
 
-    bool netConn = Network::NetworkManager::isConnected();
-    bool ethActive = Network::NetworkManager::isEthernetActive();
-    bool ethHw = Network::NetworkManager::isEthernetHardwareDetected();
-    bool ethLink = Network::NetworkManager::isEthernetLinkUp();
-    bool wifiConn = netConn && !ethActive;
-    bool ethConn = netConn && ethActive;
+    char ethIp[16] = {0};
+    bool ethHasIp = Network::NetworkManager::getEthernetIpRaw(ethIp, sizeof(ethIp));
+    bool ethHw    = Network::NetworkManager::isEthernetHardwareDetected();
+    bool ethLink  = Network::NetworkManager::isEthernetLinkUp();
     bool mqttConn = Network::MqttService::isConnected();
 
     const char* ethStatusStr = "link_down";
     if (!ethHw) {
         ethStatusStr = "uninstalled";
-    } else if (ethConn) {
+    } else if (ethHasIp) {
         ethStatusStr = "connected";
     } else if (ethLink) {
         ethStatusStr = "link_up";
@@ -1244,10 +1249,10 @@ static esp_err_t api_net_logs_handler(httpd_req_t *req) {
         "\"boot_count\":%u,\"reset_reason\":\"%s\",\"storage_mode\":\"%s\",\"eeprom_detected\":%s,\"flash_protected\":true,\"uptime_sec\":%llu,\"lifetime_uptime_sec\":%llu,",
         wifiConn ? "connected" : "disconnected",
         g_config.w_ssid[0] ? g_config.w_ssid : "-",
-        wifiConn ? activeIp : "-",
+        wifiConn ? wifiIp : "-",
         (unsigned)Network::NetLogService::getWifiDisconnectCount(),
         ethStatusStr,
-        ethConn ? activeIp : "-",
+        ethHasIp ? ethIp : "-",
         (unsigned)Network::NetLogService::getEthDisconnectCount(),
         mqttConn ? "online" : "offline",
         g_config.mqtt_host[0] ? g_config.mqtt_host : "-",
@@ -1263,25 +1268,24 @@ static esp_err_t api_net_logs_handler(httpd_req_t *req) {
     );
     if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK) return ESP_FAIL;
 
-    // 2. Data Log (Maksimal 50, Stream Langsung dari static BSS buffer)
-    static Network::NetLogEntry s_tempLogs[Network::MAX_NET_LOGS];
-    size_t count = Network::NetLogService::getLogs(s_tempLogs, Network::MAX_NET_LOGS);
+    // 2. Data Log (Maksimal 50, Stream Langsung dari static union buffer)
+    size_t count = Network::NetLogService::getLogs(s_logStreamScratch.net, Network::MAX_NET_LOGS);
 
     len = snprintf(chunk, sizeof(chunk), "\"total\":%u,\"logs\":[", (unsigned)count);
     if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK) return ESP_FAIL;
 
     char escDetail[160];
     for (size_t i = 0; i < count; i++) {
-        escape_json_string(s_tempLogs[i].detail, escDetail, sizeof(escDetail));
+        escape_json_string(s_logStreamScratch.net[i].detail, escDetail, sizeof(escDetail));
         len = snprintf(chunk, sizeof(chunk),
             "%s{\"id\":%u,\"uptime_sec\":%llu,\"time\":\"%s\",\"cat\":\"%s\",\"event\":\"%s\",\"status_class\":\"%s\",\"detail\":\"%s\"}",
             (i > 0) ? "," : "",
-            (unsigned)s_tempLogs[i].id,
-            (unsigned long long)s_tempLogs[i].uptime_sec,
-            s_tempLogs[i].time_str,
-            Network::NetLogService::categoryToString(s_tempLogs[i].category),
-            Network::NetLogService::eventToString(s_tempLogs[i].event),
-            Network::NetLogService::eventToStatusClass(s_tempLogs[i].event),
+            (unsigned)s_logStreamScratch.net[i].id,
+            (unsigned long long)s_logStreamScratch.net[i].uptime_sec,
+            s_logStreamScratch.net[i].time_str,
+            Network::NetLogService::categoryToString(s_logStreamScratch.net[i].category),
+            Network::NetLogService::eventToString(s_logStreamScratch.net[i].event),
+            Network::NetLogService::eventToStatusClass(s_logStreamScratch.net[i].event),
             escDetail
         );
         if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK) return ESP_FAIL;
@@ -1336,17 +1340,16 @@ static esp_err_t api_net_logs_export_handler(httpd_req_t *req) {
     const char *csv_head = "No,Waktu,Interface,Event,Detail\r\n";
     httpd_resp_send_chunk(req, csv_head, strlen(csv_head));
 
-    static Network::NetLogEntry s_tempLogs[Network::MAX_NET_LOGS];
-    size_t count = Network::NetLogService::getLogs(s_tempLogs, Network::MAX_NET_LOGS);
+    size_t count = Network::NetLogService::getLogs(s_logStreamScratch.net, Network::MAX_NET_LOGS);
 
     char lineBuf[256];
     for (size_t i = 0; i < count; i++) {
         snprintf(lineBuf, sizeof(lineBuf), "%u,%s,%s,%s,\"%s\"\r\n",
-                 (unsigned int)s_tempLogs[i].id,
-                 s_tempLogs[i].time_str,
-                 Network::NetLogService::categoryToString(s_tempLogs[i].category),
-                 Network::NetLogService::eventToString(s_tempLogs[i].event),
-                 s_tempLogs[i].detail);
+                 (unsigned int)s_logStreamScratch.net[i].id,
+                 s_logStreamScratch.net[i].time_str,
+                 Network::NetLogService::categoryToString(s_logStreamScratch.net[i].category),
+                 Network::NetLogService::eventToString(s_logStreamScratch.net[i].event),
+                 s_logStreamScratch.net[i].detail);
         httpd_resp_send_chunk(req, lineBuf, strlen(lineBuf));
     }
 
@@ -1366,8 +1369,7 @@ static esp_err_t api_drop_logs_handler(httpd_req_t *req) {
     }
 
     Core::DropSummaryStats stats = Core::DropLogService::getSummaryStats();
-    static Core::DropLogEntry s_tempDropLogs[Core::MAX_DROP_LOGS];
-    size_t count = Core::DropLogService::getLogs(s_tempDropLogs, Core::MAX_DROP_LOGS);
+    size_t count = Core::DropLogService::getLogs(s_logStreamScratch.drop, Core::MAX_DROP_LOGS);
 
     char chunk[512];
     httpd_resp_set_type(req, "application/json");
@@ -1397,17 +1399,17 @@ static esp_err_t api_drop_logs_handler(httpd_req_t *req) {
         len = snprintf(chunk, sizeof(chunk),
             "%s{\"id\":%u,\"uptime_sec\":%llu,\"time\":\"%s\",\"code\":\"%s\",\"tag\":\"%s\",\"mac\":\"%s\",\"raw\":\"%s\",\"rssi\":%d,\"reason\":%u,\"reason_str\":\"%s\",\"status_class\":\"%s\"}",
             (i > 0) ? "," : "",
-            (unsigned)s_tempDropLogs[i].id,
-            (unsigned long long)s_tempDropLogs[i].uptime_sec,
-            s_tempDropLogs[i].time_str,
-            s_tempDropLogs[i].code,
-            s_tempDropLogs[i].tag,
-            s_tempDropLogs[i].mac,
-            s_tempDropLogs[i].raw,
-            (int)s_tempDropLogs[i].rssi,
-            (unsigned)static_cast<uint8_t>(s_tempDropLogs[i].reason),
-            Core::DropLogService::reasonToString(s_tempDropLogs[i].reason),
-            Core::DropLogService::reasonToStatusClass(s_tempDropLogs[i].reason)
+            (unsigned)s_logStreamScratch.drop[i].id,
+            (unsigned long long)s_logStreamScratch.drop[i].uptime_sec,
+            s_logStreamScratch.drop[i].time_str,
+            s_logStreamScratch.drop[i].code,
+            s_logStreamScratch.drop[i].tag,
+            s_logStreamScratch.drop[i].mac,
+            s_logStreamScratch.drop[i].raw,
+            (int)s_logStreamScratch.drop[i].rssi,
+            (unsigned)static_cast<uint8_t>(s_logStreamScratch.drop[i].reason),
+            Core::DropLogService::reasonToString(s_logStreamScratch.drop[i].reason),
+            Core::DropLogService::reasonToStatusClass(s_logStreamScratch.drop[i].reason)
         );
         if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK) return ESP_FAIL;
     }
@@ -1457,30 +1459,29 @@ static esp_err_t api_drop_logs_export_handler(httpd_req_t *req) {
     const char *csv_head = "No,Waktu,MAC Address,Tipe,Major-Minor/Tag,RSSI(dBm),Alasan,Raw 44B\r\n";
     httpd_resp_send_chunk(req, csv_head, strlen(csv_head));
 
-    static Core::DropLogEntry s_tempDropLogs[Core::MAX_DROP_LOGS];
-    size_t count = Core::DropLogService::getLogs(s_tempDropLogs, Core::MAX_DROP_LOGS);
+    size_t count = Core::DropLogService::getLogs(s_logStreamScratch.drop, Core::MAX_DROP_LOGS);
 
     char lineBuf[256];
     char raw44[90];
     for (size_t i = 0; i < count; i++) {
-        const char* rawOut = s_tempDropLogs[i].raw;
-        size_t rawLen = strlen(s_tempDropLogs[i].raw);
+        const char* rawOut = s_logStreamScratch.drop[i].raw;
+        size_t rawLen = strlen(s_logStreamScratch.drop[i].raw);
         if (rawLen >= 84) {
             time_t now = 0;
             time(&now);
-            uint32_t epoch = (now > 1704067200LL) ? static_cast<uint32_t>(now) : s_tempDropLogs[i].uptime_sec;
-            snprintf(raw44, sizeof(raw44), "%08X%.80s", (unsigned int)epoch, s_tempDropLogs[i].raw + 2);
+            uint32_t epoch = (now > 1704067200LL) ? static_cast<uint32_t>(now) : s_logStreamScratch.drop[i].uptime_sec;
+            snprintf(raw44, sizeof(raw44), "%08X%.80s", (unsigned int)epoch, s_logStreamScratch.drop[i].raw + 2);
             rawOut = raw44;
         }
 
         snprintf(lineBuf, sizeof(lineBuf), "%u,%s,%s,%s,%s,%d,\"%s\",%s\r\n",
-                 (unsigned int)s_tempDropLogs[i].id,
-                 s_tempDropLogs[i].time_str,
-                 s_tempDropLogs[i].mac,
-                 s_tempDropLogs[i].code,
-                 s_tempDropLogs[i].tag,
-                 (int)s_tempDropLogs[i].rssi,
-                 Core::DropLogService::reasonToString(s_tempDropLogs[i].reason),
+                 (unsigned int)s_logStreamScratch.drop[i].id,
+                 s_logStreamScratch.drop[i].time_str,
+                 s_logStreamScratch.drop[i].mac,
+                 s_logStreamScratch.drop[i].code,
+                 s_logStreamScratch.drop[i].tag,
+                 (int)s_logStreamScratch.drop[i].rssi,
+                 Core::DropLogService::reasonToString(s_logStreamScratch.drop[i].reason),
                  rawOut);
         httpd_resp_send_chunk(req, lineBuf, strlen(lineBuf));
     }

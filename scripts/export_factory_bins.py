@@ -17,6 +17,7 @@ import os
 import sys
 import shutil
 import socket
+import tempfile
 import subprocess
 import configparser
 
@@ -117,6 +118,48 @@ def generate_nvs_binary(project_dir):
                 return out_bin_path
 
     log_error("Gagal membentuk nvs.bin dari nvs_config.csv!")
+
+def build_littlefs_binary(project_dir):
+    print("  -> Membangun filesystem LittleFS dari folder data/...")
+    # 1. Coba pio run -t buildfs terlebih dahulu
+    res = subprocess.run(["pio", "run", "-t", "buildfs"], cwd=project_dir)
+    out_bin = os.path.join(project_dir, ".pio", "build", "esp32doit-devkit-v1", "littlefs.bin")
+    if res.returncode == 0 and os.path.exists(out_bin) and os.path.getsize(out_bin) == 1048576:
+        log_success("LittleFS binary berhasil dibentuk via pio run -t buildfs.")
+        return out_bin
+
+    # 2. Fallback: Gunakan staging build mklittlefs untuk lingkungan proteksi folder Windows
+    print("  -> Menggunakan fallback staging mklittlefs builder...")
+    data_dir = os.path.join(project_dir, "data")
+    mklittlefs_candidates = [
+        os.path.normpath(os.path.expanduser("~/.platformio/packages/tool-mklittlefs/mklittlefs.exe")),
+        r"C:\Users\syafr\.platformio\packages\tool-mklittlefs\mklittlefs.exe",
+        "mklittlefs"
+    ]
+    mklittlefs_exe = None
+    for cand in mklittlefs_candidates:
+        if cand and (os.path.exists(cand) or shutil.which(cand)):
+            mklittlefs_exe = cand
+            break
+
+    if not mklittlefs_exe:
+        log_error("mklittlefs executable tidak ditemukan!")
+
+    temp_staging = os.path.join(tempfile.gettempdir(), "esp32_buildfs_staging")
+    if os.path.exists(temp_staging):
+        shutil.rmtree(temp_staging, ignore_errors=True)
+    shutil.copytree(data_dir, temp_staging)
+
+    os.makedirs(os.path.dirname(out_bin), exist_ok=True)
+    cmd = [mklittlefs_exe, "-c", temp_staging, "-s", "1048576", out_bin]
+    res_stage = subprocess.run(cmd, capture_output=True, text=True)
+    shutil.rmtree(temp_staging, ignore_errors=True)
+
+    if res_stage.returncode == 0 and os.path.exists(out_bin) and os.path.getsize(out_bin) == 1048576:
+        log_success(f"LittleFS binary berhasil dibentuk via staging mklittlefs ({os.path.getsize(out_bin):,} bytes).")
+        return out_bin
+    else:
+        log_error(f"Gagal membentuk LittleFS binary: {res_stage.stderr or res_stage.stdout}")
 
 def create_guide_file(target_dir, dev_model, dev_board_ver, fw_ver):
     guide_path = os.path.join(target_dir, "PANDUAN_OFFSET.txt")
@@ -488,8 +531,8 @@ def main():
     run_command_strict(["pio", "run"], "Build Firmware", cwd=project_dir)
 
     # 2. Build Filesystem Web (data/ -> littlefs.bin)
-    log_step(2, "Kompilasi Filesystem Web (pio run -t buildfs)")
-    run_command_strict(["pio", "run", "-t", "buildfs"], "Build LittleFS", cwd=project_dir)
+    log_step(2, "Kompilasi Filesystem Web (data/ -> littlefs.bin)")
+    build_littlefs_binary(project_dir)
 
     # 3. Build NVS Master Binary (nvs_config.csv -> nvs.bin)
     log_step(3, "Kompilasi NVS Master Binary (nvs_config.csv -> nvs.bin)")
