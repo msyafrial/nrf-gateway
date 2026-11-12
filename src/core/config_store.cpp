@@ -487,7 +487,7 @@ void ConfigStore::initNvsConfiguration() {
     if (nvs_open("cfg_gate", NVS_READWRITE, &hDest) == ESP_OK) {
         nvs_erase_all(hDest);
         if (hasMasterGate) {
-            nvsCopyU32(hMaster, hDest, "scan_mode", 1);
+            nvsCopyU32(hMaster, hDest, "scan_mode", 2);
             nvsCopyStr(hMaster, hDest, "dev_model", CONFIG_DEVICE_MODEL);
             nvsCopyStr(hMaster, hDest, "dev_ver", CONFIG_DEVICE_BOARD_VER);
             nvsCopyU32(hMaster, hDest, "uuid_en", 0);
@@ -500,12 +500,12 @@ void ConfigStore::initNvsConfiguration() {
             nvsCopyU32(hMaster, hDest, "batch_flush", 150);
             nvsCopyU32(hMaster, hDest, "data_ttl", 1000);
             nvsCopyU32(hMaster, hDest, "hb_interval", 5);
-            nvsCopyStr(hMaster, hDest, "restart_sch", "03:00");
+            nvsCopyStr(hMaster, hDest, "restart_sch", "");
             nvsCopyU32(hMaster, hDest, "discon_rst", 30);
             nvsCopyStr(hMaster, hDest, "ntp_server", "pool.ntp.org");
             nvs_close(hMaster);
         } else {
-            nvs_set_u32(hDest, "scan_mode", 1);
+            nvs_set_u32(hDest, "scan_mode", 2);
             nvs_set_str(hDest, "dev_model", CONFIG_DEVICE_MODEL);
             nvs_set_str(hDest, "dev_ver", CONFIG_DEVICE_BOARD_VER);
             nvs_set_u32(hDest, "uuid_en", 0);
@@ -518,7 +518,7 @@ void ConfigStore::initNvsConfiguration() {
             nvs_set_u32(hDest, "batch_flush", 150);
             nvs_set_u32(hDest, "data_ttl", 1000);
             nvs_set_u32(hDest, "hb_interval", 5);
-            nvs_set_str(hDest, "restart_sch", "03:00");
+            nvs_set_str(hDest, "restart_sch", "");
             nvs_set_u32(hDest, "discon_rst", 30);
             nvs_set_str(hDest, "ntp_server", "pool.ntp.org");
         }
@@ -672,7 +672,7 @@ void ConfigStore::loadConfigFromNvs(AppConfig& targetCfg, bool allowMigration) {
 
     // cfg_gate
     if (nvs_open("cfg_gate", NVS_READONLY, &h) == ESP_OK) {
-        targetCfg.scan_mode = (int)nvsGetU32(h, "scan_mode", 1);
+        targetCfg.scan_mode = (int)nvsGetU32(h, "scan_mode", 2);
         nvsGetStr(h, "dev_model", targetCfg.device_model, sizeof(targetCfg.device_model), CONFIG_DEVICE_MODEL);
         nvsGetStr(h, "dev_ver", targetCfg.device_version, sizeof(targetCfg.device_version), CONFIG_DEVICE_BOARD_VER);
         targetCfg.filter_uuid_en = (int)nvsGetU32(h, "uuid_en", 0);
@@ -688,12 +688,12 @@ void ConfigStore::loadConfigFromNvs(AppConfig& targetCfg, bool allowMigration) {
         targetCfg.batch_flush = (int)nvsGetU32(h, "batch_flush", 150);
         targetCfg.data_ttl = (int)nvsGetU32(h, "data_ttl", 1000);
         targetCfg.hb_interval = (int)nvsGetU32(h, "hb_interval", 5);
-        nvsGetStr(h, "restart_sch", targetCfg.restart_schedule, sizeof(targetCfg.restart_schedule), "03:00");
+        nvsGetStr(h, "restart_sch", targetCfg.restart_schedule, sizeof(targetCfg.restart_schedule), "");
         targetCfg.discon_rst = (int)nvsGetU32(h, "discon_rst", 30);
         nvsGetStr(h, "ntp_server", targetCfg.ntp_server, sizeof(targetCfg.ntp_server), "pool.ntp.org");
         nvs_close(h);
     } else {
-        targetCfg.scan_mode = 1;
+        targetCfg.scan_mode = 2;
         strlcpy(targetCfg.device_model, CONFIG_DEVICE_MODEL, sizeof(targetCfg.device_model));
         strlcpy(targetCfg.device_version, CONFIG_DEVICE_BOARD_VER, sizeof(targetCfg.device_version));
         targetCfg.filter_uuid_en = 0;
@@ -707,7 +707,7 @@ void ConfigStore::loadConfigFromNvs(AppConfig& targetCfg, bool allowMigration) {
         targetCfg.batch_flush = 150;
         targetCfg.data_ttl = 1000;
         targetCfg.hb_interval = 5;
-        strlcpy(targetCfg.restart_schedule, "03:00", sizeof(targetCfg.restart_schedule));
+        strlcpy(targetCfg.restart_schedule, "", sizeof(targetCfg.restart_schedule));
         targetCfg.discon_rst = 30;
         strlcpy(targetCfg.ntp_server, "pool.ntp.org", sizeof(targetCfg.ntp_server));
     }

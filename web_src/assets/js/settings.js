@@ -639,7 +639,8 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   // Initial sync for toggles & inputs
-  const curScanMode = parseInt(document.getElementById("scan_mode")?.value || "1", 10);
+  const rawScanMode = parseInt(document.getElementById("scan_mode")?.value || "2", 10);
+  const curScanMode = (rawScanMode === 1 || rawScanMode === 2) ? rawScanMode : 2;
   window.selectScanMode(curScanMode);
 
   syncUuidToggle(false);

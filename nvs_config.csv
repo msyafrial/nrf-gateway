@@ -33,7 +33,7 @@ telem_mask,data,u32,158
 gateway,namespace,,
 dev_model,data,string,AR-27
 dev_ver,data,string,v1.0.0
-scan_mode,data,u32,1
+scan_mode,data,u32,2
 uuid_en,data,u32,0
 uuid,data,string,FDA50693A4E24FB1AFCFC6EB07647825
 major_en,data,u32,0
@@ -44,6 +44,6 @@ batch_max,data,u32,150
 batch_flush,data,u32,150
 data_ttl,data,u32,1000
 hb_interval,data,u32,5
-restart_sch,data,string,03:00
+restart_sch,data,string,
 discon_rst,data,u32,30
 ntp_server,data,string,pool.ntp.org

@@ -239,6 +239,25 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
         } else {
             snprintf(out_buf, max_len, "-");
         }
+    } else if (key == "wifi_ssid_display" || key == "wifi_ssid_title") {
+        if (Network::NetworkManager::isConnected() && g_config.connection_mode == 0) {
+            wifi_ap_record_t info;
+            char raw_ssid[33] = "";
+            if (esp_wifi_sta_get_ap_info(&info) == ESP_OK && info.ssid[0] != '\0') {
+                strlcpy(raw_ssid, (const char*)info.ssid, sizeof(raw_ssid));
+            } else if (g_config.w_ssid[0] != '\0') {
+                strlcpy(raw_ssid, g_config.w_ssid, sizeof(raw_ssid));
+            }
+            html_escape(raw_ssid, out_buf, max_len);
+        } else {
+            out_buf[0] = '\0';
+        }
+    } else if (key == "wifi_ssid_style") {
+        if (Network::NetworkManager::isConnected() && g_config.connection_mode == 0) {
+            snprintf(out_buf, max_len, "display: inline-block;");
+        } else {
+            snprintf(out_buf, max_len, "display: none;");
+        }
     } else if (key == "wifi_role_label") {
         if (g_config.connection_mode == 1) {
             snprintf(out_buf, max_len, "Radio Inactive (LAN Mode)");
@@ -480,19 +499,19 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
     } else if (key == "telem_time_checked") {
         snprintf(out_buf, max_len, "%s", (cfg.telem_mask & TELEM_MASK_TIME) ? "checked" : "");
     } else if (key == "scan_mode") {
-        snprintf(out_buf, max_len, "%d", (cfg.scan_mode == 2) ? 2 : 1);
+        snprintf(out_buf, max_len, "%d", (cfg.scan_mode == 1) ? 1 : 2);
     } else if (key == "scan_mode_passive_checked") {
-        snprintf(out_buf, max_len, "%s", (cfg.scan_mode != 2) ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.scan_mode == 1) ? "checked" : "");
     } else if (key == "scan_mode_active_checked") {
-        snprintf(out_buf, max_len, "%s", (cfg.scan_mode == 2) ? "checked" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.scan_mode != 1) ? "checked" : "");
     } else if (key == "scan_mode_passive_active") {
-        snprintf(out_buf, max_len, "%s", (cfg.scan_mode != 2) ? "active" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.scan_mode == 1) ? "active" : "");
     } else if (key == "scan_mode_active_active") {
-        snprintf(out_buf, max_len, "%s", (cfg.scan_mode == 2) ? "active" : "");
+        snprintf(out_buf, max_len, "%s", (cfg.scan_mode != 1) ? "active" : "");
     } else if (key == "scan_mode_text") {
-        snprintf(out_buf, max_len, "%s", (g_config.scan_mode == 2) ? "Active" : "Passive");
+        snprintf(out_buf, max_len, "%s", (g_config.scan_mode == 1) ? "Passive" : "Active");
     } else if (key == "scan_mode_color") {
-        snprintf(out_buf, max_len, "%s", (g_config.scan_mode == 2) ? "#38bdf8" : "#34d399");
+        snprintf(out_buf, max_len, "%s", (g_config.scan_mode == 1) ? "#34d399" : "#38bdf8");
     } else if (key == "queue_max" || key == "beacon_queue_max") {
         snprintf(out_buf, max_len, "%u", (unsigned int)BEACON_QUEUE_MAX);
     } else if (key == "filter_uuid_en") {

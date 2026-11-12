@@ -67,7 +67,7 @@ static void supervisorTask(void *pvParameters) {
         }
 
         // 5. Health monitor & Self-Healing nRF52840
-        uint8_t targetScanMode = (g_config.scan_mode == 2) ? 0x02 : 0x01;
+        uint8_t targetScanMode = (g_config.scan_mode == 1) ? 0x01 : 0x02;
         uint8_t currentNrfState = Core::BeaconPipeline::getNrfScanState();
         uint32_t curNrfFrames = Core::BeaconPipeline::getTotalFramesIngress();
 
@@ -154,8 +154,8 @@ extern "C" void app_main(void) {
     ESP_ERROR_CHECK(Bsp::UartManager::init());
 
     // Seluruh subsistem internal ESP32 siap sebelum terhubung ke jaringan.
-    // Kirim perintah scan ke nRF52840 sesuai scan_mode dari NVS (1: Passive [Default], 2: Active)
-    uint8_t startupScanMode = (g_config.scan_mode == 2) ? 0x02 : 0x01;
+    // Kirim perintah scan ke nRF52840 sesuai scan_mode dari NVS (1: Passive, 2: Active [Default])
+    uint8_t startupScanMode = (g_config.scan_mode == 1) ? 0x01 : 0x02;
     ESP_LOGI(TAG, "Seluruh setup lokal ESP32 siap. Mengirim perintah scan (Mode %u: %s) ke nRF52840 sebelum koneksi jaringan...",
              startupScanMode, (startupScanMode == 2) ? "ACTIVE" : "PASSIVE");
 

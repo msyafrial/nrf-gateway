@@ -1842,12 +1842,12 @@ Mengadopsi pola arsitektur kartu hirarkis bertingkat (Device Card & Nested Frame
   - Ditempatkan di bagian atas Bento Card 1 (*Filter BLE Scanner & Sinyal*) pada `settings.html`.
   - Berfungsi mengatur mode kerja radio nRF52840 secara dua arah (*bidirectional UART*).
   - Terdiri dari dua opsi tactile pill:
-    1. **Passive Scan (`1` - Default NVS)**:
+    1. **Passive Scan (`1`)**:
        - Warna Aksen: Cyan Neon (`#38bdf8`) dengan active background `rgba(56, 189, 248, 0.15)`.
-       - Deskripsi: *Mode Pasif bawaan pabrik, hanya mendengarkan paket siaran radio (ADV) tanpa memancarkan sinyal balik (Zero RF emission / stealth).*
-    2. **Active Scan (`2`)**:
+       - Deskripsi: *Mode Pasif, hanya mendengarkan paket siaran radio (ADV) tanpa memancarkan sinyal balik (Zero RF emission / stealth).*
+    2. **Active Scan (`2` - Default NVS)**:
        - Warna Aksen: Emerald Neon (`#10b981`) dengan active background `rgba(16, 185, 129, 0.15)`.
-       - Deskripsi: *Mode Aktif, mengirimkan frame SCAN_REQ untuk meminta SCAN_RSP tambahan (seperti nama lengkap perangkat, data sensor Eddystone/MOKO).*
+       - Deskripsi: *Mode Aktif bawaan pabrik, mengirimkan frame SCAN_REQ untuk meminta SCAN_RSP tambahan (seperti nama lengkap perangkat, data sensor Eddystone/MOKO).*
 - **2. Interaktivitas Reaktif & Aturan NVS-Only (Reboot Required)**:
   - Segmented toggle terhubung dengan input tersembunyi `<input type="hidden" id="scan_mode" name="scan_mode" value="%scan_mode%">`.
   - Mengubah opsi memicu dirty state pada form (`#floatingSaveDock` otomatis melayang).
@@ -5291,4 +5291,44 @@ Setiap berkas master HTML terotentikasi (`index.html`, `test.html`, `log.html`, 
 - **Eliminasi Delay Statis & Penyerapan Paket Baru**:
   - Sinyal semaphore `tx_trigger_sem` hanya ditunggu jika antrean `beacon_msgq` kosong dan tidak ada balasan kontrol.
   - Setelah `dma_tx_sem` diperoleh dari hardware DMA, *Top-Up Loop* langsung mengisi sisa slot buffer hingga 24 frame sebelum `uart_tx()` diluncurkan, memaksimalkan *burst throughput* pada kecepatan UART 1 Mbps.
+
+## 145. Spesifikasi Komponen Tampilan SSID Terhubung pada Baris Signal Strength (Anti-Overlap & Single-Line Guarantee)
+
+### 1. Latar Belakang & Rasional Desain
+- **Kebutuhan**: Menampilkan nama SSID Wi-Fi yang sedang aktif terhubung pada kartu *Wi-Fi Interface* di halaman Overview ([`web_src/index.html`](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/index.html)), bersebelahan dengan indikator kekuatan sinyal (signal bars & dBm).
+- **Kepatuhan Terhadap Kontrak Desain**:
+  1. **Kontrak Jumlah Baris Kompak**: Kartu *Wi-Fi Interface* dan kartu *Ethernet Interface* tetap mempertahankan **tepat 3 baris** (simetris dan rata tinggi). Tidak boleh menambah baris ke-4.
+  2. **Tanpa Label Interpretatif**: Sesuai aturan sistem, tidak menyertakan kata awalan atau analogi seperti "SSID:", "Network:", atau "(Connected)". Hanya menampilkan string nama SSID murni.
+  3. **Zero-Overlap & Truncation Otomatis**: Jika nama SSID panjang (standar IEEE 802.11 hingga 32 karakter), teks dipotong rapi dengan elipsis (`...`) tanpa menimpa bar sinyal atau teks dBm. Tooltip HTML `title` disediakan agar nama utuh dapat dilihat via hover.
+
+### 2. Spesifikasi Token CSS & Tata Letak Anti-Overlap
+- **Container Row (`.sg-subcard-row`)**:
+  - `display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: nowrap;`
+- **Label Kiri (`.sg-subcard-label`)**:
+  - `flex-shrink: 0; white-space: nowrap;` (mengunci label `Signal Strength` agar tidak mengecil).
+- **Value Container (`.sg-subcard-val-wrap`)**:
+  - `display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-shrink: 1; min-width: 0;` (mengizinkan elemen anak fleksibel tanpa memicu overflow baris).
+- **Badge SSID (`.sg-wifi-ssid`)**:
+  - **Desktop**: `max-width: 130px;`
+  - **Mobile ($\le 480$px)**: `max-width: 85px; font-size: 0.76rem; padding: 1px 5px;`
+  - **Truncation**: `overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; min-width: 0;`
+  - **Visual Token**:
+    - `background: rgba(255, 255, 255, 0.05);` (dark slate glass)
+    - `border: 1px solid rgba(255, 255, 255, 0.08);`
+    - `border-radius: 6px;`
+    - `color: #94a3b8;` (Slate 400)
+    - `font-size: 0.82rem; font-weight: 500;`
+    - `padding: 2px 7px; line-height: 1.3;`
+- **Elemen Numerik & Bar (`.sg-signal-bars`, `#wifi-rssi-val`)**:
+  - `flex-shrink: 0; white-space: nowrap;` (dijamin 100% tidak pernah terpotong atau tertimpa).
+
+### 3. Logika Backend SSR & Polling Real-Time
+- **SSR Template (`src/web/web_template.cpp`)**:
+  - `%wifi_ssid_display%` & `%wifi_ssid_title%`: Diisi dengan nama SSID yang disanitasi via `html_escape()`. Jika Wi-Fi terputus atau mode LAN, bernilai kosong `""`.
+  - `%wifi_ssid_style%`: Bernilai `display: inline-block;` saat Wi-Fi terhubung, atau `display: none;` saat terputus.
+- **REST API Polling (`src/web/web_routes.cpp`)**:
+  - Endpoint `/api/status` (Chunk 4) mengirim field `"wifi_ssid":"<escaped_ssid>"` saat Wi-Fi terhubung.
+- **Frontend Hydration (`web_src/index.html`)**:
+  - Fungsi `updateOverviewData(d)` memperbarui isi teks, atribut `title`, dan menampilkan elemen secara dinamis jika terhubung, atau menyembunyikannya jika offline/mode LAN.
+
 

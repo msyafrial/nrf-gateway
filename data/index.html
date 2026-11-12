@@ -581,8 +581,26 @@
   .sg-subcard-val-wrap {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 6px;
-    flex-shrink: 0;
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  .sg-wifi-ssid {
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: #94a3b8;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 2px 7px;
+    flex-shrink: 1;
+    min-width: 0;
+    line-height: 1.3;
   }
   .sg-subcard-val {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -889,6 +907,11 @@
     }
     .sg-mqtt-col-val {
       font-size: 0.86rem;
+    }
+    .sg-wifi-ssid {
+      max-width: 85px;
+      font-size: 0.76rem;
+      padding: 1px 5px;
     }
   }
 </style>
@@ -1223,6 +1246,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                     <div class="sg-subcard-row">
                       <span class="sg-subcard-label">Signal Strength</span>
                       <div id="wifi-signal-container" class="sg-subcard-val-wrap">
+                        <span id="wifi-ssid-val" class="sg-wifi-ssid" title="%wifi_ssid_title%" style="%wifi_ssid_style%">%wifi_ssid_display%</span>
                         <div class="sg-signal-bars" title="Signal Strength Indicator">
                           <span class="sg-signal-bar on"></span>
                           <span class="sg-signal-bar on"></span>
@@ -1577,6 +1601,17 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
             if (wifiStatus) {
               wifiStatus.className = "sg-subcard-status-badge slate";
               wifiStatus.textContent = "Disabled";
+            }
+          }
+
+          const wifiSsidEl = document.getElementById("wifi-ssid-val");
+          if (wifiSsidEl) {
+            if (isConn && !isEthMode && d.wifi_ssid) {
+              wifiSsidEl.textContent = d.wifi_ssid;
+              wifiSsidEl.title = d.wifi_ssid;
+              wifiSsidEl.style.display = "inline-block";
+            } else {
+              wifiSsidEl.style.display = "none";
             }
           }
 

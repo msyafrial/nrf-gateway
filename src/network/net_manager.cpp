@@ -14,6 +14,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_mac.h"
+#include "esp_attr.h"
 #include "mdns.h"
 #include "lwip/sockets.h"
 #include "lwip/netif.h"
@@ -73,8 +74,7 @@ static uint32_t s_lastFastLinkCheckMs = 0;
 static const uint32_t AP_INACTIVITY_TIMEOUT_MS = 60000; // 60 Detik
 static uint32_t s_pendingApStopMillis = 0;
 
-static bool s_dailyRestartExecutedToday = false;
-static int  s_lastCheckedMinute = -1;
+static RTC_DATA_ATTR int s_lastRestartYday = -1;
 
 static void restoreWifiDnsAndDefaultRoute() {
     if (s_staNetif != nullptr) {
@@ -1234,6 +1234,10 @@ void NetworkManager::checkApInactivityTimeout() {
 void NetworkManager::checkDailyRestart() {
     if (strlen(g_config.restart_schedule) < 5 || !s_ntpSynced) return;
 
+    // Proteksi minimal uptime: jangan restart jika sistem baru menyala < 5 menit (300 detik)
+    uint64_t uptimeSec = esp_timer_get_time() / 1000000ULL;
+    if (uptimeSec < 300) return;
+
     int targetH = 0, targetM = 0;
     if (sscanf(g_config.restart_schedule, "%2d:%2d", &targetH, &targetM) != 2) return;
 
@@ -1242,21 +1246,16 @@ void NetworkManager::checkDailyRestart() {
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
 
-    if (timeinfo.tm_min != s_lastCheckedMinute) {
-        s_lastCheckedMinute = timeinfo.tm_min;
-        if (timeinfo.tm_hour == targetH && timeinfo.tm_min == targetM) {
-            if (!s_dailyRestartExecutedToday) {
-                s_dailyRestartExecutedToday = true;
-                ESP_LOGI(TAG, "Jadwal restart harian (%02d:%02d) tercapai. Melakukan restart terencana...",
-                         targetH, targetM);
-                char schDetail[80];
-                snprintf(schDetail, sizeof(schDetail), "Jadwal restart harian (%02d:%02d) dieksekusi", targetH, targetM);
-                NetLogService::log(NetCategory::SYSTEM, NetEvent::REBOOT, schDetail);
-                vTaskDelay(pdMS_TO_TICKS(200));
-                esp_restart();
-            }
-        } else {
-            s_dailyRestartExecutedToday = false;
+    if (timeinfo.tm_hour == targetH && timeinfo.tm_min == targetM) {
+        if (s_lastRestartYday != timeinfo.tm_yday) {
+            s_lastRestartYday = timeinfo.tm_yday; // Disimpan di RTC Slow Memory (bertahan melewati esp_restart)
+            ESP_LOGI(TAG, "Jadwal restart harian (%02d:%02d) tercapai. Melakukan restart terencana...",
+                     targetH, targetM);
+            char schDetail[80];
+            snprintf(schDetail, sizeof(schDetail), "Jadwal restart harian (%02d:%02d) dieksekusi", targetH, targetM);
+            NetLogService::log(NetCategory::SYSTEM, NetEvent::REBOOT, schDetail);
+            vTaskDelay(pdMS_TO_TICKS(200));
+            esp_restart();
         }
     }
 }

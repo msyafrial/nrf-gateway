@@ -626,7 +626,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
         if (s_lastBwCalcMs == 0) {
             s_lastBwCalcMs = now;
         } else {
-            uint32_t deltaMs = now - s_lastBwCalcMs;
+            uint32_t deltaMs = (now >= s_lastBwCalcMs) ? (now - s_lastBwCalcMs) : 0;
             if (deltaMs >= 1000) {
                 uint32_t bytesInWindow = s_statWireBytesAcc.exchange(0);
                 float kbps = ((float)bytesInWindow / 1024.0f) / ((float)deltaMs / 1000.0f);
@@ -708,7 +708,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
         while (batchCount < (size_t)g_config.batch_max &&
                (batchLen + frameLen <= MQTT_BATCH_BUFFER_SIZE) &&
                bQueue != nullptr && xQueueReceive(bQueue, &packet, 0) == pdTRUE) {
-            uint32_t age = now - packet.timestamp;
+            uint32_t age = (now >= packet.timestamp) ? (now - packet.timestamp) : 0;
             if (g_config.data_ttl > 0 && age > (uint32_t)g_config.data_ttl) {
                 Core::BeaconPipeline::recordDroppedBeacon(packet, DropReason::TTL_EXPIRED);
                 continue; // Buang paket kadaluarsa dan catat ke DropLog
@@ -751,7 +751,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
             }
         }
         // 6. Timer-based Batch Flush
-        else if (batchCount > 0 && ((now - lastFlushTime) >= (uint32_t)g_config.batch_flush)) {
+        else if (batchCount > 0 && (now >= lastFlushTime) && ((now - lastFlushTime) >= (uint32_t)g_config.batch_flush)) {
             int qos = (g_config.mqtt_qos == 0) ? 0 : 1;
             int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicData,
                                                 (const char*)s_batchBuffer,
@@ -780,16 +780,18 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
         }
 
         // 7. Half-Open TCP / Outbox Full Failsafe Watchdog
+        uint32_t currentNow = (uint32_t)(esp_timer_get_time() / 1000);
         uint32_t lastInbound = s_lastInboundActivityMs.load(std::memory_order_relaxed);
         bool pubackStalled = (g_config.mqtt_qos == 1 &&
                               Core::BeaconPipeline::getMqttSpeed() > 0 &&
                               lastInbound > 0 &&
-                              (now - lastInbound) > 90000);
+                              currentNow > lastInbound &&
+                              (currentNow - lastInbound) > 90000);
         if (consecPubFail >= 25 || pubackStalled) {
             ESP_LOGW(TAG, "Watchdog MQTT: %s -> Memicu forceReconnect()!",
                      (consecPubFail >= 25) ? "25x gagal publish beruntun (Outbox penuh)" : "Tiada PUBACK >90s (Half-open TCP)");
             consecPubFail = 0;
-            s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
+            s_lastInboundActivityMs.store(currentNow, std::memory_order_relaxed);
             forceReconnect();
         }
 
@@ -799,7 +801,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
             uint32_t hbMs = (g_config.hb_interval >= 1 && g_config.hb_interval <= 300)
                             ? (uint32_t)(g_config.hb_interval * 1000)
                             : 5000;
-            if (nowMs - s_lastHeartbeatMs >= hbMs) {
+            if (nowMs >= s_lastHeartbeatMs && (nowMs - s_lastHeartbeatMs >= hbMs)) {
                 s_lastHeartbeatMs = nowMs;
                 publishHeartbeat();
             }

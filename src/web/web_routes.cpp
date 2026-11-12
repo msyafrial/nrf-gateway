@@ -1052,16 +1052,32 @@ static esp_err_t api_system_version_handler(httpd_req_t *req) {
 
     // Chunk 4: Metrik MQTT & Ethernet Driver detail
     int wifi_rssi = -999;
+    char wifi_ssid_str[33] = "";
     if (g_config.connection_mode == 0 && Network::NetworkManager::isConnected()) {
         wifi_ap_record_t ap_info;
         if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
             wifi_rssi = ap_info.rssi;
+            if (ap_info.ssid[0] != '\0') {
+                strlcpy(wifi_ssid_str, (const char*)ap_info.ssid, sizeof(wifi_ssid_str));
+            }
+        }
+        if (wifi_ssid_str[0] == '\0' && g_config.w_ssid[0] != '\0') {
+            strlcpy(wifi_ssid_str, g_config.w_ssid, sizeof(wifi_ssid_str));
         }
     }
 
-    char wifi_rssi_part[32] = "";
+    char wifi_rssi_part[128] = "";
     if (wifi_rssi != -999) {
-        snprintf(wifi_rssi_part, sizeof(wifi_rssi_part), "\"wifi_rssi\":%d,", wifi_rssi);
+        char escaped_ssid[65] = "";
+        size_t esc_idx = 0;
+        for (size_t i = 0; wifi_ssid_str[i] != '\0' && esc_idx < sizeof(escaped_ssid) - 2; ++i) {
+            if (wifi_ssid_str[i] == '"' || wifi_ssid_str[i] == '\\') {
+                escaped_ssid[esc_idx++] = '\\';
+            }
+            escaped_ssid[esc_idx++] = wifi_ssid_str[i];
+        }
+        escaped_ssid[esc_idx] = '\0';
+        snprintf(wifi_rssi_part, sizeof(wifi_rssi_part), "\"wifi_rssi\":%d,\"wifi_ssid\":\"%s\",", wifi_rssi, escaped_ssid);
     }
 
     char eth_extra[160] = "";
