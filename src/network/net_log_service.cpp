@@ -1,6 +1,7 @@
 #include "net_log_service.hpp"
 #include "app_config.hpp"
 #include "bsp_at24c256.hpp"
+#include "drop_log_service.hpp"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -567,6 +568,102 @@ void NetLogService::onEepromWiped() {
     s_mqttDisconnectCount.store(0);
     s_baseLifetimeUptimeSec.store(0);
     ESP_LOGI(TAG, "Cache log dan telemetri RAM disinkronkan pasca-wipe EEPROM.");
+}
+
+void NetLogService::factoryResetLogsExceptLifetime() {
+    ESP_LOGW(TAG, "Mengeksekusi Factory Reset Log (Semua log & boot_count dihapus, Lifetime Uptime dipertahankan)...");
+
+    // 1. Pastikan hardware I2C EEPROM terinisialisasi
+    if (!Bsp::At24c256::isDetected()) {
+        Bsp::At24c256::init();
+    }
+
+    if (Bsp::At24c256::isDetected()) {
+        // 2. Baca SystemStatsStore dari EEPROM untuk mengamankan lifetime_uptime_sec
+        Bsp::SystemStatsStore stats = {};
+        bool hasValidStats = false;
+        if (Bsp::At24c256::readBuffer(Bsp::EEPROM_SYSTEM_STATS_ADDR,
+                                      reinterpret_cast<uint8_t*>(&stats),
+                                      sizeof(stats)) == ESP_OK) {
+            if (stats.magic == Bsp::SYSTEM_STATS_MAGIC &&
+                stats.checksum == calculateStatsChecksum(stats)) {
+                hasValidStats = true;
+            }
+        }
+
+        uint32_t curUptimeSec = static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);
+        uint32_t savedLifetimeUptimeSec = 0;
+        if (s_baseLifetimeUptimeSec.load() > 0) {
+            savedLifetimeUptimeSec = s_baseLifetimeUptimeSec.load() + curUptimeSec;
+        } else if (hasValidStats) {
+            savedLifetimeUptimeSec = stats.lifetime_uptime_sec + curUptimeSec;
+        }
+
+        // 3. Hapus seluruh 200 slot NetLog di EEPROM (400 halaman @ 64 byte = 25.600 byte)
+        // Gunakan buffer statis 64 byte di BSS agar hemat stack RAM (0 byte heap)
+        static uint8_t s_emptyPage[Pins::AT24C256_PAGE_SIZE];
+        std::memset(s_emptyPage, 0xFF, sizeof(s_emptyPage));
+
+        constexpr size_t LOG_PAGES = (Pins::AT24C256_TOTAL_SLOTS * Pins::AT24C256_SLOT_SIZE) / Pins::AT24C256_PAGE_SIZE; // 400 halaman
+        for (size_t p = 0; p < LOG_PAGES; ++p) {
+            uint16_t addr = static_cast<uint16_t>(p * Pins::AT24C256_PAGE_SIZE);
+            Bsp::At24c256::writePage(addr, s_emptyPage, sizeof(s_emptyPage));
+            // Cooperative yield tiap 10 halaman agar Task Watchdog Timer (TWDT) FreeRTOS tidak terpicu
+            if ((p % 10) == 0) {
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
+        }
+
+        // 4. Hapus MQTT Anti-Replay Store (Halaman 400, alamat 0x6400)
+        Bsp::At24c256::writePage(Bsp::EEPROM_MQTT_SEQ_ADDR, s_emptyPage, sizeof(s_emptyPage));
+
+        // 5. Tulis ulang SystemStatsStore dengan mempertahankan HANYA lifetime_uptime_sec
+        //    boot_count di-reset ke 0 (sehingga pada boot pertama pasca-reboot menjadi 1)
+        //    wifi_disconnects, eth_disconnects, mqtt_disconnects di-reset ke 0
+        Bsp::SystemStatsStore preservedStats = {};
+        preservedStats.magic = Bsp::SYSTEM_STATS_MAGIC;
+        preservedStats.boot_count = 0; // Direset ke 0 agar boot berikutnya adalah Boot #1
+        preservedStats.wifi_disconnects = 0;
+        preservedStats.eth_disconnects = 0;
+        preservedStats.mqtt_disconnects = 0;
+        preservedStats.last_boot_uptime = 0;
+        preservedStats.last_reset_reason = static_cast<uint8_t>(esp_reset_reason());
+        preservedStats.lifetime_uptime_sec = savedLifetimeUptimeSec;
+        preservedStats.checksum = calculateStatsChecksum(preservedStats);
+
+        Bsp::At24c256::writePage(Bsp::EEPROM_SYSTEM_STATS_ADDR,
+                                 reinterpret_cast<const uint8_t*>(&preservedStats),
+                                 sizeof(preservedStats));
+
+        s_baseLifetimeUptimeSec.store(savedLifetimeUptimeSec);
+
+        ESP_LOGI(TAG, "EEPROM Log dibersihkan & Boot Count di-reset. Lifetime Uptime dipertahankan: %lu detik",
+                 (unsigned long)savedLifetimeUptimeSec);
+    } else {
+        ESP_LOGW(TAG, "EEPROM tidak terdeteksi, membersihkan log di RAM.");
+    }
+
+    // 6. Kosongkan seluruh memori Drop Log di RAM
+    Core::DropLogService::clearLogs();
+
+    // 7. Bersihkan memori RAM NetLog & reset counter telemetri lokal
+    if (s_logMutex && xSemaphoreTake(s_logMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_logCount = 0;
+        s_nextId = 1;
+        s_headSlot = -1;
+        std::memset(s_logs, 0, sizeof(s_logs));
+        xSemaphoreGive(s_logMutex);
+    } else {
+        s_logCount = 0;
+        s_nextId = 1;
+        s_headSlot = -1;
+        std::memset(s_logs, 0, sizeof(s_logs));
+    }
+
+    s_bootCount.store(0);
+    s_wifiDisconnectCount.store(0);
+    s_ethDisconnectCount.store(0);
+    s_mqttDisconnectCount.store(0);
 }
 
 } // namespace Iotaru::Network

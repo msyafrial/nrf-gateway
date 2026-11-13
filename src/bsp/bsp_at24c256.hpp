@@ -8,6 +8,7 @@
 namespace Iotaru::Bsp {
 
 constexpr uint32_t AT24C256_MAGIC = 0xA55A1074;
+constexpr uint16_t EEPROM_MQTT_SEQ_ADDR = 0x6400;
 constexpr uint16_t EEPROM_SYSTEM_STATS_ADDR = 0x6440;
 constexpr uint32_t SYSTEM_STATS_MAGIC = 0x53544154; // "STAT"
 

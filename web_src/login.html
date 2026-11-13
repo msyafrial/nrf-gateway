@@ -186,35 +186,11 @@
       font-weight: 600;
       font-size: 11.5px;
     }
-    .btn-ap-stop {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      background: rgba(249, 115, 22, 0.18);
-      border: 1px solid rgba(249, 115, 22, 0.5);
-      color: #fb923c;
-      font-size: 12.5px;
-      font-weight: 600;
-      padding: 8px 14px;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      white-space: nowrap;
-    }
-    .btn-ap-stop:hover {
-      background: rgba(249, 115, 22, 0.35);
-      border-color: #f97316;
-      color: #fff;
-    }
     @media (max-width: 640px) {
       .ap-banner-card {
         flex-direction: column;
         align-items: stretch;
         gap: 12px;
-      }
-      .btn-ap-stop {
-        width: 100%;
-        justify-content: center;
       }
     }
 
@@ -231,23 +207,9 @@
         <div class="ap-banner-text">
           <div class="ap-banner-title">Config Hotspot Mode Active</div>
           <div class="ap-banner-subtitle">
-            SSID: <strong id="apBannerSsid">%ap_ssid%</strong> &bull; Auto-off: <span id="apBannerTimer" class="ap-timer-pill">60s</span>
+            SSID: <strong id="apBannerSsid">%ap_ssid%</strong> &bull; Auto-off: <span id="apBannerTimer" class="ap-timer-pill">300s</span>
           </div>
         </div>
-      </div>
-      <div class="ap-banner-right">
-        <button type="button" id="btnStopAp" class="btn-ap-stop" title="Shutdown Configuration Hotspot">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="1" y1="1" x2="23" y2="23"/>
-            <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
-            <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
-            <path d="M10.71 5.05A16 16 0 0 1 22.58 9"/>
-            <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
-            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
-            <line x1="12" y1="20" x2="12.01" y2="20"/>
-          </svg>
-          <span>Disable AP</span>
-        </button>
       </div>
     </div>
 
@@ -446,7 +408,7 @@ document.addEventListener("DOMContentLoaded", initPasswordToggles);
 
     // AP Mode Watcher untuk Halaman Login
     let apCountdownInterval = null;
-    let currentApRemainingSec = 60;
+    let currentApRemainingSec = 300;
 
     function checkLoginApStatus() {
       fetch("/api/v1/system/ap-status")
@@ -456,63 +418,12 @@ document.addEventListener("DOMContentLoaded", initPasswordToggles);
             const banner = document.getElementById("apModeBanner");
             const ssidEl = document.getElementById("apBannerSsid");
             const timerEl = document.getElementById("apBannerTimer");
-            const btnStop = document.getElementById("btnStopAp");
 
             if (banner) {
               banner.style.display = "flex";
               if (ssidEl && data.ap_ssid) ssidEl.textContent = data.ap_ssid;
-              currentApRemainingSec = data.ap_remain_sec || 60;
+              currentApRemainingSec = (data.ap_remain_sec !== undefined) ? data.ap_remain_sec : 300;
               if (timerEl) timerEl.textContent = currentApRemainingSec + "s";
-
-              if (btnStop && !btnStop.dataset.bound) {
-                btnStop.dataset.bound = "true";
-                btnStop.addEventListener("click", function() {
-                  Swal.fire({
-                    title: "Disable AP Mode?",
-                    text: "The configuration hotspot will be disabled and the LED indicator will return to normal operation.",
-                    icon: "warning",
-                    showCancelButton: true,
-                    confirmButtonColor: "#f97316",
-                    cancelButtonColor: "#64748b",
-                    confirmButtonText: "Yes, Shutdown AP",
-                    cancelButtonText: "Cancel"
-                  }).then(res => {
-                    if (res.isConfirmed) {
-                      Swal.fire({
-                        title: "Shutting Down SoftAP...",
-                        text: "Disabling SoftAP hotspot interface...",
-                        allowOutsideClick: false,
-                        showConfirmButton: false,
-                        didOpen: () => Swal.showLoading()
-                      });
-                      fetch("/api/v1/system/config-ap/stop", { method: "POST" })
-                        .then(r => r.json().catch(() => ({ status: "ok" })))
-                        .then(resData => {
-                          Swal.fire({
-                            title: "Hotspot Disabled",
-                            text: (resData && resData.message) ? resData.message : "AP mode disabled.",
-                            icon: "success",
-                            confirmButtonColor: "#0284c7"
-                          });
-                          banner.style.display = "none";
-                          if (apCountdownInterval) clearInterval(apCountdownInterval);
-                        })
-                        .catch(err => {
-                          // Karena mematikan AP otomatis memutus sambungan Wi-Fi ke 192.168.4.1,
-                          // network disconnection menandakan AP berhasil dimatikan!
-                          Swal.fire({
-                            title: "Hotspot Disabled",
-                            text: "SoftAP hotspot successfully stopped. Gateway reverted to normal operation.",
-                            icon: "success",
-                            confirmButtonColor: "#0284c7"
-                          });
-                          banner.style.display = "none";
-                          if (apCountdownInterval) clearInterval(apCountdownInterval);
-                        });
-                    }
-                  });
-                });
-              }
 
               if (apCountdownInterval) clearInterval(apCountdownInterval);
               apCountdownInterval = setInterval(() => {
@@ -539,9 +450,9 @@ document.addEventListener("DOMContentLoaded", initPasswordToggles);
 
       const now = Date.now();
       const timerEl = document.getElementById("apBannerTimer");
-      if (currentApRemainingSec < 55 || forceSync) {
-        currentApRemainingSec = 60;
-        if (timerEl) timerEl.textContent = "60s";
+      if (currentApRemainingSec < 295 || forceSync) {
+        currentApRemainingSec = 300;
+        if (timerEl) timerEl.textContent = "300s";
       }
 
       if (now - lastLoginApTouchTime < 12000 && !forceSync) return;

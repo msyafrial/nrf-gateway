@@ -5332,3 +5332,74 @@ Setiap berkas master HTML terotentikasi (`index.html`, `test.html`, `log.html`, 
   - Fungsi `updateOverviewData(d)` memperbarui isi teks, atribut `title`, dan menampilkan elemen secara dinamis jika terhubung, atau menyembunyikannya jika offline/mode LAN.
 
 
+## 146. Standarisasi Mode Config Tanpa Beban MQTTS & Timer Auto-Off SoftAP 300 Detik (5 Menit)
+
+### 1. Isolasi Koneksi MQTT/MQTTS Saat Boot Config Mode
+- **Tujuan**: Menjamin halaman Web UI konfigurasi (`192.168.4.1`, Wi-Fi STA, maupun Ethernet LAN) tetap 100% ringan dan responsif ketika broker MQTT/MQTTS sedang bermasalah saat perangkat dinyalakan ke **Boot Config Mode** (tombol recovery ditahan 5–10 detik).
+- **Mekanisme (*Pre-Allocate Cleanly, Hold Start*)**:
+  - `NetworkManager::setBootConfigMode(true)` diaktifkan di [`src/main.cpp`](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/main.cpp) sebelum `NetworkManager::init()` dan `MqttService::init()`.
+  - Selama `NetworkManager::isBootConfigMode() == true`, [`MqttService::init()`](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/network/mqtt_service.cpp), `mqttPublisherTask()`, dan `forceReconnect()` menahan pemanggilan `esp_mqtt_client_start()`, sehingga tidak ada task `mqtt_task`, tidak ada koneksi TCP, dan tidak ada TLS handshake MQTTS (~30–40 KB heap bebas tetap tersedia untuk Web Server).
+  - Koneksi **Wi-Fi STA**, **Ethernet W5500**, **SNTP**, **Web Server**, serta pembacaan BLE **nRF52840 & `BeaconPipeline`** tetap berjalan penuh (`pruneExpired()` menjaga antrean tetap bersih).
+  - Event Ethernet (`IP_EVENT_ETH_GOT_IP` dan `ETHERNET_EVENT_DISCONNECTED` di [`src/network/net_manager.cpp`](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/network/net_manager.cpp)) diproteksi dengan guard `!s_manualConfigMode && !s_bootConfigMode` agar tidak menimpa status indikator LED Config Mode.
+
+### 2. Perpanjangan Timer Auto-Off SoftAP 300 Detik (5 Menit) & Sinkronisasi UI
+- **Backend (`src/network/net_manager.cpp`)**:
+  - `AP_INACTIVITY_TIMEOUT_MS` dinaikkan dari `60000` (60 detik) menjadi **`300000` (300 detik / 5 menit)**.
+  - Ketika timer 300 detik habis atau tombol *Stop AP* ditekan (`stopConfigAP()`), `s_bootConfigMode` di-reset ke `false` dan `mqttPublisherTask()` otomatis memanggil `esp_mqtt_client_start()` secara aman di task-nya sendiri.
+- **Frontend Hydration (`web_src/assets/js/app.js`, `login.html`, & Banner AP Halaman Terkait)**:
+  - Countdown pill `.ap-timer-pill` (`#apBannerTimer`) diselaraskan ke nilai default **`300s`** (reset otomatis di `< 295` pada interaksi pengguna via `/api/v1/system/config-ap/touch`).
+
+
+## 147. Captive Portal RFC 8910/8908 & Canonical Redirect Domain Lokal (`<hostname>.local`)
+
+- **DHCP Option 114 (`src/network/net_manager.cpp`)**:
+  - `NetworkManager::startConfigAP()` mengonfigurasi `ESP_NETIF_CAPTIVEPORTAL_URI` pada `s_apNetif` sebelum `esp_wifi_start()` menuju `http://<hostname>.local/captive.json` (buffer statis `.bss` 96 byte, 0 byte heap) agar Windows 11, Android 11+, dan iOS 14+ otomatis memunculkan tombol login portal jaringan di panel Wi-Fi.
+- **Captive Portal API & Redirect Kanonis (`src/web/web_routes.cpp`)**:
+  - Endpoint `GET /captive.json` mengembalikan `application/captive+json` (`{"captive":true,"user-portal-url":"http://<hostname>.local/"}`, 0 byte heap via `snprintf`).
+  - `generic_uri_dispatcher()` dan `http_404_handler()` mengalihkan (`302 Found`) akses halaman UI maupun probe NCSI/Captive Portal (`http://192.168.4.1`, `/connecttest.txt`, `/generate_204`, dll.) ke `http://<hostname>.local/...` **khusus** saat `isApActive()` aktif dan koneksi masuk pada socket SoftAP `192.168.4.1` (`getsockname()`), dengan bypass darurat `?noredirect=1`. Akses IP LAN Ethernet/Wi-Fi STA (`192.168.8.x`), REST API, aset statis, dan WebSocket tidak dialihkan.
+
+
+## 148. Pembatasan Kontrol SoftAP Sebelum Autentikasi (`login.html` & `app.js`)
+
+- **Halaman Login (`web_src/login.html`)**:
+  - `#apModeBanner` sebelum login disederhanakan menjadi mode informatif (*read-only*) tanpa tombol `.btn-ap-stop` (`#btnStopAp`) dan tanpa pemanggilan `/api/v1/system/config-ap/stop`, sehingga selaras dengan otorisasi backend (`api_stop_ap_handler()` mewajibkan sesi valid). Banner hanya menampilkan indikator status, SSID aktif (`#apBannerSsid`), dan countdown auto-off (`300s`).
+- **Halaman Terautentikasi (`web_src/assets/js/app.js`)**:
+  - `executeStopAp()` memvalidasi `r.ok` dan `resData.status === "error"` sebelum memanggil `handleStopSuccess()`, sehingga HTTP `401 Unauthorized` atau error server lainnya tidak pernah menampilkan popup *"Hotspot Disabled"* palsu.
+
+
+## 149. Standarisasi Factory Reset Tombol Fisik (12s) & Web Admin serta Retensi Lifetime
+
+### 1. Penyesuaian Timing Tombol Fisik Recovery (`Pins::BUTTON_RESET`, GPIO 34)
+- **Logika & Ambang Waktu (`src/bsp/bsp_button.hpp` & `src/bsp/bsp_button.cpp`)**:
+  - `0 .. 5 detik` : Batal (LED Merah Solid -> Lepas = Melanjutkan Booting Normal).
+  - `5 .. 12 detik`: Mode Config SoftAP (LED Biru Solid -> Lepas = Masuk ke Mode Config Hotspot 300s).
+  - `> 12 detik`  : Factory Reset Total (LED Padam Total -> Lepas = Mengeksekusi Factory Reset Bersih).
+- **Margin Keamanan**: Jendela waktu 7 detik (5 s/d 12 detik) memberikan toleransi fisik yang nyaman bagi teknisi di lapangan agar tidak sengaja memicu reset total saat hendak mengaktifkan SoftAP.
+
+### 2. Arsitektur Retensi Memori Terpadu (`NetLogService::factoryResetLogsExceptLifetime()`)
+- **Dual-Trigger Terpadu**:
+  - Diterapkan secara identik saat booting via **Tombol Fisik** (`src/main.cpp`) dan saat runtime via **Web Admin** (`POST /api/v1/system/reset` di `src/web/web_routes.cpp`).
+- **Data yang Dihapus Bersih**:
+  - Seluruh 200 slot riwayat Network Log di EEPROM AT24C256 (`0x0000` – `0x63FF`, 400 halaman @ 64 byte di-overwrite `0xFF`).
+  - Halaman 400 (`0x6400`) MQTT Anti-Replay Sequence Store di-overwrite `0xFF`.
+  - Riwayat buffer Drop Log (50 entri) dan seluruh atomic counter statistik drop di RAM (`DropLogService::clearLogs()`).
+  - Counter diskoneksi jaringan (`wifi_disconnects = 0`, `eth_disconnects = 0`, `mqtt_disconnects = 0`).
+  - Partisi operasional NVS Flash (`cfg_auth`, `cfg_net`, `cfg_mqtt`, `cfg_gate`, `cfg_sys` via `ConfigStore::resetConfigToFactory()`).
+- **Data yang Direset**:
+  - `boot_count` di EEPROM di-reset ke `0`, sehingga pada siklus boot pertama pasca-reboot nilainya menjadi tepat **`1`** (siklus segar).
+- **Data yang DIPERTAHANKAN (LIFETIME)**:
+  - HANYA **`lifetime_uptime_sec`** (kumulatif uptime detik seumur hidup perangkat) yang dipertahankan utuh dan ditulis ulang ke `SystemStatsStore` (`0x6440`) lengkap dengan kalkulasi CRC16 baru.
+- **Proteksi RAM & Watchdog**:
+  - Buffer halaman statis 64 byte di BSS (0 byte heap, stack aman).
+  - FreeRTOS cooperative yield `vTaskDelay(pdMS_TO_TICKS(1))` tiap 10 halaman untuk menjamin Task Watchdog Timer (TWDT) tetap aman.
+
+### 3. Penyelarasan Indikator Visual LED WS2812B Factory Reset
+- **Warna Saat Erase Berlangsung (`0xFF0000, 0xFF0000`)**:
+  - Baik pada **Tombol Fisik** maupun **Web Admin**, LED hardware disetel ke **Merah Solid** (`0xFF0000`) murni selama proses penghapusan data EEPROM dan NVS Flash berlangsung (~2.4 detik).
+  - Pada Web Admin, background task animasi LED dihentikan terlebih dahulu via `LedManager::stopTask()` agar warna Merah Solid tidak tertimpa siklus polling autoSync.
+- **Warna Saat Selesai / Siap Reboot (`0x00FF00, 0x00FF00`)**:
+  - Segera setelah erase tuntas, LED memberikan feedback visual **Hijau Kedip** selama 600ms sebagai konfirmasi keberhasilan, lalu padam 400ms sebelum ESP32 melakukan reboot bersih (`esp_restart()`).
+
+
+
+

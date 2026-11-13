@@ -17,8 +17,8 @@ public:
      * Bersifat 100% synchronous & blocking tanpa bergantung pada background task FreeRTOS.
      * 
      * - 0 .. 5 detik : Batal (LED Merah -> Lepas = Boot Normal)
-     * - 5 .. 10 detik: Mode Config Hotspot SoftAP (LED Biru -> Lepas = Mode Config)
-     * - > 10 detik   : Factory Reset (LED Padam -> Lepas = Erase & Restart)
+     * - 5 .. 12 detik: Mode Config Hotspot SoftAP (LED Biru -> Lepas = Mode Config)
+     * - > 12 detik   : Factory Reset (LED Padam -> Lepas = Erase & Restart)
      */
     static BootAction checkBootRecovery(int buttonPin = Pins::BUTTON_RESET);
 };

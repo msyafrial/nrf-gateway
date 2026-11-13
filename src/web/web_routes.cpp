@@ -12,6 +12,7 @@
 #include "IEthernetDriver.hpp"
 #include "beacon_pipeline.hpp"
 #include "bsp_at24c256.hpp"
+#include "bsp_led.hpp"
 #include <esp_wifi.h>
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -24,6 +25,7 @@
 #include <lwip/sockets.h>
 #include <lwip/netdb.h>
 #include <cstring>
+#include <strings.h>
 #include <cstdio>
 #include <cstdlib>
 #include <atomic>
@@ -1577,18 +1579,31 @@ static esp_err_t api_reset_handler(httpd_req_t *req) {
         httpd_resp_send(req, "Unauthorized: Login required", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
+
+    ESP_LOGW(TAG, "Mengeksekusi Factory Reset dari Web Admin (Role: %d)...", (int)role);
+
+    // Hentikan task animasi LED background dan nyalakan Merah Solid saat erase
+    Bsp::LedManager::stopTask();
+    Bsp::LedManager::writeRawPixels(0xFF0000, 0xFF0000);
+
+    // 1. Bersihkan seluruh log EEPROM, Drop RAM, dan reset boot_count ke 0, pertahankan lifetime uptime
+    Network::NetLogService::factoryResetLogsExceptLifetime();
+
+    // 2. Reset konfigurasi NVS ke standar pabrik
     Core::ConfigStore::resetConfigToFactory();
-    Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::CONFIG_RESET,
-                                "Konfigurasi Sistem Direset ke Standar Pabrik (Web Admin/Engineer)");
 
     httpd_resp_set_type(req, "text/plain");
-    httpd_resp_send(req, "NVS configuration restored to factory defaults. Gateway restarting...", HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, "NVS configuration, logs, and boot count restored to factory defaults. Gateway restarting...", HTTPD_RESP_USE_STRLEN);
 
     xTaskCreatePinnedToCore([](void *) {
-        vTaskDelay(pdMS_TO_TICKS(1200));
+        // Feedback visual LED Hijau kedip 600ms sebelum restart
+        Bsp::LedManager::writeRawPixels(0x00FF00, 0x00FF00);
+        vTaskDelay(pdMS_TO_TICKS(600));
+        Bsp::LedManager::writeRawPixels(0, 0);
+        vTaskDelay(pdMS_TO_TICKS(400));
         esp_restart();
         vTaskDelete(NULL);
-    }, "reset_task", 2048, NULL, 5, NULL, 1);
+    }, "reset_task", 4096, NULL, 5, NULL, 1);
 
     return ESP_OK;
 }
@@ -2129,11 +2144,113 @@ static esp_err_t api_test_ntp_handler(httpd_req_t *req) {
 }
 
 // -------------------------------------------------------------
+// Helper Captive Portal RFC 8908 & Canonical SoftAP Local Domain Redirect
+// -------------------------------------------------------------
+static esp_err_t captive_json_handler(httpd_req_t *req) {
+    char hostname[64] = {0};
+    Network::NetworkManager::getMdnsHostname(hostname, sizeof(hostname));
+
+    char json[160];
+    int len = snprintf(json, sizeof(json),
+                       "{\"captive\":true,\"user-portal-url\":\"http://%s.local/\"}",
+                       hostname);
+    httpd_resp_set_type(req, "application/captive+json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    httpd_resp_send(req, json, len);
+    return ESP_OK;
+}
+
+static bool is_softap_socket(httpd_req_t *req) {
+    if (!req) return false;
+    int fd = httpd_req_to_sockfd(req);
+    if (fd < 0) return false;
+    struct sockaddr_storage local_addr = {};
+    socklen_t addr_len = sizeof(local_addr);
+    if (getsockname(fd, reinterpret_cast<struct sockaddr *>(&local_addr), &addr_len) != 0) {
+        return false;
+    }
+
+    const uint32_t softap_ip_net = htonl(0xC0A80401); // 192.168.4.1
+    if (local_addr.ss_family == AF_INET) {
+        const auto *sin4 = reinterpret_cast<const struct sockaddr_in *>(&local_addr);
+        return (sin4->sin_addr.s_addr == softap_ip_net);
+    }
+    if (local_addr.ss_family == AF_INET6) {
+        const auto *sin6 = reinterpret_cast<const struct sockaddr_in6 *>(&local_addr);
+        if (IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) {
+            uint32_t mapped_v4 = 0;
+            memcpy(&mapped_v4, &sin6->sin6_addr.s6_addr[12], sizeof(mapped_v4));
+            return (mapped_v4 == softap_ip_net);
+        }
+    }
+    return false;
+}
+
+static bool is_page_redirect_exempt(const char *uri) {
+    if (!uri) return true;
+    return (strcmp(uri, "/captive.json") == 0 ||
+            strncmp(uri, "/api/", 5) == 0 ||
+            strncmp(uri, "/assets/", 8) == 0 ||
+            strncmp(uri, "/ws", 3) == 0 ||
+            strcmp(uri, "/version.json") == 0 ||
+            strcmp(uri, "/favicon.ico") == 0 ||
+            strncmp(uri, "/eeprom/", 8) == 0);
+}
+
+static bool try_redirect_softap_to_local_domain(httpd_req_t *req, const char *target_path) {
+    if (!Network::NetworkManager::isApActive() || !is_softap_socket(req)) {
+        return false;
+    }
+
+    char query[64] = {0};
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        char val[8] = {0};
+        if (httpd_query_key_value(query, "noredirect", val, sizeof(val)) == ESP_OK && strcmp(val, "1") == 0) {
+            return false;
+        }
+    }
+
+    char hostname[64] = {0};
+    Network::NetworkManager::getMdnsHostname(hostname, sizeof(hostname));
+    char local_domain[72] = {0};
+    snprintf(local_domain, sizeof(local_domain), "%s.local", hostname);
+
+    char host_hdr[64] = {0};
+    size_t host_len = httpd_req_get_hdr_value_len(req, "Host");
+    if (host_len > 0 && host_len < sizeof(host_hdr) &&
+        httpd_req_get_hdr_value_str(req, "Host", host_hdr, sizeof(host_hdr)) == ESP_OK) {
+        char *colon = strchr(host_hdr, ':');
+        if (colon) *colon = '\0';
+        if (strcasecmp(host_hdr, local_domain) == 0) {
+            return false;
+        }
+    }
+
+    const char *path = (target_path && target_path[0] == '/') ? target_path : "/";
+    char location[192] = {0};
+    int loc_len = snprintf(location, sizeof(location), "http://%s%s", local_domain, path);
+    if (loc_len < 0 || static_cast<size_t>(loc_len) >= sizeof(location)) {
+        snprintf(location, sizeof(location), "http://%s/", local_domain);
+    }
+
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", location);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_send(req, nullptr, 0);
+    return true;
+}
+
+// -------------------------------------------------------------
 // Helper for Safe URI Registration (Zero-initialized struct & AP activity hook)
 // -------------------------------------------------------------
 static esp_err_t generic_uri_dispatcher(httpd_req_t *req) {
     if (Network::NetworkManager::isApActive()) {
         Network::NetworkManager::recordApActivity();
+    }
+    if (req->method == HTTP_GET && !is_page_redirect_exempt(req->uri)) {
+        if (try_redirect_softap_to_local_domain(req, req->uri)) {
+            return ESP_OK;
+        }
     }
     auto handler = reinterpret_cast<esp_err_t (*)(httpd_req_t *)>(req->user_ctx);
     if (handler) {
@@ -2165,6 +2282,9 @@ static esp_err_t http_404_handler(httpd_req_t *req, httpd_err_code_t err) {
         httpd_resp_send_404(req);
         return ESP_FAIL;
     }
+    if (try_redirect_softap_to_local_domain(req, "/")) {
+        return ESP_OK;
+    }
     httpd_resp_set_status(req, "302 Found");
     httpd_resp_set_hdr(req, "Location", "/");
     httpd_resp_send(req, nullptr, 0);
@@ -2175,6 +2295,7 @@ esp_err_t register_all(httpd_handle_t server) {
     if (!server) return ESP_ERR_INVALID_ARG;
 
     // Pages
+    register_uri(server, "/captive.json", HTTP_GET, captive_json_handler);
     register_uri(server, "/", HTTP_GET, index_handler);
     register_uri(server, "/index.html", HTTP_GET, index_handler);
     register_uri(server, "/login", HTTP_GET, login_handler);

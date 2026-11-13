@@ -877,7 +877,7 @@ document.addEventListener("DOMContentLoaded", initPasswordToggles);
 // AP MODE WATCHER & BANNER (1-Minute Inactivity Auto-Off & Stop Button)
 // =================================================================
 let apCountdownInterval = null;
-let currentApRemainingSec = 60;
+let currentApRemainingSec = 300;
 
 function bindApStopButton() {
   const btnStop = document.getElementById("btnStopAp");
@@ -922,13 +922,38 @@ function executeStopAp(banner) {
   }
 
   fetch("/api/v1/system/config-ap/stop", { method: "POST" })
-    .then(r => r.json().catch(() => ({ status: "ok" })))
+    .then(async r => {
+      if (!r.ok) {
+        const errData = await r.json().catch(() => null);
+        const msg = (errData && errData.message) ? errData.message : ("HTTP " + r.status);
+        const err = new Error(msg);
+        err.isHttpError = true;
+        err.status = r.status;
+        throw err;
+      }
+      return r.json().catch(() => ({ status: "ok" }));
+    })
     .then(resData => {
+      if (resData && resData.status === "error") {
+        const err = new Error(resData.message || "Failed to stop SoftAP");
+        err.isHttpError = true;
+        throw err;
+      }
       handleStopSuccess(banner, (resData && resData.message) ? resData.message : "AP mode disabled.");
     })
     .catch(err => {
-      // Karena mematikan AP otomatis memutus sambungan Wi-Fi ke 192.168.4.1,
-      // network disconnection menandakan AP berhasil dimatikan!
+      if (err && err.isHttpError) {
+        if (err.status === 401) {
+          return;
+        }
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ title: "Failed", text: err.message, icon: "error", confirmButtonColor: "#0284c7" });
+        } else {
+          alert(err.message);
+        }
+        return;
+      }
+      // Hanya network disconnection (bukan HTTP error) yang menandakan SoftAP berhasil dimatikan!
       handleStopSuccess(banner, "SoftAP hotspot disabled. Gateway returned to station mode.");
     });
 }
@@ -986,9 +1011,9 @@ function touchApActivity(forceSync = false) {
   if (!isApHost && !isVisible) return;
 
   const now = Date.now();
-  // Immediately reset local UI counter to 60s for immediate feedback if it has decremented
-  if (currentApRemainingSec < 55 || forceSync) {
-    currentApRemainingSec = 60;
+  // Immediately reset local UI counter to 300s for immediate feedback if it has decremented
+  if (currentApRemainingSec < 295 || forceSync) {
+    currentApRemainingSec = 300;
     updateApTimerDisplay();
   }
 
@@ -1056,7 +1081,7 @@ function initApModeWatcher() {
                 <div class="ap-banner-text">
                   <div class="ap-banner-title">Config Hotspot Mode Active</div>
                   <div class="ap-banner-subtitle">
-                    SSID: <strong id="apBannerSsid">${data.ap_ssid || "CONFIG-AP"}</strong> &bull; Auto-off idle: <span id="apBannerTimer" class="ap-timer-pill">60s</span>
+                    SSID: <strong id="apBannerSsid">${data.ap_ssid || "CONFIG-AP"}</strong> &bull; Auto-off idle: <span id="apBannerTimer" class="ap-timer-pill">300s</span>
                   </div>
                 </div>
               </div>
@@ -1083,7 +1108,7 @@ function initApModeWatcher() {
         if (banner) banner.style.display = "flex";
         const ssidEl = document.getElementById("apBannerSsid");
         if (ssidEl && data.ap_ssid) ssidEl.textContent = data.ap_ssid;
-        startApCountdown(data.ap_remain_sec !== undefined ? data.ap_remain_sec : 60);
+        startApCountdown(data.ap_remain_sec !== undefined ? data.ap_remain_sec : 300);
       } else {
         // AP tidak aktif — sembunyikan banner (selalu, tidak bergantung reboot_required)
         if (!isApHost && banner) banner.style.display = "none";

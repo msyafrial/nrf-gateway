@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <ctime>
 #include <fcntl.h>
+#include <atomic>
 
 static const char *TAG = "NET_MGR";
 
@@ -55,6 +56,7 @@ static bool s_wifiConnected = false;
 static bool s_wifiHasIp = false;
 static bool s_ntpSynced = false;
 static bool s_manualConfigMode = false;
+static std::atomic<bool> s_bootConfigMode{false};
 static bool s_apActive = false;
 static volatile bool s_wifiScanDone = false;
 static volatile bool s_wifiScanSuccess = false;
@@ -71,7 +73,7 @@ static uint32_t s_lastReassociateTimeMs = 0;
 static uint32_t s_lastDisconRetryMs = 0;
 static uint32_t s_fastLinkBackoffIntervalMs = 15000;
 static uint32_t s_lastFastLinkCheckMs = 0;
-static const uint32_t AP_INACTIVITY_TIMEOUT_MS = 60000; // 60 Detik
+static const uint32_t AP_INACTIVITY_TIMEOUT_MS = 300000; // 300 Detik (5 Menit)
 static uint32_t s_pendingApStopMillis = 0;
 
 static RTC_DATA_ATTR int s_lastRestartYday = -1;
@@ -372,7 +374,9 @@ void NetworkManager::onIpEvent(void* arg, esp_event_base_t base, int32_t id, voi
             if (s_ethFsmState == EthFsmState::PROBING) {
                 s_ethFsmState = EthFsmState::ROUTER_LAN;
                 MicroDhcpServer::stop();
-                Bsp::LedManager::setConfigMode(false);
+                if (!s_manualConfigMode && !s_bootConfigMode.load(std::memory_order_relaxed)) {
+                    Bsp::LedManager::setConfigMode(false);
+                }
                 ESP_LOGI(TAG, "Ethernet transisi ke state ROUTER_LAN (Mendapatkan IP dari Router DHCP)!");
             }
 
@@ -417,13 +421,16 @@ void NetworkManager::onIpEvent(void* arg, esp_event_base_t base, int32_t id, voi
         }
 
         // Bangunkan MQTT Client seketika hanya jika koneksi IP berasal dari uplink aktif sesuai mode
-        if (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI)) {
-            if (id == IP_EVENT_STA_GOT_IP) {
-                MqttService::forceReconnect();
-            }
-        } else {
-            if (id == IP_EVENT_ETH_GOT_IP) {
-                MqttService::forceReconnect();
+        // dan perangkat tidak sedang dalam Boot Config Mode (MQTTS ditahan selama Mode Config)
+        if (!s_bootConfigMode.load(std::memory_order_relaxed)) {
+            if (g_config.connection_mode == static_cast<int>(ConnectionMode::WIFI)) {
+                if (id == IP_EVENT_STA_GOT_IP) {
+                    MqttService::forceReconnect();
+                }
+            } else {
+                if (id == IP_EVENT_ETH_GOT_IP) {
+                    MqttService::forceReconnect();
+                }
             }
         }
     }
@@ -463,7 +470,9 @@ void NetworkManager::onEthEvent(void* arg, esp_event_base_t base, int32_t id, vo
                 s_ethProbeStartMs = 0;
                 s_directPcStartMs = 0;
                 s_slaveLastMasterCheckMs = 0;
-                Bsp::LedManager::setConfigMode(false);
+                if (!s_manualConfigMode && !s_bootConfigMode.load(std::memory_order_relaxed)) {
+                    Bsp::LedManager::setConfigMode(false);
+                }
                 Bsp::LedManager::autoSync(isLinkUp(), isConnected(), MqttService::isConnected(), s_apActive);
 
                 esp_netif_t* eth_netif = s_ethDriver ? s_ethDriver->getNetif() : nullptr;
@@ -698,6 +707,39 @@ void NetworkManager::startConfigAP() {
     }
     ensureWifiDriverInitialized();
 
+    char hostname[64];
+    getMdnsHostname(hostname, sizeof(hostname));
+
+    // Konfigurasi DHCP Option 114 (RFC 8910 Captive Portal API) sebelum esp_wifi_start()
+    // agar DHCP server SoftAP otomatis membawa URI portal lokal sejak permintaan DHCP pertama.
+    static char s_captivePortalUri[96] = {0};
+    if (s_apNetif != nullptr) {
+        snprintf(s_captivePortalUri, sizeof(s_captivePortalUri), "http://%s.local/captive.json", hostname);
+        esp_err_t optErr = esp_netif_dhcps_option(
+            s_apNetif,
+            ESP_NETIF_OP_SET,
+            ESP_NETIF_CAPTIVEPORTAL_URI,
+            s_captivePortalUri,
+            strlen(s_captivePortalUri)
+        );
+        if (optErr == ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED) {
+            esp_netif_dhcps_stop(s_apNetif);
+            optErr = esp_netif_dhcps_option(
+                s_apNetif,
+                ESP_NETIF_OP_SET,
+                ESP_NETIF_CAPTIVEPORTAL_URI,
+                s_captivePortalUri,
+                strlen(s_captivePortalUri)
+            );
+            esp_netif_dhcps_start(s_apNetif);
+        }
+        if (optErr != ESP_OK) {
+            ESP_LOGW(TAG, "Gagal mengatur DHCP Option 114 Captive Portal URI: %s", esp_err_to_name(optErr));
+        } else {
+            ESP_LOGI(TAG, "DHCP Option 114 aktif: %s", s_captivePortalUri);
+        }
+    }
+
     char moduleId[32];
     Core::ConfigStore::getModuleId(moduleId, sizeof(moduleId));
 
@@ -726,8 +768,6 @@ void NetworkManager::startConfigAP() {
 
     // Aktifkan mDNS & Hostname pada interface SoftAP
     initMdns();
-    char hostname[64];
-    getMdnsHostname(hostname, sizeof(hostname));
     esp_netif_set_hostname(s_apNetif, hostname);
     mdns_netif_action(s_apNetif, MDNS_EVENT_ENABLE_IP4);
     mdns_netif_action(s_apNetif, MDNS_EVENT_ANNOUNCE_IP4);
@@ -744,6 +784,7 @@ void NetworkManager::stopConfigAP() {
     if (s_apActive) {
         ESP_LOGI(TAG, "Menonaktifkan SoftAP Fallback...");
         s_manualConfigMode = false;
+        s_bootConfigMode.store(false, std::memory_order_relaxed);
         s_apActive = false;
         s_pendingApStopMillis = 0;
 
@@ -777,6 +818,10 @@ void NetworkManager::recordApActivity() {
     s_lastApActivityTime = (uint32_t)(esp_timer_get_time() / 1000);
 }
 
+void NetworkManager::setBootConfigMode(bool active) {
+    s_bootConfigMode.store(active, std::memory_order_relaxed);
+}
+bool NetworkManager::isBootConfigMode() { return s_bootConfigMode.load(std::memory_order_relaxed); }
 bool NetworkManager::isConfigMode() { return s_manualConfigMode; }
 bool NetworkManager::isApActive() { return s_apActive; }
 
@@ -1222,10 +1267,10 @@ void NetworkManager::checkApInactivityTimeout() {
         return;
     }
 
-    // Auto-timeout jika tidak ada aktivitas selama 60 detik
+    // Auto-timeout jika tidak ada aktivitas selama 300 detik (5 menit)
     if (s_apActive && s_manualConfigMode) {
         if (now - s_lastApActivityTime > AP_INACTIVITY_TIMEOUT_MS) {
-            ESP_LOGW(TAG, "SoftAP tidak aktif selama 60 detik. Menghentikan SoftAP secara otomatis.");
+            ESP_LOGW(TAG, "SoftAP tidak aktif selama 300 detik (5 menit). Menghentikan SoftAP secara otomatis.");
             stopConfigAP();
         }
     }

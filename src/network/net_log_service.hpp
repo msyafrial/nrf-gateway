@@ -53,6 +53,7 @@ public:
     static size_t getLogCount();
     static void clearLogs();
     static void onEepromWiped();
+    static void factoryResetLogsExceptLifetime();
     
     // Konversi enum ke string representatif
     static const char* categoryToString(NetCategory cat);

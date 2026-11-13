@@ -41,6 +41,8 @@ public:
     static void stopConfigAP();
     static void scheduleStopConfigAP(uint32_t delayMs = 1000);
     static void recordApActivity();
+    static void setBootConfigMode(bool active);
+    static bool isBootConfigMode();
     static bool isConfigMode();
     static bool isApActive();
     static uint32_t getApRemainingSeconds();

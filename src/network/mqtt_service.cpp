@@ -648,6 +648,10 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
         }
 
         if (!s_mqttStarted && s_mqttClient != nullptr) {
+            if (NetworkManager::isBootConfigMode()) {
+                vTaskDelay(pdMS_TO_TICKS(100));
+                continue;
+            }
             esp_mqtt_client_start(s_mqttClient);
             s_mqttStarted = true;
         }
@@ -866,7 +870,9 @@ void MqttService::init() {
         } else {
             esp_mqtt_client_register_event(s_mqttClient, MQTT_EVENT_ANY, &onMqttEvent, nullptr);
 
-            if (NetworkManager::isConnected()) {
+            if (NetworkManager::isBootConfigMode()) {
+                ESP_LOGI(TAG, "Mode Config aktif: koneksi MQTT/MQTTS ditahan hingga Mode Config selesai.");
+            } else if (NetworkManager::isConnected()) {
                 esp_mqtt_client_start(s_mqttClient);
                 s_mqttStarted = true;
             }
@@ -886,6 +892,9 @@ uint32_t MqttService::getLastInboundActivityMs() {
 }
 
 void MqttService::forceReconnect() {
+    if (NetworkManager::isBootConfigMode()) {
+        return;
+    }
     if (s_mqttClient != nullptr) {
         if (!s_mqttStarted) {
             ESP_LOGI(TAG, "Memulai MQTT client pada koneksi jaringan pertama...");

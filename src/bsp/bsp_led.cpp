@@ -149,6 +149,14 @@ void LedManager::startTask() {
     }
 }
 
+void LedManager::stopTask() {
+    if (s_ledTaskHandle != nullptr) {
+        TaskHandle_t th = s_ledTaskHandle;
+        s_ledTaskHandle = nullptr;
+        vTaskDelete(th);
+    }
+}
+
 void LedManager::setSysState(SysLedState state) {
     s_sysState = state;
 }

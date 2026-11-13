@@ -117,10 +117,27 @@ extern "C" void app_main(void) {
     bool enterConfigModeOnBoot = (bootAction == Bsp::BootAction::ENTER_CONFIG_AP);
 
     if (bootAction == Bsp::BootAction::FACTORY_RESET) {
-        ESP_LOGW(TAG, "Mengeksekusi Factory Reset dari tombol bootloader...");
+        ESP_LOGW(TAG, "Mengeksekusi Factory Reset dari tombol bootloader (12 detik)...");
+
+        // Indikator visual LED (Merah solid) proses erase
+        Bsp::LedManager::writeRawPixels(0xFF0000, 0xFF0000);
+
+        // 1. Inisialisasi Hardware I2C AT24C256
+        Bsp::At24c256::init();
+
+        // 2. Bersihkan log EEPROM & Drop Log RAM serta reset boot_count ke 0, pertahankan lifetime uptime
+        Network::NetLogService::factoryResetLogsExceptLifetime();
+
+        // 3. Inisialisasi NVS dan reset seluruh konfigurasi operasional ke standar pabrik
         Core::ConfigStore::initNvs();
         Core::ConfigStore::resetConfigToFactory();
-        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        // 4. Feedback visual LED selesai (Kedip Hijau 600ms)
+        Bsp::LedManager::writeRawPixels(0x00FF00, 0x00FF00);
+        vTaskDelay(pdMS_TO_TICKS(600));
+        Bsp::LedManager::writeRawPixels(0, 0);
+
+        vTaskDelay(pdMS_TO_TICKS(400));
         esp_restart();
     }
 
@@ -173,6 +190,10 @@ extern "C" void app_main(void) {
     }
     if (!nrfSynced) {
         ESP_LOGW(TAG, "nRF52840 belum merespons handshake (kabel terbalik / belum terpasang / nRF offline). Startup dilanjutkan, auto-retry berjalan di background...");
+    }
+
+    if (enterConfigModeOnBoot) {
+        Network::NetworkManager::setBootConfigMode(true);
     }
 
     // 7. Inisialisasi Network Stack (Ethernet W5500 SPI DMA / Wi-Fi STA / SNTP)

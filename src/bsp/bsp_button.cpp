@@ -37,8 +37,8 @@ BootAction ButtonManager::checkBootRecovery(int buttonPin) {
     ESP_LOGW(TAG, "Tombol recovery terdeteksi ditekan saat power-on!");
     ESP_LOGW(TAG, "Seluruh proses booting DITAHAN (100%% Synchronous Blocking)");
     ESP_LOGW(TAG, "> 0 - 5 detik : Batal (Merah Solid -> Lepas = Boot Normal)");
-    ESP_LOGW(TAG, "> 5 - 10 detik: Mode Config AP (Biru Solid -> Lepas = SoftAP)");
-    ESP_LOGW(TAG, "> 10 detik    : Factory Reset (LED Padam -> Lepas = Reset)");
+    ESP_LOGW(TAG, "> 5 - 12 detik: Mode Config AP (Biru Solid -> Lepas = SoftAP)");
+    ESP_LOGW(TAG, "> 12 detik    : Factory Reset (LED Padam -> Lepas = Reset)");
     ESP_LOGW(TAG, "=======================================================");
 
     // Detik 0: Nyalakan Merah Solid di kedua LED
@@ -57,7 +57,7 @@ BootAction ButtonManager::checkBootRecovery(int buttonPin) {
             solidBlueActive = true;
             LedManager::writeRawPixels(0x0000FF, 0x0000FF);
             ESP_LOGI(TAG, ">>> 5 DETIK TERCAPAI: LED BERUBAH MENJADI BIRU SOLID! <<<");
-            ESP_LOGI(TAG, "Lepas sekarang untuk Mode Config AP, atau tahan hingga 10 detik untuk Factory Reset.");
+            ESP_LOGI(TAG, "Lepas sekarang untuk Mode Config AP, atau tahan hingga 12 detik untuk Factory Reset.");
         }
 
         if (elapsedSec > lastReportSec) {
@@ -65,16 +65,16 @@ BootAction ButtonManager::checkBootRecovery(int buttonPin) {
             if (elapsedSec < 5) {
                 LedManager::writeRawPixels(0xFF0000, 0xFF0000);
                 ESP_LOGI(TAG, "Menahan tombol: %lu / 5 detik [MERAH SOLID] (Lepas = Batal)...", (unsigned long)elapsedSec);
-            } else if (elapsedSec < 10) {
+            } else if (elapsedSec < 12) {
                 LedManager::writeRawPixels(0x0000FF, 0x0000FF);
-                ESP_LOGI(TAG, "Menahan tombol: %lu / 10 detik [BIRU SOLID] (Lepas = Mode Config, Tahan = Reset Total)...", (unsigned long)elapsedSec);
+                ESP_LOGI(TAG, "Menahan tombol: %lu / 12 detik [BIRU SOLID] (Lepas = Mode Config, Tahan = Reset Total)...", (unsigned long)elapsedSec);
             }
         }
 
-        // Detik ke-10: LED Padam Total, tunggu tombol dilepas
-        if (elapsedMs >= 10000) {
+        // Detik ke-12: LED Padam Total, tunggu tombol dilepas
+        if (elapsedMs >= 12000) {
             ESP_LOGW(TAG, "=======================================================");
-            ESP_LOGW(TAG, ">>> 10 DETIK TERCAPAI: LED BIRU PADAM! <<<");
+            ESP_LOGW(TAG, ">>> 12 DETIK TERCAPAI: LED BIRU PADAM! <<<");
             ESP_LOGW(TAG, "Indikator visual padam total. Menunggu tombol DILEPAS untuk Factory Reset...");
             ESP_LOGW(TAG, "=======================================================");
 
@@ -99,7 +99,7 @@ BootAction ButtonManager::checkBootRecovery(int buttonPin) {
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 
-    // Tombol dilepas sebelum 10 detik
+    // Tombol dilepas sebelum 12 detik
     int64_t totalHeldMs = (esp_timer_get_time() - pressStartUs) / 1000;
     LedManager::writeRawPixels(0, 0);
 

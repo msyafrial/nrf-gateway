@@ -9,6 +9,7 @@ class LedManager {
 public:
     static void init(int pin = Pins::LED_WS2812, uint8_t brightness = 40);
     static void startTask();
+    static void stopTask();
     
     // Kontrol Status LED
     static void setSysState(SysLedState state);
