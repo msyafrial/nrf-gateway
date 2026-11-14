@@ -5414,6 +5414,55 @@ Setiap berkas master HTML terotentikasi (`index.html`, `test.html`, `log.html`, 
   - `api_config_auth_handler()` mencatat flag `authCredChanged` bila ada perubahan aktual pada kredensial akun dan membedakan pesan `NetEvent::AUTH_UPDATE` di `NetLogService` tanpa mencetak password ke log.
 
 
+## 151. Optimasi Upload OTA, Isolasi Pipeline Core 0/1 & Double-Layer Safe Resume nRF52840
 
+- **Validasi Awal Ketat Sebelum Menyentuh Flash/Pipeline (`src/web/ota_service.cpp`, `src/web/web_routes.cpp`)**:
+  - Endpoint `POST /api/v1/ota/upload` memeriksa konsistensi query `?size=` terhadap `req->content_len` HTTP secara ketat sebelum memanggil `Ota::begin()`.
+  - `Ota::begin()` untuk target `Firmware` mewajibkan byte magic ESP-IDF image (`0xE9` / `ESP_IMAGE_HEADER_MAGIC`) dan `esp_app_desc_t` magic (`0xABCD5432` pada offset `0x20`), menyalin `project_name` dengan batas aman 32 byte, dan menolak firmware tanpa metadata `model@board` (jika model terkonfigurasi) maupun ketidaksesuaian model/board sebelum `esp_ota_begin()` menghapus partisi.
+  - Pesan error *truncated stream* di `Ota::finalize()` dibedakan dinamis antara `"Firmware"` dan `"LittleFS"`.
+- **Isolasi Pipeline Core 0 & Core 1 Selama OTA (`Ota::is_pipeline_paused()`)**:
+  - Setelah seluruh validasi dan inisialisasi partisi/unmount LittleFS sukses di `Ota::begin()`, `s_pipeline_paused` diaktifkan (`true`), status scanner di-reset ke `0`, perintah `sendScanCommand(0)` (`CMD_STOP_SCAN`) dikirim ke nRF52840, dan `BeaconPipeline::flushQueue()` dikosongkan.
+  - **Core 0 (`src/core/beacon_pipeline.cpp`)**: `handleRawBleFrame()` langsung mengabaikan frame data beacon `0xAA` (`if (Web::Ota::is_pipeline_paused()) return;`), sementara `processBytes()` tetap memproses frame kontrol 4-byte `0xBB` (`ControlRspFrame`).
+  - **Core 1 (`src/network/mqtt_service.cpp`, `src/main.cpp`, `src/web/web_server.cpp`)**: `mqttPublisherTask()` mengosongkan batch aktif dan tidur `100 ms`; `supervisorTask()` menahan `tickWatchdog()` serta *auto-resync* nRF52840; `broadcast_live_ws_stats()` berhenti menyiarkan statistik live; dan `recordApActivity()` diperbarui tiap chunk/tick agar SoftAP tidak timeout selama upload.
+  - Broadcast WebSocket `ota_progress` di-throttle sehingga hanya terkirim ketika persentase berubah (`pct != last_pct`) atau pada chunk final.
+- **Double-Layer Safe Resume Saat Abort / Timeout / Verifikasi Gagal (`Ota::abortLocked()`, `Ota::finalize()`)**:
+  - Saat upload gagal/dibatalkan/timeout sebelum selesai (`abortLocked()` atau gagal verifikasi LittleFS di `finalize()`), `s_ota_in_progress` dan `s_pipeline_paused` dibuka terlebih dahulu lalu `resumeNrfScan()` memanggil `setNrfScanState(0)` + `sendScanCommand(targetMode)` (Layer 1 instan). Bila ACK `0xBB` terlewat, `supervisorTask()` mendeteksi `s_nrfScanState == 0 != targetScanMode` dan mengirim ulang `sendScanCommand(targetMode)` tiap 3 detik (Layer 2 *self-healing*).
+  - Jika OTA sukses 100%, `s_pipeline_paused` dipertahankan `true` selama jeda 1500 ms menjelang `gracefulRestart()`.
+
+---
+
+## 152. Sinkronisasi Halaman Docs (`/docs`), `PROTOCOLS_12`, & Aset `web_src/` (2026-11-14)
+- **Sinkronisasi Baseline `web_src/` (`auth.html`, `login.html`, `version.json`)**:
+  - Menyamakan `web_src/auth.html`, `web_src/login.html`, dan `web_src/version.json` (`v1.3.5`) dari hasil terbaru di `data/` dengan line ending Unix LF (`\n`) sebelum menjalankan `scripts/build_web_assets.py`, menjaga agar fitur anti-autofill `auth.html` maupun modal cooldown 429 `login.html` tetap utuh.
+- **Penyelarasan Halaman Dokumentasi (`web_src/docs.html`)**:
+  - **Card 1 (`Gateway MQTT Topic Matrix`)**: Menggunakan 3 kanal aktif (`<span class="js-pfx">ar</span>/data/%device_id%` `QoS 0/1`, `<span class="js-pfx">ar</span>/info/%device_id%/status` `QoS 1` Retained `Yes` Birth/LWT, `<span class="js-pfx">ar</span>/hb` `QoS 0` `5s`).
+  - **Card 2 (`Client Consumer Implementation`)**: Menambahkan derivasi dinamis `TOPIC_PREFIX` dari `"%mqtt_topic_prefix%"` (fallback `"ar"`), memperbaiki topik status `/status` dan subscribe data `QoS 1`, memperbaiki typo `LENGHT` menjadi `LENGTH`, mempertahankan pembacaan raw 4-byte `uint32_t` timestamp perangkat apa adanya tanpa fallback NTP, serta memperbarui guide/import `rumqttc 0.24` (`Transport::tls_with_config(TlsConfiguration::Native)`, feature `use-native-tls`) pada snippet Rust.
+  - **Card 3 (`BLE Telemetry Frame Specification`)**: Memperbarui keterangan `QoS 1` menjadi `Delivery Guaranteed (Default)`.
+  - **Card 4 (`PROTOCOLS_12` — Referensi 12 Protokol)**: Menyelaraskan byte layout 31B AD dan `SAMPLE DECODED INGESTION PAYLOAD (JSON)` terhadap spesifikasi `MOKO_BeaconX_Pro_Parsing_Section.pdf` & `BXP-B series.xls` (`eddy_tlm`, `eddy_url`, `moko_device`, `moko_ibeacon`, `moko_acc`, `moko_th`, `moko_alarm`, `moko_sensor`).
+  - **Card 5 (`Gateway System Info & Metadata`)**: Memperbarui topik ke `.../status`, Birth/LWT `"offline"`, default `mode: "ethernet"`, contoh `ipwlan: ""` / `ipeth: "192.168.1.150"`, token live `%firmware_version%`, `%ui_version%`, `%device_version%`, serta memformat pratinjau `.docs-json-preview` menjadi multiline vertikal (`white-space: pre`) berindentasi 2 spasi.
+  - **Card 6 (`Gateway Heartbeat Keep-Alive`) & Card 7 (`Gateway Configurable Parameters Reference`)**: Menyelaraskan topik `/hb`, interval default `5s` (`1..300s`), serta seluruh parameter Device Settings dan Auth Settings terhadap `nvs_config.csv`, `config_store.cpp`, `settings.html`, `auth.html`, `web_routes.cpp`, dan `bsp_button.cpp` (termasuk `Max beacons per batch` `10 to 150 (step 10)` default `150`, aturan password Engineer `>= 8 chars on change, no :`, serta keterangan `MQTT client authentication` `max 31 chars`).
+- **Verifikasi Build & UI/UX**:
+  - Seluruh file teks di `data/` diverifikasi menggunakan Unix LF (`0 CR`), `pio run -t buildfs` sukses, serta audit Playwright Desktop (`1440x900`) & Mobile (`390x844`) memastikan nol error JS runtime, nol horizontal page overflow, dan kontrak 2 baris `.raw-breakdown` + `.full-hex-string` tetap terjaga.
+
+---
+
+## 153. Status `"restart"` pada Graceful Restart (`MqttService::disconnect`, `gracefulRestart`, & Card 5 `/docs`) (2026-11-14)
+- **Publikasi Status `"restart"` Sebelum Reboot Terencana (`src/network/mqtt_service.cpp`, `src/network/mqtt_service.hpp`, `src/network/net_manager.cpp`)**:
+  - Menambahkan parameter opsional `bool publishRestartStatus = false` pada `MqttService::disconnect(bool publishRestartStatus = false)` sehingga pemutusan uplink fisik (`WIFI_EVENT_STA_DISCONNECTED`) tetap memutus sesi tanpa mengirim payload baru, sedangkan `NetworkManager::gracefulRestart()` memanggil `MqttService::disconnect(true)`.
+  - Saat `publishRestartStatus == true && s_mqttConnected`, gateway mem-publish JSON status dengan `"status": "restart"` (`QoS 1`, `Retain 1`) ke `<prefix>/info/<device_id>/status`, menunggu konfirmasi `PUBACK` dari `MQTT_EVENT_PUBLISHED` (ring buffer `s_recentAckIds[8]`, maksimal `500 ms`), menandai `s_shuttingDown = true` agar task publisher/reconnect tidak me-restart client, lalu memanggil `esp_mqtt_client_stop()` secara **sinkron** (mengirim paket MQTT `DISCONNECT` + `TCP FIN` dan menunggu `STOPPED_BIT`) sebelum `gracefulRestart()` mematikan Wi-Fi/Ethernet, sehingga broker tidak memicu LWT `"offline"` setelah `"restart"`.
+- **Penyelarasan `/docs` Card 5 (`web_src/docs.html`)**:
+  - Memperbarui nilai sampel kolom `status` dan keterangan pengantar Card 5 menjadi `"online"` (terhubung) / `"restart"` (sebelum reboot terencana) / `"offline"` (LWT saat putus mendadak).
+
+---
+
+## 154. Proteksi *Cross-Core Timestamp Underflow* & False `TTL_EXPIRED` Drops (2026-11-14)
+- **Pengamanan `elapsedMs32()` (`include/app_time.hpp`)**:
+  - Mengubah aritmetika selisih waktu 32-bit menjadi `int32_t diff = static_cast<int32_t>(nowMs - prevMs); return (diff > 0) ? static_cast<uint32_t>(diff) : 0U;` (tetap *wrap-safe* untuk interval < 24,8 hari).
+  - Menahan skenario *skew* / *race* lintas core (Core 0 menulis `packet.timestamp` tepat melewati batas 1 ms setelah Core 1 mengambil `now32`) agar tidak mengalami *unsigned underflow* menjadi `4.294.967.295 ms` (`0xFFFFFFFF`) dan memicu false drop `TTL_EXPIRED` saat antrean kosong (`0 / 214`).
+- **Perbaikan Urutan Pengambilan *Timestamp* & *Flush* (`src/network/mqtt_service.cpp`)**:
+  - `MqttService::mqttPublisherTask()`: menyegarkan `now = monotonicMs()` setelah blok publish batch penuh, serta mengambil `now32 = static_cast<uint32_t>(monotonicMs())` **di dalam** loop `while` tepat setelah `xQueueReceive(bQueue, &packet, 0) == pdTRUE`.
+  - `MqttService::onMqttEvent()` (`MQTT_EVENT_CONNECTED`): memindahkan `Core::BeaconPipeline::flushQueue()` ke **sebelum** `s_mqttConnected = true` sehingga paket lama saat booting/reconnect dibersihkan tuntas sebelum `mqttPublisherTask` membaca `bQueue`.
+- **Penguatan *Preemption-Safe Pruning* (`src/core/beacon_pipeline.cpp`)**:
+  - `BeaconPipeline::pruneExpired()`: mengambil `nowMs` di dalam loop setelah `xQueuePeek()`, dan setelah `xQueueReceive()` memverifikasi ulang umur `discarded` terhadap `checkNowMs`. Jika paket ternyata masih segar (ter-preempt oleh `mqttPublisherTask` di antara `Peek` dan `Receive`), paket dikembalikan ke depan antrean via `xQueueSendToFront(s_beaconQueue, &discarded, 0)` lalu `break` tanpa mencatat drop palsu.
 
 

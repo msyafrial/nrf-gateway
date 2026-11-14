@@ -1,6 +1,7 @@
 #include "beacon_pipeline.hpp"
 #include "drop_log_service.hpp"
 #include "mqtt_service.hpp"
+#include "ota_service.hpp"
 #include "app_config.hpp"
 #include "app_time.hpp"
 #include "config_store.hpp"
@@ -210,6 +211,7 @@ static ParsedAdvInfo parseAdvStructures(const uint8_t* payload, uint8_t len) {
 
 static void handleRawBleFrame(const RawBleBinaryFrame* frame) {
     if (!frame) return;
+    if (Web::Ota::is_pipeline_paused()) return;
 
     s_totalFramesIngress.fetch_add(1, std::memory_order_relaxed);
 
@@ -353,17 +355,23 @@ void BeaconPipeline::recordLiveBeacon(const BeaconPacket& p) {
 void BeaconPipeline::pruneExpired() {
     if (s_beaconQueue == nullptr || g_config.data_ttl <= 0) return;
     BeaconPacket front;
-    uint32_t nowMs = static_cast<uint32_t>(Iotaru::monotonicMs());
     uint32_t epoch = s_queueEpoch.load(std::memory_order_acquire);
 
     while (s_queueEpoch.load(std::memory_order_acquire) == epoch &&
            xQueuePeek(s_beaconQueue, &front, 0) == pdTRUE) {
+        uint32_t nowMs = static_cast<uint32_t>(Iotaru::monotonicMs());
         if (Iotaru::elapsedMs32(nowMs, front.timestamp) > (uint32_t)g_config.data_ttl) {
             BeaconPacket discarded;
             if (xQueueReceive(s_beaconQueue, &discarded, 0) == pdTRUE) {
-                if (Network::MqttService::isConnected()) {
-                    s_totalQueueDropped++;
-                    recordDroppedBeacon(discarded, DropReason::TTL_EXPIRED);
+                uint32_t checkNowMs = static_cast<uint32_t>(Iotaru::monotonicMs());
+                if (Iotaru::elapsedMs32(checkNowMs, discarded.timestamp) > (uint32_t)g_config.data_ttl) {
+                    if (Network::MqttService::isConnected()) {
+                        s_totalQueueDropped++;
+                        recordDroppedBeacon(discarded, DropReason::TTL_EXPIRED);
+                    }
+                } else {
+                    xQueueSendToFront(s_beaconQueue, &discarded, 0);
+                    break;
                 }
             }
         } else {
@@ -512,6 +520,10 @@ void BeaconPipeline::flushLiveBeacons() {
 
 uint8_t BeaconPipeline::getNrfScanState() {
     return s_nrfScanState.load(std::memory_order_relaxed);
+}
+
+void BeaconPipeline::setNrfScanState(uint8_t state) {
+    s_nrfScanState.store(state, std::memory_order_relaxed);
 }
 
 void BeaconPipeline::updateMetrics() {

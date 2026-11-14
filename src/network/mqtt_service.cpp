@@ -2,6 +2,7 @@
 #include "net_manager.hpp"
 #include "net_log_service.hpp"
 #include "beacon_pipeline.hpp"
+#include "ota_service.hpp"
 #include "config_store.hpp"
 #include "app_time.hpp"
 #include "bsp_led.hpp"
@@ -176,6 +177,7 @@ namespace Iotaru::Network {
 static esp_mqtt_client_handle_t s_mqttClient = nullptr;
 static std::atomic<bool> s_mqttConnected{false};
 static std::atomic<bool> s_mqttStarted{false};
+static std::atomic<bool> s_shuttingDown{false};
 
 static char s_topicData[128]      = "";
 static char s_topicStatus[128]    = "";
@@ -188,6 +190,9 @@ static std::atomic<bool> s_hasInboundActivity{false};
 static char s_lastError[64]       = "None";
 static SemaphoreHandle_t s_clientCtrlMutex = nullptr;
 static portMUX_TYPE s_errMux = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE s_ackMux = portMUX_INITIALIZER_UNLOCKED;
+static int s_recentAckIds[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+static size_t s_recentAckIdx = 0;
 
 static void setLastErrorSafe(const char* msg) {
     portENTER_CRITICAL(&s_errMux);
@@ -428,6 +433,9 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
 
     switch ((esp_mqtt_event_id_t)id) {
         case MQTT_EVENT_CONNECTED: {
+            // Bersihkan antrean lama saat booting/offline SEBELUM membuka gerbang s_mqttConnected
+            // agar mqttPublisherTask tidak sempat menarik paket tua dan memicu drop TTL palsu
+            Core::BeaconPipeline::flushQueue();
             s_mqttConnected = true;
             s_lastInboundActivityMs.store(monotonicMs(), std::memory_order_relaxed);
             s_hasInboundActivity.store(true, std::memory_order_release);
@@ -437,9 +445,6 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
 
             // Reset backoff interval network manager karena koneksi MQTT telah pulih sempurna
             NetworkManager::resetFastLinkBackoff();
-
-            // Bersihkan antrean lama saat booting/offline agar tidak menimbulkan drop TTL palsu
-            Core::BeaconPipeline::flushQueue();
 
             // 1. Kirim Birth Message (QoS 1, Retain 1)
             char birth_payload[384];
@@ -483,6 +488,10 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
         case MQTT_EVENT_PUBLISHED:
             s_lastInboundActivityMs.store(monotonicMs(), std::memory_order_relaxed);
             s_hasInboundActivity.store(true, std::memory_order_release);
+            portENTER_CRITICAL(&s_ackMux);
+            s_recentAckIds[s_recentAckIdx & 7] = event->msg_id;
+            s_recentAckIdx++;
+            portEXIT_CRITICAL(&s_ackMux);
             // Broker berhasil menerima data dan mengirimkan PUBACK (QoS 1 Ack downlink feedback)
             if (g_config.mqtt_qos == 1) {
                 ESP_LOGD(TAG, "PUBACK diterima dari broker untuk MsgID=%d", event->msg_id);
@@ -652,6 +661,18 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
             }
         }
 
+        // 0b. Hentikan sementara pembacaan antrean & publikasi MQTT selama proses upload OTA / shutdown berlangsung
+        if (Web::Ota::is_pipeline_paused() || s_shuttingDown.load(std::memory_order_acquire)) {
+            batchCount = 0;
+            batchLen = 0;
+            s_statBatchBufferLoad.store(0, std::memory_order_relaxed);
+            consecPubFail = 0;
+            lastFlushTime = now;
+            s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+
         // 1. Cek konektivitas jaringan
         if (!NetworkManager::isConnected()) {
             consecPubFail = 0;
@@ -722,16 +743,17 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
         }
 
         // 4. Tarik paket dari antrean Core Pipeline hingga mencapai batch_max
+        now = monotonicMs();
         time_t nowSec = time(NULL);
         uint32_t nowEpoch = (nowSec > 1700000000) ? static_cast<uint32_t>(nowSec) : 0;
         uint32_t netNowEpoch = (nowEpoch > 0) ? lwip_htonl(nowEpoch) : 0;
         BeaconPacket packet;
 
-        uint32_t now32 = static_cast<uint32_t>(now);
         uint32_t fallbackUptimeSecNet = lwip_htonl(static_cast<uint32_t>(now / 1000LL));
         while (batchCount < (size_t)g_config.batch_max &&
                (batchLen + frameLen <= MQTT_BATCH_BUFFER_SIZE) &&
                bQueue != nullptr && xQueueReceive(bQueue, &packet, 0) == pdTRUE) {
+            uint32_t now32 = static_cast<uint32_t>(monotonicMs());
             uint32_t age = elapsedMs32(now32, packet.timestamp);
             if (g_config.data_ttl > 0 && age > (uint32_t)g_config.data_ttl) {
                 Core::BeaconPipeline::recordDroppedBeacon(packet, DropReason::TTL_EXPIRED);
@@ -918,7 +940,7 @@ uint32_t MqttService::getLastInboundActivityMs() {
 }
 
 void MqttService::forceReconnect() {
-    if (NetworkManager::isBootConfigMode()) {
+    if (NetworkManager::isBootConfigMode() || s_shuttingDown.load(std::memory_order_acquire)) {
         return;
     }
     if (s_clientCtrlMutex != nullptr && xSemaphoreTake(s_clientCtrlMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
@@ -940,13 +962,56 @@ void MqttService::forceReconnect() {
     }
 }
 
-void MqttService::disconnect() {
+void MqttService::disconnect(bool publishRestartStatus) {
+    if (publishRestartStatus) {
+        s_shuttingDown.store(true, std::memory_order_release);
+    }
     if (s_clientCtrlMutex != nullptr && xSemaphoreTake(s_clientCtrlMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
         return;
     }
     if (s_mqttClient != nullptr && s_mqttStarted) {
-        ESP_LOGI(TAG, "Memutuskan sesi MQTT (Zero-Failover: Uplink terputus)...");
-        esp_mqtt_client_disconnect(s_mqttClient);
+        const bool wasConnected = s_mqttConnected.load();
+        if (publishRestartStatus && wasConnected && s_topicStatus[0] != '\0') {
+            char restartPayload[384];
+            buildStatusPayload("restart", restartPayload, sizeof(restartPayload));
+            size_t payloadLen = strlen(restartPayload);
+
+            portENTER_CRITICAL(&s_ackMux);
+            for (size_t i = 0; i < 8; ++i) {
+                s_recentAckIds[i] = -1;
+            }
+            portEXIT_CRITICAL(&s_ackMux);
+
+            int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicStatus, restartPayload, payloadLen, 1, 1);
+            if (msgId >= 0) {
+                recordWireBytes(calculateWireBytes(strlen(s_topicStatus), payloadLen, 1));
+                ESP_LOGI(TAG, "Mengirim status 'restart' (QoS 1, Retain 1, MsgID=%d) sebelum restart...", msgId);
+                int64_t waitStart = monotonicMs();
+                while (s_mqttConnected && (monotonicMs() - waitStart) < 500) {
+                    bool acked = false;
+                    portENTER_CRITICAL(&s_ackMux);
+                    for (size_t i = 0; i < 8; ++i) {
+                        if (s_recentAckIds[i] == msgId) {
+                            acked = true;
+                            break;
+                        }
+                    }
+                    portEXIT_CRITICAL(&s_ackMux);
+                    if (acked) {
+                        break;
+                    }
+                    vTaskDelay(pdMS_TO_TICKS(10));
+                }
+            }
+            ESP_LOGI(TAG, "Menghentikan sesi MQTT secara sinkron (Graceful Restart)...");
+            s_mqttConnected = false;
+            esp_mqtt_client_stop(s_mqttClient);
+            s_mqttStarted = false;
+        } else {
+            ESP_LOGI(TAG, "Memutuskan sesi MQTT (%s)...",
+                     publishRestartStatus ? "Graceful Restart (Offline)" : "Zero-Failover: Uplink terputus");
+            esp_mqtt_client_disconnect(s_mqttClient);
+        }
     }
     if (s_clientCtrlMutex != nullptr) {
         xSemaphoreGive(s_clientCtrlMutex);

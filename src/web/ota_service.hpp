@@ -24,6 +24,7 @@ struct OtaStatus {
 
 void init();
 bool is_in_progress();
+bool is_pipeline_paused();
 bool is_success();
 const char* get_error_message();
 void check_watchdog();

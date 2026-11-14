@@ -56,8 +56,15 @@ static void supervisorTask(void *pvParameters) {
         s_rtcBreadcrumb.queue_load = static_cast<uint16_t>(Core::BeaconPipeline::getQueueLoad());
         s_rtcBreadcrumb.crc = calcBreadcrumbCrc(s_rtcBreadcrumb);
 
-        // 1. Tick network & watchdog timers & EEPROM lifetime stats
-        Network::NetworkManager::tickWatchdog();
+        // 1. Tick OTA watchdog, network & watchdog timers & EEPROM lifetime stats
+        Web::Ota::check_watchdog();
+        if (Web::Ota::is_pipeline_paused()) {
+            if (Network::NetworkManager::isApActive()) {
+                Network::NetworkManager::recordApActivity();
+            }
+        } else {
+            Network::NetworkManager::tickWatchdog();
+        }
         Network::NetLogService::tickPeriodicCommit();
 
         // 2. Update throughput metrics & bersihkan paket kadaluarsa saat offline (Zero-Loss Pruning)
@@ -88,34 +95,39 @@ static void supervisorTask(void *pvParameters) {
                      (unsigned int)Core::BeaconPipeline::getQueueLoad());
         }
 
-        // 5. Health monitor & Self-Healing nRF52840
-        uint8_t targetScanMode = (g_config.scan_mode == 1) ? 0x01 : 0x02;
-        uint8_t currentNrfState = Core::BeaconPipeline::getNrfScanState();
+        // 5. Health monitor & Self-Healing nRF52840 (ditahan sementara selama OTA aktif)
         uint32_t curNrfFrames = Core::BeaconPipeline::getTotalFramesIngress();
-
-        if (curNrfFrames != lastNrfFrames) {
+        if (Web::Ota::is_pipeline_paused()) {
             lastNrfFrames = curNrfFrames;
             nrfZeroIngressSecs = 0;
         } else {
-            nrfZeroIngressSecs++;
-        }
+            uint8_t targetScanMode = (g_config.scan_mode == 1) ? 0x01 : 0x02;
+            uint8_t currentNrfState = Core::BeaconPipeline::getNrfScanState();
 
-        if (currentNrfState != targetScanMode) {
-            if (loopCount % 3 == 0) {
-                ESP_LOGI(TAG, "nRF52840 state (%u) != target (%u). Mengirim ulang perintah scan...",
-                         currentNrfState, targetScanMode);
-                Bsp::UartManager::sendScanCommand(targetScanMode);
-            }
-        } else if (nrfZeroIngressSecs >= 15) {
-            if (nrfZeroIngressSecs == 15 || nrfZeroIngressSecs == 30) {
-                ESP_LOGD(TAG, "UART nRF52840 idle %lu detik -> polling status & re-sync scan mode",
-                         (unsigned long)nrfZeroIngressSecs);
-                Bsp::UartManager::sendGetStatusCommand();
-                Bsp::UartManager::sendScanCommand(targetScanMode);
-            } else if (nrfZeroIngressSecs >= 45) {
-                ESP_LOGW(TAG, "nRF52840 tidak merespons polling selama 45 detik! Memicu CMD_SOFT_REBOOT...");
-                Bsp::UartManager::sendSoftRebootCommand();
+            if (curNrfFrames != lastNrfFrames) {
+                lastNrfFrames = curNrfFrames;
                 nrfZeroIngressSecs = 0;
+            } else {
+                nrfZeroIngressSecs++;
+            }
+
+            if (currentNrfState != targetScanMode) {
+                if (loopCount % 3 == 0) {
+                    ESP_LOGI(TAG, "nRF52840 state (%u) != target (%u). Mengirim ulang perintah scan...",
+                             currentNrfState, targetScanMode);
+                    Bsp::UartManager::sendScanCommand(targetScanMode);
+                }
+            } else if (nrfZeroIngressSecs >= 15) {
+                if (nrfZeroIngressSecs == 15 || nrfZeroIngressSecs == 30) {
+                    ESP_LOGD(TAG, "UART nRF52840 idle %lu detik -> polling status & re-sync scan mode",
+                             (unsigned long)nrfZeroIngressSecs);
+                    Bsp::UartManager::sendGetStatusCommand();
+                    Bsp::UartManager::sendScanCommand(targetScanMode);
+                } else if (nrfZeroIngressSecs >= 45) {
+                    ESP_LOGW(TAG, "nRF52840 tidak merespons polling selama 45 detik! Memicu CMD_SOFT_REBOOT...");
+                    Bsp::UartManager::sendSoftRebootCommand();
+                    nrfZeroIngressSecs = 0;
+                }
             }
         }
     }

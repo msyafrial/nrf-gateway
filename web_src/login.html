@@ -343,6 +343,10 @@
           }).catch(() => {
             Swal.fire("Sesi Penuh", "Maximum active session limit reached (2 devices). Please sign out from another device.", "warning");
           });
+        } else if (res.status === 429) {
+          return res.text().then(text => {
+            Swal.fire("Too Many Attempts", text || "Too many failed attempts. Please wait 60 seconds.", "warning");
+          });
         } else {
           return res.text().then(text => {
             Swal.fire("Authentication Failed", text || "Invalid username or password.", "error");

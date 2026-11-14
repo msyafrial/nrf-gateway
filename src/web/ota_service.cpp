@@ -1,7 +1,10 @@
 #include "ota_service.hpp"
 #include "app_config.hpp"
 #include "app_time.hpp"
+#include "beacon_pipeline.hpp"
 #include "bsp_led.hpp"
+#include "bsp_uart.hpp"
+#include "net_manager.hpp"
 #include "web_server.hpp"
 #include <esp_littlefs.h>
 #include <esp_timer.h>
@@ -24,6 +27,7 @@ static const esp_partition_t *s_target_partition = nullptr;
 static constexpr uint32_t OTA_INACTIVITY_TIMEOUT_MS = 10000;
 
 static std::atomic<bool> s_ota_in_progress{false};
+static std::atomic<bool> s_pipeline_paused{false};
 static bool s_flash_dirty = false;
 static size_t s_erased_bytes = 0;
 static bool s_fs_was_mounted = false;
@@ -53,6 +57,7 @@ void init() {
     s_ota_handle = 0;
     s_target_partition = nullptr;
     s_ota_in_progress.store(false, std::memory_order_seq_cst);
+    s_pipeline_paused.store(false, std::memory_order_seq_cst);
     s_flash_dirty = false;
     s_erased_bytes = 0;
     s_fs_was_mounted = false;
@@ -61,6 +66,10 @@ void init() {
 
 bool is_in_progress() {
     return s_ota_in_progress.load(std::memory_order_seq_cst);
+}
+
+bool is_pipeline_paused() {
+    return s_pipeline_paused.load(std::memory_order_acquire);
 }
 
 bool is_success() {
@@ -73,6 +82,12 @@ const char* get_error_message() {
 
 void mark_app_valid() {
     esp_ota_mark_app_valid_cancel_rollback();
+}
+
+static void resumeNrfScan() {
+    Core::BeaconPipeline::setNrfScanState(0);
+    uint8_t targetMode = (g_config.scan_mode == 1) ? 0x01 : 0x02;
+    Bsp::UartManager::sendScanCommand(targetMode);
 }
 
 static void abortLocked() {
@@ -101,6 +116,9 @@ static void abortLocked() {
     s_status.success = false;
     s_ota_in_progress.store(false, std::memory_order_seq_cst);
     Bsp::LedManager::setOtaMode(false);
+    if (s_pipeline_paused.exchange(false, std::memory_order_acq_rel)) {
+        resumeNrfScan();
+    }
 }
 
 void abort() {
@@ -178,42 +196,58 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
             return false;
         }
 
-        // Validasi Model dan Versi Board dari esp_app_desc_t pada offset 0x20 jika ada metadata
+        // Wajib magic header ESP-IDF app image (0xE9) & esp_app_desc_t (0xABCD5432 pada offset 0x20)
         bool is_app_desc = (first_chunk[32] == 0x32 && first_chunk[33] == 0x54 &&
                             first_chunk[34] == 0xCD && first_chunk[35] == 0xAB);
-        if (is_app_desc) {
-            const auto *incoming_app = reinterpret_cast<const esp_app_desc_t *>(&first_chunk[0x20]);
-            const char *incoming_proj = incoming_app->project_name;
-            const char *at_sign = strchr(incoming_proj, '@');
-            if (at_sign) {
-                char incoming_model[32] = {0};
-                char incoming_board_ver[32] = {0};
-                size_t m_len = static_cast<size_t>(at_sign - incoming_proj);
-                if (m_len < sizeof(incoming_model)) {
-                    memcpy(incoming_model, incoming_proj, m_len);
-                    incoming_model[m_len] = '\0';
-                }
-                strncpy(incoming_board_ver, at_sign + 1, sizeof(incoming_board_ver) - 1);
+        if (first_chunk[0] != ESP_IMAGE_HEADER_MAGIC || !is_app_desc) {
+            snprintf(out_err, err_len, "Error: Berkas bukan citra aplikasi Firmware ESP-IDF yang valid!");
+            snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
+            s_status.in_progress = false;
+            s_ota_in_progress.store(false, std::memory_order_seq_cst);
+            return false;
+        }
 
-                const char *cur_model = (g_config.device_model[0] != '\0') ? g_config.device_model : "EMPTY";
-                const char *cur_board_ver = (g_config.device_version[0] != '\0') ? g_config.device_version : "v1.0.0";
+        // Validasi Model dan Versi Board dari esp_app_desc_t secara aman (bounded 32 byte copy)
+        const auto *incoming_app = reinterpret_cast<const esp_app_desc_t *>(&first_chunk[0x20]);
+        char proj_buf[33] = {0};
+        memcpy(proj_buf, incoming_app->project_name, 32);
+        const char *at_sign = strchr(proj_buf, '@');
+        const char *cur_model = (g_config.device_model[0] != '\0') ? g_config.device_model : "EMPTY";
+        const char *cur_board_ver = (g_config.device_version[0] != '\0') ? g_config.device_version : "v1.0.0";
 
-                if (strcmp(cur_model, "EMPTY") != 0 && strcmp(incoming_model, cur_model) != 0) {
-                    snprintf(out_err, err_len, "Ditolak: Model firmware ('%s') tidak sesuai model perangkat ('%s')!",
-                             incoming_model, cur_model);
-                    snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
-                    s_status.in_progress = false;
-                    s_ota_in_progress.store(false, std::memory_order_seq_cst);
-                    return false;
-                }
-                if (strcmp(cur_board_ver, "EMPTY") != 0 && strcmp(incoming_board_ver, cur_board_ver) != 0) {
-                    snprintf(out_err, err_len, "Ditolak: Versi board ('%s') tidak kompatibel dengan board fisik ('%s')!",
-                             incoming_board_ver, cur_board_ver);
-                    snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
-                    s_status.in_progress = false;
-                    s_ota_in_progress.store(false, std::memory_order_seq_cst);
-                    return false;
-                }
+        if (strcmp(cur_model, "EMPTY") != 0 && !at_sign) {
+            snprintf(out_err, err_len, "Ditolak: Metadata model@board tidak ditemukan pada header firmware!");
+            snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
+            s_status.in_progress = false;
+            s_ota_in_progress.store(false, std::memory_order_seq_cst);
+            return false;
+        }
+
+        if (at_sign) {
+            char incoming_model[32] = {0};
+            char incoming_board_ver[32] = {0};
+            size_t m_len = static_cast<size_t>(at_sign - proj_buf);
+            if (m_len < sizeof(incoming_model)) {
+                memcpy(incoming_model, proj_buf, m_len);
+                incoming_model[m_len] = '\0';
+            }
+            strncpy(incoming_board_ver, at_sign + 1, sizeof(incoming_board_ver) - 1);
+
+            if (strcmp(cur_model, "EMPTY") != 0 && strcmp(incoming_model, cur_model) != 0) {
+                snprintf(out_err, err_len, "Ditolak: Model firmware ('%s') tidak sesuai model perangkat ('%s')!",
+                         incoming_model, cur_model);
+                snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
+                s_status.in_progress = false;
+                s_ota_in_progress.store(false, std::memory_order_seq_cst);
+                return false;
+            }
+            if (strcmp(cur_board_ver, "EMPTY") != 0 && strcmp(incoming_board_ver, cur_board_ver) != 0) {
+                snprintf(out_err, err_len, "Ditolak: Versi board ('%s') tidak kompatibel dengan board fisik ('%s')!",
+                         incoming_board_ver, cur_board_ver);
+                snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
+                s_status.in_progress = false;
+                s_ota_in_progress.store(false, std::memory_order_seq_cst);
+                return false;
             }
         }
 
@@ -313,6 +347,14 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
         Server::mark_filesystem_unmounted();
     }
 
+    s_pipeline_paused.store(true, std::memory_order_release);
+    Core::BeaconPipeline::setNrfScanState(0);
+    Bsp::UartManager::sendScanCommand(0);
+    Core::BeaconPipeline::flushQueue();
+    if (Network::NetworkManager::isApActive()) {
+        Network::NetworkManager::recordApActivity();
+    }
+
     Bsp::LedManager::setOtaMode(true);
     return true;
 }
@@ -332,6 +374,9 @@ bool write_chunk(const uint8_t *data, size_t len, size_t current_offset, bool is
 
     s_last_activity_ms64 = monotonicMs();
     s_status.last_activity_ms = get_millis();
+    if (Network::NetworkManager::isApActive()) {
+        Network::NetworkManager::recordApActivity();
+    }
 
     if (s_status.target == TargetType::Firmware) {
         esp_err_t err = esp_ota_write(s_ota_handle, data, len);
@@ -393,7 +438,8 @@ bool finalize(char *out_err, size_t err_len) {
 
     // Micro-Hardening: Truncated stream validation
     if (s_status.total_expected > 0 && s_status.written_bytes != s_status.total_expected) {
-        snprintf(out_err, err_len, "Data LittleFS tidak lengkap (hanya %u dari %u byte)!",
+        snprintf(out_err, err_len, "Data %s tidak lengkap (hanya %u dari %u byte)!",
+                 (s_status.target == TargetType::Firmware) ? "Firmware" : "LittleFS",
                  (unsigned int)s_status.written_bytes, (unsigned int)s_status.total_expected);
         snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
         abortLocked();
@@ -451,6 +497,9 @@ bool finalize(char *out_err, size_t err_len) {
             s_status.success = false;
             s_ota_in_progress.store(false, std::memory_order_seq_cst);
             Bsp::LedManager::setOtaMode(false);
+            if (s_pipeline_paused.exchange(false, std::memory_order_acq_rel)) {
+                resumeNrfScan();
+            }
             return false; // TOLAK & JANGAN REBOOT
         }
 

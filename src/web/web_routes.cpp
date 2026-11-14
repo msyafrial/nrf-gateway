@@ -1947,9 +1947,12 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
         if (httpd_query_key_value(query, "size", size_val, sizeof(size_val)) == ESP_OK) {
             char *endptr = nullptr;
             unsigned long parsed = strtoul(size_val, &endptr, 10);
-            if (endptr != size_val && parsed > 0) {
-                total_size = static_cast<size_t>(parsed);
+            if (endptr == size_val || *endptr != '\0' || parsed == 0 || static_cast<size_t>(parsed) != req->content_len) {
+                httpd_resp_set_status(req, "400 Bad Request");
+                httpd_resp_send(req, "Ukuran query 'size' tidak konsisten dengan Content-Length HTTP!", HTTPD_RESP_USE_STRLEN);
+                return ESP_OK;
             }
+            total_size = static_cast<size_t>(parsed);
         }
     }
 
@@ -1970,6 +1973,7 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
     size_t received_bytes = 0;
     bool is_first_chunk = true;
     int timeout_retries = 0;
+    int last_pct = -1;
 
     while (received_bytes < req->content_len) {
         size_t to_read = req->content_len - received_bytes;
@@ -2005,12 +2009,15 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
 
         received_bytes += r;
 
-        // Broadcast progress over WebSocket
+        // Broadcast progress over WebSocket hanya saat persentase berubah atau chunk final
         int pct = (total_size > 0) ? static_cast<int>((received_bytes * 100) / total_size) : 0;
-        char json[128];
-        snprintf(json, sizeof(json), "{\"type\":\"ota_progress\",\"written\":%u,\"total\":%u,\"percent\":%d}",
-                 static_cast<unsigned>(received_bytes), static_cast<unsigned>(total_size), pct);
-        Server::broadcast_ws_text(json);
+        if (pct != last_pct || is_final) {
+            last_pct = pct;
+            char json[128];
+            snprintf(json, sizeof(json), "{\"type\":\"ota_progress\",\"written\":%u,\"total\":%u,\"percent\":%d}",
+                     static_cast<unsigned>(received_bytes), static_cast<unsigned>(total_size), pct);
+            Server::broadcast_ws_text(json);
+        }
     }
 
     if (!Ota::finalize(err_buf, sizeof(err_buf))) {

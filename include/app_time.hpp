@@ -15,9 +15,11 @@ inline int64_t monotonicUs() {
     return esp_timer_get_time();
 }
 
-/// Wrap-safe 32-bit unsigned elapsed duration (valid for intervals < 49.7 days).
+/// Wrap-safe 32-bit elapsed duration (valid for intervals < 24.8 days).
+/// Clamps negative cross-core skew (when prevMs is slightly newer than nowMs) to 0.
 inline uint32_t elapsedMs32(uint32_t nowMs, uint32_t prevMs) {
-    return static_cast<uint32_t>(nowMs - prevMs);
+    int32_t diff = static_cast<int32_t>(nowMs - prevMs);
+    return (diff > 0) ? static_cast<uint32_t>(diff) : 0U;
 }
 
 /// Explicit deadline timer without magic-zero sentinel collision.

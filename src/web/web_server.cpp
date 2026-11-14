@@ -385,7 +385,7 @@ static esp_err_t ws_handler(httpd_req_t *req) {
 // Live Telemetry Broadcast (Adaptive & Zero-DRAM Leak)
 // -------------------------------------------------------------
 void broadcast_live_ws_stats() {
-    if (Ota::is_in_progress()) return; // Total silence during OTA flashing
+    if (Ota::is_pipeline_paused()) return; // Total silence during OTA flashing & pre-reboot pause
 
     // Heap Guard: Lindungi kestabilan driver Wi-Fi & stack TLS jika memori menipis
     if (esp_get_free_heap_size() < 20000) {

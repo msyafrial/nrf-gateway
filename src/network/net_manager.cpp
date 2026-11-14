@@ -1258,7 +1258,7 @@ void NetworkManager::checkFastLinkHealth() {
 void NetworkManager::gracefulRestart() {
     ESP_LOGW(TAG, "Menjalankan gracefulRestart(): sinkronisasi EEPROM & memutus sesi jaringan...");
     NetLogService::syncLifetimeUptimeToEeprom();
-    MqttService::disconnect();
+    MqttService::disconnect(true);
     vTaskDelay(pdMS_TO_TICKS(100));
     if (s_wifiDriverInitialized) {
         esp_wifi_stop();

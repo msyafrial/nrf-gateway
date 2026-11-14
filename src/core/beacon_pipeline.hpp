@@ -36,6 +36,7 @@ public:
 
     // Status Scanner nRF52840
     static uint8_t getNrfScanState();
+    static void setNrfScanState(uint8_t state);
 
     // Kalkulasi Metrik Throughput (Dipanggil tiap 1 detik oleh esp_timer)
     static void updateMetrics();

@@ -14,7 +14,7 @@ public:
     static bool isConnected();
     static void updateTopicNames();
     static void forceReconnect();
-    static void disconnect();
+    static void disconnect(bool publishRestartStatus = false);
     static uint32_t getLastInboundActivityMs();
 
     static void getTopicData(char* outBuf, size_t maxLen);
