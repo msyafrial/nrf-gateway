@@ -132,6 +132,17 @@ void DropLogService::record(const char* code, const char* tag, int8_t rssi, Drop
         case DropReason::UNKNOWN_FORMAT:    s_statUnknownFormat.fetch_add(count, std::memory_order_relaxed); break;
     }
 
+    // Rate-limit penulisan ke circular buffer log saat flood filter (>40/dtk), counter statistik tetap 100% akurat
+    static std::atomic<int64_t> s_lastLogUs{0};
+    if (reason != DropReason::MQTT_FAIL && reason != DropReason::QUEUE_OVERFLOW) {
+        int64_t nowUs = esp_timer_get_time();
+        int64_t prevUs = s_lastLogUs.load(std::memory_order_relaxed);
+        if ((nowUs - prevUs) < 25000LL) {
+            return;
+        }
+        s_lastLogUs.store(nowUs, std::memory_order_relaxed);
+    }
+
     // Mutex take non-blocking (maksimal 2 ms) agar tidak menghambat Core 0 UART ingestion
     if (s_dropMutex != nullptr && xSemaphoreTake(s_dropMutex, pdMS_TO_TICKS(2)) == pdTRUE) {
         uint32_t uptimeSec = static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);

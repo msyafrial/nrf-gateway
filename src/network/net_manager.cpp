@@ -6,6 +6,7 @@
 #include "net_log_service.hpp"
 #include "bsp_led.hpp"
 #include "config_store.hpp"
+#include "app_time.hpp"
 #include "esp_wifi.h"
 #include "esp_eth.h"
 #include "esp_event.h"
@@ -20,7 +21,6 @@
 #include "lwip/netif.h"
 #include "lwip/tcpip.h"
 #include "lwip/etharp.h"
-#include "lwip/dns.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <cstring>
@@ -66,15 +66,19 @@ static uint8_t  s_cachedBssid[6] = {0};
 static bool     s_hasCachedAp = false;
 static uint8_t  s_fastRetryCount = 0;
 
-static uint32_t s_disconStartTime = 0;
-static uint32_t s_lastApActivityTime = 0;
+static int64_t  s_disconStartTime = 0;
+static bool     s_disconTimerActive = false;
+static int64_t  s_lastApActivityTime = 0;
 static uint8_t  s_gatewayRtoCount = 0;
-static uint32_t s_lastReassociateTimeMs = 0;
-static uint32_t s_lastDisconRetryMs = 0;
+static int64_t  s_lastReassociateTimeMs = 0;
+static bool     s_hasReassociated = false;
+static int64_t  s_lastDisconRetryMs = 0;
+static bool     s_hasDisconRetry = false;
 static uint32_t s_fastLinkBackoffIntervalMs = 15000;
-static uint32_t s_lastFastLinkCheckMs = 0;
-static const uint32_t AP_INACTIVITY_TIMEOUT_MS = 300000; // 300 Detik (5 Menit)
-static uint32_t s_pendingApStopMillis = 0;
+static int64_t  s_lastFastLinkCheckMs = 0;
+static bool     s_hasFastLinkCheck = false;
+static const int64_t AP_INACTIVITY_TIMEOUT_MS = 300000; // 300 Detik (5 Menit)
+static OneShotDeadline s_pendingApStop;
 
 static RTC_DATA_ATTR int s_lastRestartYday = -1;
 
@@ -97,25 +101,21 @@ static void restoreWifiDnsAndDefaultRoute() {
 
         if (has_dns) {
             esp_netif_set_dns_info(s_staNetif, ESP_NETIF_DNS_MAIN, &dns_info);
-            ip_addr_t lwip_dns;
-            ip_addr_set_ip4_u32(&lwip_dns, dns_info.ip.u_addr.ip4.addr);
-            dns_setserver(0, &lwip_dns);
 
             esp_netif_dns_info_t dns2_info = {};
-            ip_addr_t lwip_dns2;
             if (!g_config.w_dhcp && strlen(g_config.w_dns2) > 0 &&
                 esp_netif_str_to_ip4(g_config.w_dns2, &dns2_info.ip.u_addr.ip4) == ESP_OK &&
                 dns2_info.ip.u_addr.ip4.addr != 0) {
                 dns2_info.ip.type = ESP_IPADDR_TYPE_V4;
                 esp_netif_set_dns_info(s_staNetif, ESP_NETIF_DNS_BACKUP, &dns2_info);
-                ip_addr_set_ip4_u32(&lwip_dns2, dns2_info.ip.u_addr.ip4.addr);
             } else if (esp_netif_get_dns_info(s_staNetif, ESP_NETIF_DNS_BACKUP, &dns2_info) == ESP_OK &&
                        dns2_info.ip.u_addr.ip4.addr != 0) {
-                ip_addr_set_ip4_u32(&lwip_dns2, dns2_info.ip.u_addr.ip4.addr);
+                esp_netif_set_dns_info(s_staNetif, ESP_NETIF_DNS_BACKUP, &dns2_info);
             } else {
-                ip_addr_set_ip4_u32(&lwip_dns2, PP_HTONL(0x01010101)); // Cloudflare 1.1.1.1 fallback
+                IP4_ADDR(&dns2_info.ip.u_addr.ip4, 1, 1, 1, 1); // Cloudflare 1.1.1.1 fallback
+                dns2_info.ip.type = ESP_IPADDR_TYPE_V4;
+                esp_netif_set_dns_info(s_staNetif, ESP_NETIF_DNS_BACKUP, &dns2_info);
             }
-            dns_setserver(1, &lwip_dns2);
         }
         ESP_LOGI(TAG, "Default Netif dikunci ke Wi-Fi STA dan DNS dipulihkan (Main & Backup).");
     }
@@ -466,6 +466,9 @@ void NetworkManager::onEthEvent(void* arg, esp_event_base_t base, int32_t id, vo
             case ETHERNET_EVENT_DISCONNECTED: {
                 ESP_LOGW(TAG, "Ethernet Link Down terdeteksi. Mereset fallback FSM...");
                 MicroDhcpServer::stop();
+                if (!s_wifiConnected) {
+                    UdpDiscoveryService::stop();
+                }
                 s_ethFsmState = EthFsmState::DISCONNECTED;
                 s_ethProbeStartMs = 0;
                 s_directPcStartMs = 0;
@@ -505,13 +508,15 @@ void NetworkManager::earlyInit(IEthernetDriver* driver) {
 void NetworkManager::init(IEthernetDriver* driver) {
     s_ethDriver = driver;
 
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_err_t err = esp_netif_init();
+    if (err != ESP_OK) ESP_LOGE(TAG, "esp_netif_init failed: %s", esp_err_to_name(err));
+    err = esp_event_loop_create_default();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) ESP_LOGE(TAG, "esp_event_loop_create_default failed: %s", esp_err_to_name(err));
 
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &onWifiEvent, nullptr));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &onIpEvent, nullptr));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &onIpEvent, nullptr));
-    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &onEthEvent, nullptr));
+    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &onWifiEvent, nullptr);
+    esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &onIpEvent, nullptr);
+    esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &onIpEvent, nullptr);
+    esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &onEthEvent, nullptr);
 
     // Inisialisasi mDNS sedini mungkin agar memantau event seluruh netif (STA, AP, ETH)
     initMdns();
@@ -786,7 +791,7 @@ void NetworkManager::stopConfigAP() {
         s_manualConfigMode = false;
         s_bootConfigMode.store(false, std::memory_order_relaxed);
         s_apActive = false;
-        s_pendingApStopMillis = 0;
+        s_pendingApStop.cancel();
 
         MicroDnsServer::stop();
         if (s_apNetif != nullptr) {
@@ -810,12 +815,11 @@ void NetworkManager::stopConfigAP() {
 }
 
 void NetworkManager::scheduleStopConfigAP(uint32_t delayMs) {
-    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
-    s_pendingApStopMillis = now + delayMs;
+    s_pendingApStop.arm(static_cast<int64_t>(delayMs));
 }
 
 void NetworkManager::recordApActivity() {
-    s_lastApActivityTime = (uint32_t)(esp_timer_get_time() / 1000);
+    s_lastApActivityTime = monotonicMs();
 }
 
 void NetworkManager::setBootConfigMode(bool active) {
@@ -827,9 +831,9 @@ bool NetworkManager::isApActive() { return s_apActive; }
 
 uint32_t NetworkManager::getApRemainingSeconds() {
     if (!s_apActive) return 0;
-    uint32_t elapsed = (uint32_t)(esp_timer_get_time() / 1000) - s_lastApActivityTime;
+    int64_t elapsed = monotonicMs() - s_lastApActivityTime;
     if (elapsed >= AP_INACTIVITY_TIMEOUT_MS) return 0;
-    return (AP_INACTIVITY_TIMEOUT_MS - elapsed) / 1000;
+    return static_cast<uint32_t>((AP_INACTIVITY_TIMEOUT_MS - elapsed) / 1000LL);
 }
 
 bool NetworkManager::isEthernetDirectPcMode() {
@@ -1043,22 +1047,25 @@ void NetworkManager::checkNtpWatchdog() {
 
 void NetworkManager::checkDisconWatchdog() {
     if (g_config.discon_rst <= 0) {
+        s_disconTimerActive = false;
         s_disconStartTime = 0;
         return;
     }
     if (isConnected() || s_apActive) {
+        s_disconTimerActive = false;
         s_disconStartTime = 0;
         return;
     }
 
-    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
-    if (s_disconStartTime == 0) {
+    int64_t now = monotonicMs();
+    if (!s_disconTimerActive) {
         s_disconStartTime = now;
+        s_disconTimerActive = true;
         return;
     }
 
-    uint32_t elapsedSec = (now - s_disconStartTime) / 1000;
-    uint32_t maxSec = (uint32_t)g_config.discon_rst * 60;
+    int64_t elapsedSec = (now - s_disconStartTime) / 1000LL;
+    int64_t maxSec = static_cast<int64_t>(g_config.discon_rst) * 60LL;
 
     if (elapsedSec >= maxSec) {
         ESP_LOGE(TAG, "Watchdog Diskoneksi Terpicu! Terputus > %d menit. Melakukan Restart Sistem...",
@@ -1067,7 +1074,7 @@ void NetworkManager::checkDisconWatchdog() {
         snprintf(wdDetail, sizeof(wdDetail), "Watchdog diskoneksi terpicu (> %d menit)", g_config.discon_rst);
         NetLogService::log(NetCategory::SYSTEM, NetEvent::REBOOT, wdDetail);
         vTaskDelay(pdMS_TO_TICKS(150));
-        esp_restart();
+        gracefulRestart();
     }
 }
 
@@ -1076,6 +1083,10 @@ static bool isGatewayRouterAlive(uint32_t gw_ip) {
 
     int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sock < 0) return false;
+    if (sock >= FD_SETSIZE) {
+        close(sock);
+        return false;
+    }
 
     // Set non-blocking socket agar connect tidak memblokir supervisor task
     int flags = fcntl(sock, F_GETFL, 0);
@@ -1179,7 +1190,7 @@ void NetworkManager::checkFastLinkHealth() {
     if (g_config.connection_mode != static_cast<int>(ConnectionMode::WIFI)) return;
     if (s_manualConfigMode || s_apActive) return;
 
-    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    int64_t now = monotonicMs();
 
     // 2. Jika Wi-Fi Station belum terhubung atau sedang dalam masa pemulihan (grace period 10s)
     if (!s_wifiConnected || !s_wifiHasIp || s_staNetif == nullptr) {
@@ -1187,7 +1198,7 @@ void NetworkManager::checkFastLinkHealth() {
         return;
     }
 
-    if (s_lastReassociateTimeMs > 0 && (now - s_lastReassociateTimeMs) < 10000) {
+    if (s_hasReassociated && (now - s_lastReassociateTimeMs) < 10000LL) {
         s_gatewayRtoCount = 0;
         return;
     }
@@ -1203,13 +1214,14 @@ void NetworkManager::checkFastLinkHealth() {
     // 4. JITTER BERBASIS MAC (Pencegah thundering herd pada puluhan device)
     uint8_t mac[6] = {0};
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    uint32_t jitterMs = (mac[5] % 10) * 1000; // 0 - 9 detik
+    int64_t jitterMs = static_cast<int64_t>((mac[5] % 10) * 1000); // 0 - 9 detik
 
     // 5. Evaluasi interval backoff adaptif
-    if (s_lastFastLinkCheckMs > 0 && (now - s_lastFastLinkCheckMs) < (s_fastLinkBackoffIntervalMs + jitterMs)) {
+    if (s_hasFastLinkCheck && (now - s_lastFastLinkCheckMs) < (static_cast<int64_t>(s_fastLinkBackoffIntervalMs) + jitterMs)) {
         return;
     }
     s_lastFastLinkCheckMs = now;
+    s_hasFastLinkCheck = true;
 
     // 6. PROBE GATEWAY VIA UNICAST TCP 80
     esp_netif_ip_info_t ip_info = {};
@@ -1237,39 +1249,63 @@ void NetworkManager::checkFastLinkHealth() {
             s_gatewayRtoCount = 0;
             s_fastLinkBackoffIntervalMs = 15000;
             s_lastReassociateTimeMs = now;
+            s_hasReassociated = true;
             forceWifiReassociate("Router Unreachable / Zombie Link");
         }
     }
 }
 
-void NetworkManager::checkWifiDisconRetry() {
-    if (!shouldWifiStaConnect()) return;
-    if (s_wifiConnected) return;
+void NetworkManager::gracefulRestart() {
+    ESP_LOGW(TAG, "Menjalankan gracefulRestart(): sinkronisasi EEPROM & memutus sesi jaringan...");
+    NetLogService::syncLifetimeUptimeToEeprom();
+    MqttService::disconnect();
+    vTaskDelay(pdMS_TO_TICKS(100));
+    if (s_wifiDriverInitialized) {
+        esp_wifi_stop();
+    }
+    if (s_ethDriver) {
+        s_ethDriver->stop();
+    }
+    esp_restart();
+}
 
-    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
-    // Jika router sedang reboot fisik atau event loop terhenti, coba reconnect setiap 5 detik
-    if (s_lastDisconRetryMs == 0 || (now - s_lastDisconRetryMs) >= 5000) {
+void NetworkManager::checkWifiDisconRetry() {
+    static uint32_t s_wifiRetryIntervalMs = 5000;
+    if (!shouldWifiStaConnect()) return;
+    if (s_wifiConnected) {
+        s_wifiRetryIntervalMs = 5000;
+        return;
+    }
+
+    int64_t now = monotonicMs();
+    // Exponential backoff (5s -> 10s -> 20s -> 40s -> max 60s) saat router tidak tersedia
+    if (!s_hasDisconRetry || (now - s_lastDisconRetryMs) >= static_cast<int64_t>(s_wifiRetryIntervalMs)) {
         s_lastDisconRetryMs = now;
-        ESP_LOGI(TAG, "Watchdog Diskoneksi Wi-Fi: Mencoba ulang esp_wifi_connect (Interval 5s)...");
+        s_hasDisconRetry = true;
+        ESP_LOGI(TAG, "Watchdog Diskoneksi Wi-Fi: Mencoba ulang esp_wifi_connect (Interval %u ms)...",
+                 (unsigned int)s_wifiRetryIntervalMs);
         esp_err_t err = esp_wifi_connect();
         if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
             ESP_LOGW(TAG, "esp_wifi_connect: %s", esp_err_to_name(err));
+        }
+        if (s_wifiRetryIntervalMs < 60000) {
+            s_wifiRetryIntervalMs = (s_wifiRetryIntervalMs * 2 > 60000) ? 60000 : (s_wifiRetryIntervalMs * 2);
         }
     }
 }
 
 void NetworkManager::checkApInactivityTimeout() {
-    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    int64_t now = monotonicMs();
 
     // Jadwal delayed stop
-    if (s_pendingApStopMillis > 0 && (int32_t)(now - s_pendingApStopMillis) >= 0) {
+    if (s_pendingApStop.expired()) {
         stopConfigAP();
         return;
     }
 
     // Auto-timeout jika tidak ada aktivitas selama 300 detik (5 menit)
     if (s_apActive && s_manualConfigMode) {
-        if (now - s_lastApActivityTime > AP_INACTIVITY_TIMEOUT_MS) {
+        if ((now - s_lastApActivityTime) > AP_INACTIVITY_TIMEOUT_MS) {
             ESP_LOGW(TAG, "SoftAP tidak aktif selama 300 detik (5 menit). Menghentikan SoftAP secara otomatis.");
             stopConfigAP();
         }
@@ -1300,7 +1336,7 @@ void NetworkManager::checkDailyRestart() {
             snprintf(schDetail, sizeof(schDetail), "Jadwal restart harian (%02d:%02d) dieksekusi", targetH, targetM);
             NetLogService::log(NetCategory::SYSTEM, NetEvent::REBOOT, schDetail);
             vTaskDelay(pdMS_TO_TICKS(200));
-            esp_restart();
+            gracefulRestart();
         }
     }
 }

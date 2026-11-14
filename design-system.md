@@ -5401,5 +5401,19 @@ Setiap berkas master HTML terotentikasi (`index.html`, `test.html`, `log.html`, 
   - Segera setelah erase tuntas, LED memberikan feedback visual **Hijau Kedip** selama 600ms sebagai konfirmasi keberhasilan, lalu padam 400ms sebelum ESP32 melakukan reboot bersih (`esp_restart()`).
 
 
+## 150. Proteksi Anti-Autofill Form `/auth` & Feedback Rate-Limit Login (`auth.html` & `login.html`)
+
+- **Isolasi Autofill Browser pada `/auth` (`data/auth.html`)**:
+  - `<form id="authAdminValidation">` diberi `autocomplete="off"`; input akun/SSID/user (`#admin_user`, `#user_user`, `#w_ssid`, `#mqtt_user`) memakai `autocomplete="off"`, sedangkan seluruh input password (`#admin_pass`, `#user_pass`, `#w_password`, `#ap_password`, `#mqtt_password`) memakai `autocomplete="new-password"`.
+  - Guard JavaScript melacak interaksi nyata pengguna (`dataset.userEdited === "true"` melalui `keydown`/`paste`/trusted `input` pada elemen aktif) sehingga injeksi autofill browser ke `#admin_user`/`#admin_pass`/`#user_user`/`#user_pass`/password lainnya otomatis dikembalikan ke `defaultValue` (`"••••••••"`) sebelum dirty-check maupun `handleAuthFormSubmit()`.
+- **Auto-Clear Password Wi-Fi Setelah Scan (`data/assets/js/app.js.gz`)**:
+  - Ketika operator memilih salah satu jaringan Wi-Fi dari modal pemindaian (`#wifiScanModal` / `.wifi-item`), nilai `#w_password` dikosongkan (`value = ""`), ditandai `dataset.userEdited = "true"`, memicu event `input` & `change` untuk dirty-check, lalu kursor difokuskan ke `#w_password`. Operator dapat mengetik password baru langsung tanpa menghapus mask `"••••••••"` terlebih dahulu, atau menekan Discard/Cancel (`#btnCancelChanges`) untuk memulihkan nilai awal beserta reset flag.
+- **Pemisahan Status Login `429` vs `401` (`data/login.html`)**:
+  - HTTP `429 Too Many Requests` kini menampilkan modal `"Too Many Attempts"` (ikon `warning`), terpisah dari modal `"Authentication Failed"` untuk HTTP `401`.
+- **Audit Log Backend (`src/web/web_routes.cpp`)**:
+  - `api_config_auth_handler()` mencatat flag `authCredChanged` bila ada perubahan aktual pada kredensial akun dan membedakan pesan `NetEvent::AUTH_UPDATE` di `NetLogService` tanpa mencetak password ke log.
+
+
+
 
 

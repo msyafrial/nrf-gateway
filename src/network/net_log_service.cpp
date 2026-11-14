@@ -19,6 +19,7 @@ static const char *TAG = "NET_LOG";
 namespace Iotaru::Network {
 
 static SemaphoreHandle_t s_logMutex = nullptr;
+static SemaphoreHandle_t s_statsMutex = nullptr;
 static NetLogEntry s_logs[MAX_NET_LOGS];
 static size_t s_logCount = 0;
 static uint32_t s_nextId = 1;
@@ -39,6 +40,7 @@ static uint8_t s_lastResetReason = static_cast<uint8_t>(ESP_RST_UNKNOWN);
 static uint32_t s_lastStatsCommitUptime = 0;
 static std::atomic<uint32_t> s_baseLifetimeUptimeSec{0};
 static uint32_t s_lastPeriodicUptimeCommit = 0;
+static std::atomic<bool> s_statsDirty{false};
 
 static uint16_t calculateStatsChecksum(const Bsp::SystemStatsStore& s) {
     const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);
@@ -70,6 +72,10 @@ static void loadStatsFromEeprom() {
 
 static void saveStatsToEeprom() {
     if (!Bsp::At24c256::isDetected()) return;
+    if (s_statsMutex == nullptr) {
+        s_statsMutex = xSemaphoreCreateMutex();
+    }
+    bool locked = (s_statsMutex != nullptr && xSemaphoreTake(s_statsMutex, pdMS_TO_TICKS(100)) == pdTRUE);
     Bsp::SystemStatsStore store = {};
     store.magic = Bsp::SYSTEM_STATS_MAGIC;
     store.boot_count = s_bootCount.load();
@@ -82,9 +88,16 @@ static void saveStatsToEeprom() {
     store.last_reset_reason = s_lastResetReason;
     store.checksum = calculateStatsChecksum(store);
 
-    Bsp::At24c256::writePage(Bsp::EEPROM_SYSTEM_STATS_ADDR,
-                             reinterpret_cast<const uint8_t*>(&store),
-                             sizeof(store));
+    if (!Bsp::At24c256::enqueuePageWrite(Bsp::EEPROM_SYSTEM_STATS_ADDR,
+                                         reinterpret_cast<const uint8_t*>(&store),
+                                         sizeof(store))) {
+        Bsp::At24c256::writePage(Bsp::EEPROM_SYSTEM_STATS_ADDR,
+                                 reinterpret_cast<const uint8_t*>(&store),
+                                 sizeof(store));
+    }
+    if (locked) {
+        xSemaphoreGive(s_statsMutex);
+    }
 }
 
 static const char* resetReasonToString(esp_reset_reason_t reason) {
@@ -349,6 +362,7 @@ void NetLogService::clearLogs() {
     resetDisconnectCounters();
 
     if (Bsp::At24c256::isDetected()) {
+        Bsp::At24c256::flushAsyncWrites();
         // Bersihkan magic marker pada slot EEPROM dengan cooperative yielding agar tidak starvation (VULN-MEM-05)
         for (size_t i = 0; i < Pins::AT24C256_TOTAL_SLOTS; i++) {
             uint32_t magic = 0, seq = 0;
@@ -469,13 +483,14 @@ void NetLogService::saveToEeprom(const NetLogEntry& entry) {
     }
     slotData.checksum = cs;
 
-    esp_err_t err = Bsp::At24c256::writeSlot(nextSlot, slotData);
-    if (err == ESP_OK) {
+    if (Bsp::At24c256::enqueueSlotWrite(nextSlot, slotData)) {
         s_headSlot = nextSlot;
-        ESP_LOGD(TAG, "[EEPROM-ROLLING] Tulis log #%u ke Slot %d (Addr 0x%04X)",
+        ESP_LOGD(TAG, "[EEPROM-ROLLING] Antre tulis log #%u ke Slot %d (Addr 0x%04X)",
                  (unsigned int)entry.id, nextSlot, nextSlot * (int)Pins::AT24C256_SLOT_SIZE);
+    } else if (Bsp::At24c256::writeSlot(nextSlot, slotData) == ESP_OK) {
+        s_headSlot = nextSlot;
     } else {
-        ESP_LOGE(TAG, "[EEPROM-ROLLING] Gagal menulis slot %d: %s", nextSlot, esp_err_to_name(err));
+        ESP_LOGE(TAG, "[EEPROM-ROLLING] Gagal menulis slot %d", nextSlot);
     }
 }
 
@@ -518,11 +533,7 @@ void NetLogService::recordDisconnect(NetCategory cat) {
         default: break;
     }
 
-    uint32_t nowSec = static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);
-    if (nowSec - s_lastStatsCommitUptime >= 3) {
-        s_lastStatsCommitUptime = nowSec;
-        saveStatsToEeprom();
-    }
+    s_statsDirty.store(true, std::memory_order_release);
 }
 
 uint64_t NetLogService::getLifetimeUptimeSec() {
@@ -531,13 +542,19 @@ uint64_t NetLogService::getLifetimeUptimeSec() {
 }
 
 void NetLogService::syncLifetimeUptimeToEeprom() {
+    s_statsDirty.store(false, std::memory_order_release);
     saveStatsToEeprom();
+    Bsp::At24c256::flushAsyncWrites();
 }
 
 void NetLogService::tickPeriodicCommit() {
     uint32_t nowSec = static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);
-    if (nowSec - s_lastPeriodicUptimeCommit >= 1800) { // Setiap 30 menit
+    bool dirty = s_statsDirty.load(std::memory_order_acquire);
+    if ((dirty && (nowSec - s_lastStatsCommitUptime) >= 15) ||
+        (nowSec - s_lastPeriodicUptimeCommit >= 1800)) { // Setiap 30 menit atau 15s pasca-disconnect
+        s_lastStatsCommitUptime = nowSec;
         s_lastPeriodicUptimeCommit = nowSec;
+        s_statsDirty.store(false, std::memory_order_release);
         saveStatsToEeprom();
     }
 }
@@ -579,6 +596,7 @@ void NetLogService::factoryResetLogsExceptLifetime() {
     }
 
     if (Bsp::At24c256::isDetected()) {
+        Bsp::At24c256::flushAsyncWrites();
         // 2. Baca SystemStatsStore dari EEPROM untuk mengamankan lifetime_uptime_sec
         Bsp::SystemStatsStore stats = {};
         bool hasValidStats = false;

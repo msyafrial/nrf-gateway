@@ -61,6 +61,7 @@ public:
     static void getMdnsHostname(char* outBuf, size_t maxLen);
     static void updateSntpServer(const char* server);
     static void resetFastLinkBackoff();
+    static void gracefulRestart();
 
 private:
     static void initWifiStation();

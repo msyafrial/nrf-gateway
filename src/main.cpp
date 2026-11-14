@@ -14,6 +14,8 @@
 #include "ota_service.hpp"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_timer.h"
+#include "esp_crc.h"
 #include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -21,6 +23,20 @@
 static const char *TAG = "MAIN";
 
 using namespace Iotaru;
+
+struct CrashBreadcrumb {
+    uint32_t magic;
+    uint32_t uptime_sec;
+    uint32_t free_heap_kb;
+    uint16_t queue_load;
+    uint16_t crc;
+};
+static constexpr uint32_t BREADCRUMB_MAGIC = 0x4252434D; // "BRCM"
+RTC_NOINIT_ATTR static CrashBreadcrumb s_rtcBreadcrumb;
+
+static uint16_t calcBreadcrumbCrc(const CrashBreadcrumb& b) {
+    return esp_crc16_le(0, reinterpret_cast<const uint8_t*>(&b), offsetof(CrashBreadcrumb, crc));
+}
 
 static Network::EthernetW5500 s_ethW5500;
 
@@ -33,6 +49,12 @@ static void supervisorTask(void *pvParameters) {
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
         esp_task_wdt_reset();
+
+        s_rtcBreadcrumb.magic = BREADCRUMB_MAGIC;
+        s_rtcBreadcrumb.uptime_sec = static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);
+        s_rtcBreadcrumb.free_heap_kb = static_cast<uint32_t>(esp_get_free_heap_size() / 1024);
+        s_rtcBreadcrumb.queue_load = static_cast<uint16_t>(Core::BeaconPipeline::getQueueLoad());
+        s_rtcBreadcrumb.crc = calcBreadcrumbCrc(s_rtcBreadcrumb);
 
         // 1. Tick network & watchdog timers & EEPROM lifetime stats
         Network::NetworkManager::tickWatchdog();
@@ -104,6 +126,20 @@ extern "C" void app_main(void) {
     ESP_LOGI(TAG, ">>> IOTARU SG-10 ESP32 Gateway (Native ESP-IDF) <<<");
     ESP_LOGI(TAG, "==================================================");
 
+    esp_reset_reason_t rstReason = esp_reset_reason();
+    if (rstReason == ESP_RST_PANIC || rstReason == ESP_RST_INT_WDT ||
+        rstReason == ESP_RST_TASK_WDT || rstReason == ESP_RST_WDT ||
+        rstReason == ESP_RST_BROWNOUT) {
+        if (s_rtcBreadcrumb.magic == BREADCRUMB_MAGIC &&
+            s_rtcBreadcrumb.crc == calcBreadcrumbCrc(s_rtcBreadcrumb)) {
+            ESP_LOGW(TAG, "[CRASH-BREADCRUMB] ResetReason=%d | LastUptime=%lus | FreeHeap=%luKB | QLoad=%u",
+                     (int)rstReason,
+                     (unsigned long)s_rtcBreadcrumb.uptime_sec,
+                     (unsigned long)s_rtcBreadcrumb.free_heap_kb,
+                     (unsigned int)s_rtcBreadcrumb.queue_load);
+        }
+    }
+
     // Set zona waktu WIB (UTC+7) di awal eksekusi sistem
     setenv("TZ", "WIB-7", 1);
     tzset();
@@ -161,6 +197,7 @@ extern "C" void app_main(void) {
 
     // 4. Inisialisasi Hardware I2C AT24C256, Filesystem LittleFS & NetLogService
     Bsp::At24c256::init();
+    Bsp::At24c256::startAsyncWriter();
     Web::Server::initStorage();
     Network::NetLogService::init();
 

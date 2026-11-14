@@ -17,7 +17,9 @@
 #include <sys/stat.h>
 #include <cstring>
 #include <cstdio>
+#include <cstdarg>
 #include <atomic>
+#include <memory>
 #include <esp_timer.h>
 
 static const char *TAG = "WebServer";
@@ -204,7 +206,11 @@ static esp_err_t ws_pre_handshake_cb(httpd_req_t *req) {
     if (origin_len > 0) {
         char origin_buf[128];
         if (origin_len < sizeof(origin_buf) && httpd_req_get_hdr_value_str(req, "Origin", origin_buf, sizeof(origin_buf)) == ESP_OK) {
-            if (strcmp(origin_buf, "null") != 0) {
+            if (strcmp(origin_buf, "null") == 0) {
+                ESP_LOGW(TAG, "WS Handshake DITOLAK (CSWSH): Origin 'null'");
+                return ESP_FAIL;
+            }
+            {
                 const char *origin_host = origin_buf;
                 if (strncmp(origin_host, "http://", 7) == 0) {
                     origin_host += 7;
@@ -406,108 +412,128 @@ void broadcast_live_ws_stats() {
         Network::NetworkManager::recordApActivity();
     }
 
-    cJSON *root = cJSON_CreateObject();
-    if (!root) return;
-
-    cJSON_AddNumberToObject(root, "raw_ingress", Core::BeaconPipeline::getTotalFramesIngress());
-    cJSON_AddNumberToObject(root, "scan_speed", Core::BeaconPipeline::getScanSpeed());
-    cJSON_AddNumberToObject(root, "drop_speed", Core::BeaconPipeline::getDropSpeed());
-    cJSON_AddNumberToObject(root, "beacons_read", Core::BeaconPipeline::getTotalBeaconsRead());
-    cJSON_AddNumberToObject(root, "read_speed", Core::BeaconPipeline::getReadSpeed());
-    cJSON_AddNumberToObject(root, "mqtt_speed", Core::BeaconPipeline::getMqttSpeed());
-    cJSON_AddNumberToObject(root, "mqtt_published", Core::BeaconPipeline::getTotalMqttPublished());
-    cJSON_AddNumberToObject(root, "dropped_count", Core::BeaconPipeline::getTotalDropped());
-    cJSON_AddNumberToObject(root, "free_heap", esp_get_free_heap_size() / 1024);
-    cJSON_AddNumberToObject(root, "queue_load", Core::BeaconPipeline::getQueueLoad());
-    cJSON_AddNumberToObject(root, "queue_max", (double)BEACON_QUEUE_MAX);
-    cJSON_AddNumberToObject(root, "batch_load", Network::MqttService::getBatchBufferLoad());
-    cJSON_AddNumberToObject(root, "batch_max", g_config.batch_max);
-    cJSON_AddNumberToObject(root, "batch_pkt_size", Network::MqttService::getLastBatchPktCount());
-    cJSON_AddNumberToObject(root, "net_bandwidth", Network::MqttService::getBandwidthKBps());
-    cJSON_AddNumberToObject(root, "total_bytes", (double)Network::MqttService::getTotalWireBytes());
-    cJSON_AddBoolToObject(root, "ap_active", Network::NetworkManager::isApActive());
-    cJSON_AddNumberToObject(root, "ap_remain_sec", Network::NetworkManager::getApRemainingSeconds());
-
-    cJSON *beacons_arr = cJSON_CreateArray();
-    static LiveBeaconItem s_live_buf[30];
     size_t max_sample = (esp_get_free_heap_size() > 50000) ? 30 : 10;
-    size_t count = Core::BeaconPipeline::copyLiveBeacons(s_live_buf, max_sample);
+    std::unique_ptr<LiveBeaconItem[]> live_buf(new (std::nothrow) LiveBeaconItem[max_sample]);
+    std::unique_ptr<DroppedBeaconItem[]> drop_buf(new (std::nothrow) DroppedBeaconItem[max_sample]);
+    constexpr size_t WS_JSON_CAP = 13312;
+    std::unique_ptr<char[]> json(new (std::nothrow) char[WS_JSON_CAP]);
+    if (!live_buf || !drop_buf || !json) return;
 
+    size_t pos = 0;
+    auto appendFmt = [&](const char *fmt, ...) -> bool {
+        if (pos >= WS_JSON_CAP) return false;
+        va_list args;
+        va_start(args, fmt);
+        int n = vsnprintf(json.get() + pos, WS_JSON_CAP - pos, fmt, args);
+        va_end(args);
+        if (n < 0 || static_cast<size_t>(n) >= (WS_JSON_CAP - pos)) {
+            return false;
+        }
+        pos += static_cast<size_t>(n);
+        return true;
+    };
+
+    if (!appendFmt(
+        "{\"raw_ingress\":%lu,\"scan_speed\":%lu,\"drop_speed\":%lu,"
+        "\"beacons_read\":%lu,\"read_speed\":%lu,\"mqtt_speed\":%lu,"
+        "\"mqtt_published\":%lu,\"dropped_count\":%lu,\"free_heap\":%lu,"
+        "\"queue_load\":%u,\"queue_max\":%u,\"batch_load\":%u,"
+        "\"batch_max\":%d,\"batch_pkt_size\":%u,\"net_bandwidth\":%.2f,"
+        "\"total_bytes\":%llu,\"ap_active\":%s,\"ap_remain_sec\":%lu,\"beacons\":[",
+        (unsigned long)Core::BeaconPipeline::getTotalFramesIngress(),
+        (unsigned long)Core::BeaconPipeline::getScanSpeed(),
+        (unsigned long)Core::BeaconPipeline::getDropSpeed(),
+        (unsigned long)Core::BeaconPipeline::getTotalBeaconsRead(),
+        (unsigned long)Core::BeaconPipeline::getReadSpeed(),
+        (unsigned long)Core::BeaconPipeline::getMqttSpeed(),
+        (unsigned long)Core::BeaconPipeline::getTotalMqttPublished(),
+        (unsigned long)Core::BeaconPipeline::getTotalDropped(),
+        (unsigned long)(esp_get_free_heap_size() / 1024),
+        (unsigned int)Core::BeaconPipeline::getQueueLoad(),
+        (unsigned int)BEACON_QUEUE_MAX,
+        (unsigned int)Network::MqttService::getBatchBufferLoad(),
+        g_config.batch_max,
+        (unsigned int)Network::MqttService::getLastBatchPktCount(),
+        (double)Network::MqttService::getBandwidthKBps(),
+        (unsigned long long)Network::MqttService::getTotalWireBytes(),
+        Network::NetworkManager::isApActive() ? "true" : "false",
+        (unsigned long)Network::NetworkManager::getApRemainingSeconds())) {
+        return;
+    }
+
+    static constexpr char HEX_LUT[] = "0123456789ABCDEF";
+    size_t count = Core::BeaconPipeline::copyLiveBeacons(live_buf.get(), max_sample);
     for (size_t i = 0; i < count; i++) {
-        cJSON *b = cJSON_CreateObject();
-        cJSON_AddStringToObject(b, "code", s_live_buf[i].code);
-        cJSON_AddStringToObject(b, "tag", s_live_buf[i].tag);
-        cJSON_AddNumberToObject(b, "rssi", s_live_buf[i].rssi);
-        if (s_live_buf[i].batt == 0) {
-            cJSON_AddNullToObject(b, "batt");
+        char battBuf[16];
+        if (live_buf[i].batt == 0) {
+            strlcpy(battBuf, "null", sizeof(battBuf));
         } else {
-            cJSON_AddNumberToObject(b, "batt", s_live_buf[i].batt);
+            snprintf(battBuf, sizeof(battBuf), "%u", (unsigned int)live_buf[i].batt);
         }
-
-        char macStr[18];
-        snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-                 s_live_buf[i].mac[0], s_live_buf[i].mac[1], s_live_buf[i].mac[2],
-                 s_live_buf[i].mac[3], s_live_buf[i].mac[4], s_live_buf[i].mac[5]);
-        cJSON_AddStringToObject(b, "mac", macStr);
-        cJSON_AddNumberToObject(b, "adv_type", s_live_buf[i].adv_type);
-
         char hexBuf[85];
         for (size_t h = 0; h < 42; h++) {
-            snprintf(hexBuf + (h * 2), 3, "%02X", s_live_buf[i].raw_frame[h]);
+            uint8_t v = live_buf[i].raw_frame[h];
+            hexBuf[h * 2]     = HEX_LUT[(v >> 4) & 0x0F];
+            hexBuf[h * 2 + 1] = HEX_LUT[v & 0x0F];
         }
         hexBuf[84] = '\0';
-        cJSON_AddStringToObject(b, "raw", hexBuf);
 
-        cJSON_AddItemToArray(beacons_arr, b);
+        if (!appendFmt(
+            "%s{\"code\":\"%s\",\"tag\":\"%s\",\"rssi\":%d,\"batt\":%s,"
+            "\"mac\":\"%02X:%02X:%02X:%02X:%02X:%02X\",\"adv_type\":%u,\"raw\":\"%s\"}",
+            (i > 0) ? "," : "",
+            live_buf[i].code,
+            live_buf[i].tag,
+            (int)live_buf[i].rssi,
+            battBuf,
+            live_buf[i].mac[0], live_buf[i].mac[1], live_buf[i].mac[2],
+            live_buf[i].mac[3], live_buf[i].mac[4], live_buf[i].mac[5],
+            (unsigned int)live_buf[i].adv_type,
+            hexBuf)) {
+            break;
+        }
     }
-    cJSON_AddItemToObject(root, "beacons", beacons_arr);
 
-    // Ringkasan Alasan Drop
-    cJSON *drop_summary = cJSON_CreateObject();
-    cJSON_AddNumberToObject(drop_summary, "ttl", Core::BeaconPipeline::getDropTtlCount());
-    cJSON_AddNumberToObject(drop_summary, "rssi", Core::BeaconPipeline::getDropRssiCount());
-    cJSON_AddNumberToObject(drop_summary, "uuid", Core::BeaconPipeline::getDropUuidCount());
-    cJSON_AddNumberToObject(drop_summary, "major", Core::BeaconPipeline::getDropMajorCount());
-    cJSON_AddNumberToObject(drop_summary, "unknown", Core::BeaconPipeline::getDropUnknownCount());
-    cJSON_AddNumberToObject(drop_summary, "queue", Core::BeaconPipeline::getDropQueueCount());
-    cJSON_AddNumberToObject(drop_summary, "mqtt", Core::BeaconPipeline::getDropMqttCount());
-    cJSON_AddItemToObject(root, "drop_summary", drop_summary);
+    if (!appendFmt(
+        "],\"drop_summary\":{\"ttl\":%lu,\"rssi\":%lu,\"uuid\":%lu,"
+        "\"major\":%lu,\"unknown\":%lu,\"queue\":%lu,\"mqtt\":%lu},\"dropped_beacons\":[",
+        (unsigned long)Core::BeaconPipeline::getDropTtlCount(),
+        (unsigned long)Core::BeaconPipeline::getDropRssiCount(),
+        (unsigned long)Core::BeaconPipeline::getDropUuidCount(),
+        (unsigned long)Core::BeaconPipeline::getDropMajorCount(),
+        (unsigned long)Core::BeaconPipeline::getDropUnknownCount(),
+        (unsigned long)Core::BeaconPipeline::getDropQueueCount(),
+        (unsigned long)Core::BeaconPipeline::getDropMqttCount())) {
+        return;
+    }
 
-    // Snapshot Event Dropped Beacons
-    cJSON *dropped_arr = cJSON_CreateArray();
-    static DroppedBeaconItem s_drop_buf[30];
-    size_t drop_count = Core::BeaconPipeline::copyDroppedBeacons(s_drop_buf, max_sample);
-
+    size_t drop_count = Core::BeaconPipeline::copyDroppedBeacons(drop_buf.get(), max_sample);
     for (size_t i = 0; i < drop_count; i++) {
-        cJSON *d = cJSON_CreateObject();
-        cJSON_AddStringToObject(d, "code", s_drop_buf[i].code);
-        cJSON_AddStringToObject(d, "tag", s_drop_buf[i].tag);
-        cJSON_AddNumberToObject(d, "rssi", s_drop_buf[i].rssi);
-        cJSON_AddNumberToObject(d, "reason", (int)s_drop_buf[i].reason);
-
-        char macStr[18];
-        snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-                 s_drop_buf[i].mac[0], s_drop_buf[i].mac[1], s_drop_buf[i].mac[2],
-                 s_drop_buf[i].mac[3], s_drop_buf[i].mac[4], s_drop_buf[i].mac[5]);
-        cJSON_AddStringToObject(d, "mac", macStr);
-
         char hexBuf[85];
         for (size_t h = 0; h < 42; h++) {
-            snprintf(hexBuf + (h * 2), 3, "%02X", s_drop_buf[i].raw_frame[h]);
+            uint8_t v = drop_buf[i].raw_frame[h];
+            hexBuf[h * 2]     = HEX_LUT[(v >> 4) & 0x0F];
+            hexBuf[h * 2 + 1] = HEX_LUT[v & 0x0F];
         }
         hexBuf[84] = '\0';
-        cJSON_AddStringToObject(d, "raw", hexBuf);
 
-        cJSON_AddItemToArray(dropped_arr, d);
+        if (!appendFmt(
+            "%s{\"code\":\"%s\",\"tag\":\"%s\",\"rssi\":%d,\"reason\":%d,"
+            "\"mac\":\"%02X:%02X:%02X:%02X:%02X:%02X\",\"raw\":\"%s\"}",
+            (i > 0) ? "," : "",
+            drop_buf[i].code,
+            drop_buf[i].tag,
+            (int)drop_buf[i].rssi,
+            (int)drop_buf[i].reason,
+            drop_buf[i].mac[0], drop_buf[i].mac[1], drop_buf[i].mac[2],
+            drop_buf[i].mac[3], drop_buf[i].mac[4], drop_buf[i].mac[5],
+            hexBuf)) {
+            break;
+        }
     }
-    cJSON_AddItemToObject(root, "dropped_beacons", dropped_arr);
 
-    char *out = cJSON_PrintUnformatted(root);
-    if (out) {
-        broadcast_ws_text(out);
-        cJSON_free(out);
-    }
-    cJSON_Delete(root);
+    if (!appendFmt("]}")) return;
+    broadcast_ws_text(json.get());
 }
 
 static void telemetry_task_func(void *arg) {

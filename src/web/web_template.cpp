@@ -88,7 +88,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
     out_buf[0] = '\0';
 
     if (key == "model" || key == "device_model") {
-        html_escape(g_config.device_model[0] != '\0' ? g_config.device_model : "EMPTY", out_buf, max_len);
+        html_escape(cfg.device_model[0] != '\0' ? cfg.device_model : "EMPTY", out_buf, max_len);
     } else if (key == "ap_ssid") {
         Core::ConfigStore::getModuleId(out_buf, max_len);
     } else if (key == "ap_banner_active") {
@@ -98,7 +98,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
     } else if (key == "mdns_hostname") {
         Network::NetworkManager::getMdnsHostname(out_buf, max_len);
     } else if (key == "device_version") {
-        html_escape(g_config.device_version, out_buf, max_len);
+        html_escape(cfg.device_version, out_buf, max_len);
     } else if (key == "firmware_version") {
         snprintf(out_buf, max_len, "%s", FIRMWARE_VERSION);
     } else if (key == "ui_version") {
@@ -117,13 +117,13 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
         bool eth_hw = Network::NetworkManager::isEthernetHardwareDetected();
         snprintf(out_buf, max_len, "%s", eth_hw ? "" : "display:none;");
     } else if (key == "mac_label") {
-        snprintf(out_buf, max_len, (g_config.connection_mode == 1 || Network::NetworkManager::isEthernetDirectPcMode()) ? "MAC Address (LAN)" : "MAC Address (Wi-Fi)");
+        snprintf(out_buf, max_len, (cfg.connection_mode == 1 || Network::NetworkManager::isEthernetDirectPcMode()) ? "MAC Address (LAN)" : "MAC Address (Wi-Fi)");
     } else if (key == "connection_mode") {
         snprintf(out_buf, max_len, "%d", cfg.connection_mode);
     } else if (key == "net_status") {
         bool is_conn = Network::NetworkManager::isConnected();
         if (Network::NetworkManager::isEthernetDirectPcMode()) {
-            if (g_config.connection_mode == 0 && is_conn) {
+            if (cfg.connection_mode == 0 && is_conn) {
                 snprintf(out_buf, max_len, "Wi-Fi + Direct LAN (192.168.4.1)");
             } else {
                 snprintf(out_buf, max_len, "Ethernet (Direct PC 192.168.4.1)");
@@ -132,7 +132,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
             char ipBuf[32];
             Network::NetworkManager::getActiveIp(ipBuf, sizeof(ipBuf));
             snprintf(out_buf, max_len, "Ethernet (Peer Slave %s)", ipBuf);
-        } else if (g_config.connection_mode == 1) {
+        } else if (cfg.connection_mode == 1) {
             auto *drv = Network::NetworkManager::getEthernetDriver();
             if (is_conn && drv) {
                 snprintf(out_buf, max_len, "Ethernet (%uM %s)",
@@ -151,7 +151,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
             snprintf(out_buf, max_len, "%s", Network::NetworkManager::isConnected() ? "conn" : "offline");
         }
     } else if (key == "signal_spec") {
-        if (g_config.connection_mode == 1) {
+        if (cfg.connection_mode == 1) {
             auto *drv = Network::NetworkManager::getEthernetDriver();
             if (drv && drv->isConnected()) {
                 snprintf(out_buf, max_len, "%u Mbps (%s Duplex)",
@@ -195,7 +195,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
     } else if (key == "header_mode_pill_class") {
         if (Network::NetworkManager::isEthernetDirectPcMode() || Network::NetworkManager::isEthernetPeerSlaveMode()) {
             snprintf(out_buf, max_len, "mode-smart");
-        } else if (g_config.connection_mode == 1) {
+        } else if (cfg.connection_mode == 1) {
             snprintf(out_buf, max_len, "mode-eth");
         } else {
             snprintf(out_buf, max_len, "mode-wifi");
@@ -203,7 +203,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
     } else if (key == "network_mode_desc") {
         if (Network::NetworkManager::isEthernetDirectPcMode() || Network::NetworkManager::isEthernetPeerSlaveMode()) {
             snprintf(out_buf, max_len, "Direct LAN Active — Technician direct access via IP 192.168.4.1");
-        } else if (g_config.connection_mode == 1) {
+        } else if (cfg.connection_mode == 1) {
             snprintf(out_buf, max_len, Network::NetworkManager::isConnected() ? "Ethernet Mode (LAN) — Physical cable active as primary uplink" : "Ethernet Mode (LAN) — Waiting for physical cable link");
         } else {
             snprintf(out_buf, max_len, Network::NetworkManager::isConnected() ? "Wi-Fi Standalone Mode — Wireless link active as primary uplink" : "Wi-Fi Standalone Mode — Waiting for Wi-Fi connection");
@@ -211,7 +211,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
     } else if (key == "conn_mode_text") {
         if (Network::NetworkManager::isEthernetDirectPcMode() || Network::NetworkManager::isEthernetPeerSlaveMode()) {
             snprintf(out_buf, max_len, "SMART CONNECT");
-        } else if (g_config.connection_mode == 1) {
+        } else if (cfg.connection_mode == 1) {
             snprintf(out_buf, max_len, "ETHERNET");
         } else {
             snprintf(out_buf, max_len, "WI-FI");
@@ -219,7 +219,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
     } else if (key == "conn_mode_class") {
         if (Network::NetworkManager::isEthernetDirectPcMode() || Network::NetworkManager::isEthernetPeerSlaveMode()) {
             snprintf(out_buf, max_len, "mode-smart");
-        } else if (g_config.connection_mode == 1) {
+        } else if (cfg.connection_mode == 1) {
             snprintf(out_buf, max_len, "mode-eth");
         } else {
             snprintf(out_buf, max_len, "mode-wifi");
@@ -227,39 +227,39 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
     } else if (key == "conn_mqtt_class") {
         snprintf(out_buf, max_len, Network::MqttService::isConnected() ? "mqtt-online" : "mqtt-offline");
     } else if (key == "wifi_signal_spec") {
-        if (Network::NetworkManager::isConnected() && g_config.connection_mode == 0) {
+        if (Network::NetworkManager::isConnected() && cfg.connection_mode == 0) {
             wifi_ap_record_t info;
             if (esp_wifi_sta_get_ap_info(&info) == ESP_OK) {
                 snprintf(out_buf, max_len, "%d dBm", info.rssi);
             } else {
                 snprintf(out_buf, max_len, "-");
             }
-        } else if (g_config.connection_mode == 1) {
+        } else if (cfg.connection_mode == 1) {
             snprintf(out_buf, max_len, "N/A (Radio Off)");
         } else {
             snprintf(out_buf, max_len, "-");
         }
     } else if (key == "wifi_ssid_display" || key == "wifi_ssid_title") {
-        if (Network::NetworkManager::isConnected() && g_config.connection_mode == 0) {
+        if (Network::NetworkManager::isConnected() && cfg.connection_mode == 0) {
             wifi_ap_record_t info;
             char raw_ssid[33] = "";
             if (esp_wifi_sta_get_ap_info(&info) == ESP_OK && info.ssid[0] != '\0') {
                 strlcpy(raw_ssid, (const char*)info.ssid, sizeof(raw_ssid));
-            } else if (g_config.w_ssid[0] != '\0') {
-                strlcpy(raw_ssid, g_config.w_ssid, sizeof(raw_ssid));
+            } else if (cfg.w_ssid[0] != '\0') {
+                strlcpy(raw_ssid, cfg.w_ssid, sizeof(raw_ssid));
             }
             html_escape(raw_ssid, out_buf, max_len);
         } else {
             out_buf[0] = '\0';
         }
     } else if (key == "wifi_ssid_style") {
-        if (Network::NetworkManager::isConnected() && g_config.connection_mode == 0) {
+        if (Network::NetworkManager::isConnected() && cfg.connection_mode == 0) {
             snprintf(out_buf, max_len, "display: inline-block;");
         } else {
             snprintf(out_buf, max_len, "display: none;");
         }
     } else if (key == "wifi_role_label") {
-        if (g_config.connection_mode == 1) {
+        if (cfg.connection_mode == 1) {
             snprintf(out_buf, max_len, "Radio Inactive (LAN Mode)");
         } else if (Network::NetworkManager::isConnected()) {
             snprintf(out_buf, max_len, "Primary Link (WLAN)");
@@ -267,7 +267,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
             snprintf(out_buf, max_len, "Wi-Fi Disconnected");
         }
     } else if (key == "wifi_role_class") {
-        if (g_config.connection_mode == 1) {
+        if (cfg.connection_mode == 1) {
             snprintf(out_buf, max_len, "slate");
         } else if (Network::NetworkManager::isConnected()) {
             snprintf(out_buf, max_len, "emerald");
@@ -275,7 +275,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
             snprintf(out_buf, max_len, "amber");
         }
     } else if (key == "wifi_status_text") {
-        if (g_config.connection_mode == 1) {
+        if (cfg.connection_mode == 1) {
             snprintf(out_buf, max_len, "Disabled");
         } else if (Network::NetworkManager::isConnected()) {
             snprintf(out_buf, max_len, "Active");
@@ -283,7 +283,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
             snprintf(out_buf, max_len, "Offline");
         }
     } else if (key == "wifi_status_class") {
-        if (g_config.connection_mode == 1) {
+        if (cfg.connection_mode == 1) {
             snprintf(out_buf, max_len, "slate");
         } else if (Network::NetworkManager::isConnected()) {
             snprintf(out_buf, max_len, "active");
@@ -291,7 +291,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
             snprintf(out_buf, max_len, "amber");
         }
     } else if (key == "wifi_card_class") {
-        snprintf(out_buf, max_len, (g_config.connection_mode != 1 && Network::NetworkManager::isConnected()) ? "active-online" : "");
+        snprintf(out_buf, max_len, (cfg.connection_mode != 1 && Network::NetworkManager::isConnected()) ? "active-online" : "");
     } else if (key == "eth_role_label") {
         auto *drv = Network::NetworkManager::getEthernetDriver();
         bool link_up = drv && drv->isConnected();
@@ -379,21 +379,21 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
     } else if (key == "mqtt_badge_class") {
         snprintf(out_buf, max_len, "%s", Network::MqttService::isConnected() ? "mqtt-online" : "mqtt-offline");
     } else if (key == "mqtt_broker_host") {
-        if (g_config.mqtt_host[0] != '\0') {
-            html_escape(g_config.mqtt_host, out_buf, max_len);
+        if (cfg.mqtt_host[0] != '\0') {
+            html_escape(cfg.mqtt_host, out_buf, max_len);
         } else {
             snprintf(out_buf, max_len, "—");
         }
     } else if (key == "mqtt_broker_port") {
-        snprintf(out_buf, max_len, "%d", g_config.mqtt_port);
+        snprintf(out_buf, max_len, "%d", cfg.mqtt_port);
     } else if (key == "mqtt_tls_badge") {
-        if (g_config.mqtt_use_ssl == 1) {
+        if (cfg.mqtt_use_ssl == 1) {
             snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge active\"><svg width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" style=\"vertical-align:-1px;margin-right:3px;\"><rect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\" ry=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 10 0v4\"/></svg>TLS Active</span>");
         } else {
             snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge slate\"><svg width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" style=\"vertical-align:-1px;margin-right:3px;\"><rect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\" ry=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 9.9 -1\"/></svg>Plain TCP</span>");
         }
     } else if (key == "mqtt_qos_badge") {
-        if (g_config.mqtt_qos == 0) {
+        if (cfg.mqtt_qos == 0) {
             snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge amber\">QoS 0</span>");
         } else {
             snprintf(out_buf, max_len, "<span class=\"sg-subcard-status-badge active\">QoS 1</span>");
@@ -509,9 +509,9 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
     } else if (key == "scan_mode_active_active") {
         snprintf(out_buf, max_len, "%s", (cfg.scan_mode != 1) ? "active" : "");
     } else if (key == "scan_mode_text") {
-        snprintf(out_buf, max_len, "%s", (g_config.scan_mode == 1) ? "Passive" : "Active");
+        snprintf(out_buf, max_len, "%s", (cfg.scan_mode == 1) ? "Passive" : "Active");
     } else if (key == "scan_mode_color") {
-        snprintf(out_buf, max_len, "%s", (g_config.scan_mode == 1) ? "#34d399" : "#38bdf8");
+        snprintf(out_buf, max_len, "%s", (cfg.scan_mode == 1) ? "#34d399" : "#38bdf8");
     } else if (key == "queue_max" || key == "beacon_queue_max") {
         snprintf(out_buf, max_len, "%u", (unsigned int)BEACON_QUEUE_MAX);
     } else if (key == "filter_uuid_en") {
@@ -607,7 +607,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
         snprintf(out_buf, max_len, "%d", (cfg.hb_interval >= 1 && cfg.hb_interval <= 300) ? cfg.hb_interval : 5);
     } else if (key == "mqtt_topic_prefix") {
         char dev_prefix[32] = {0};
-        const char* raw_model = g_config.device_model[0] ? g_config.device_model : "ar";
+        const char* raw_model = cfg.device_model[0] ? cfg.device_model : "ar";
         const char* dash_pos = strchr(raw_model, '-');
         size_t max_chars = (dash_pos != nullptr) ? static_cast<size_t>(dash_pos - raw_model) : 5;
         if (max_chars > sizeof(dev_prefix) - 1) max_chars = sizeof(dev_prefix) - 1;
@@ -624,7 +624,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
         char dev_prefix[32] = {0};
         char dev_id[16] = {0};
         Core::ConfigStore::getDeviceId(dev_id, sizeof(dev_id));
-        const char* raw_model = g_config.device_model[0] ? g_config.device_model : "ar";
+        const char* raw_model = cfg.device_model[0] ? cfg.device_model : "ar";
         const char* dash_pos = strchr(raw_model, '-');
         size_t max_chars = (dash_pos != nullptr) ? static_cast<size_t>(dash_pos - raw_model) : 5;
         if (max_chars > sizeof(dev_prefix) - 1) max_chars = sizeof(dev_prefix) - 1;

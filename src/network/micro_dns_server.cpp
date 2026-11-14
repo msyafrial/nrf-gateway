@@ -6,8 +6,11 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
+#include <atomic>
 #include <cstring>
 #include <cctype>
+#include <memory>
 
 static const char *TAG = "MICRO_DNS";
 
@@ -22,24 +25,31 @@ struct __attribute__((packed)) DnsHeader {
     uint16_t arcount;
 };
 
-static volatile bool s_running = false;
-static esp_netif_t*  s_netif = nullptr;
-static uint32_t      s_resolvedIp = 0xC0A80401; // 192.168.4.1 (Host Order)
-static TaskHandle_t  s_taskHandle = nullptr;
+static std::atomic<bool> s_running{false};
+static esp_netif_t*      s_netif = nullptr;
+static uint32_t          s_resolvedIp = 0xC0A80401; // 192.168.4.1 (Host Order)
+static TaskHandle_t      s_taskHandle = nullptr;
+static SemaphoreHandle_t s_exitSem = nullptr;
 
 bool MicroDnsServer::start(esp_netif_t* netif, uint32_t resolved_ip) {
-    if (s_running) {
+    if (s_running.load(std::memory_order_acquire)) {
         return true;
+    }
+
+    if (s_exitSem == nullptr) {
+        s_exitSem = xSemaphoreCreateBinary();
+    } else {
+        xSemaphoreTake(s_exitSem, 0);
     }
 
     s_netif = netif;
     s_resolvedIp = resolved_ip;
-    s_running = true;
+    s_running.store(true, std::memory_order_release);
 
     BaseType_t res = xTaskCreatePinnedToCore(
         taskWorker,
         "micro_dns_tsk",
-        2048, // 2 KB stack memadai untuk UDP DNS frame kecil tanpa heap malloc
+        3072, // 3 KB stack aman; rx/tx buffer 768B dialokasikan on-demand di heap saat AP aktif
         nullptr,
         3,    // Prioritas 3 (setara Web Server)
         &s_taskHandle,
@@ -48,7 +58,7 @@ bool MicroDnsServer::start(esp_netif_t* netif, uint32_t resolved_ip) {
 
     if (res != pdPASS) {
         ESP_LOGE(TAG, "Gagal membuat task Micro-DNS!");
-        s_running = false;
+        s_running.store(false, std::memory_order_release);
         return false;
     }
 
@@ -57,28 +67,28 @@ bool MicroDnsServer::start(esp_netif_t* netif, uint32_t resolved_ip) {
 }
 
 void MicroDnsServer::stop() {
-    if (!s_running) return;
+    if (!s_running.load(std::memory_order_acquire) && s_taskHandle == nullptr) return;
 
-    s_running = false;
+    s_running.store(false, std::memory_order_release);
 
-    // Tunggu task berhenti dengan batas waktu 800ms (> 500ms SO_RCVTIMEO)
-    for (int i = 0; i < 40 && s_taskHandle != nullptr; ++i) {
-        vTaskDelay(pdMS_TO_TICKS(20));
+    if (s_exitSem != nullptr && s_taskHandle != nullptr) {
+        xSemaphoreTake(s_exitSem, pdMS_TO_TICKS(800));
     }
     s_taskHandle = nullptr;
     ESP_LOGI(TAG, "Micro-DNS Server dihentikan");
 }
 
 bool MicroDnsServer::isRunning() {
-    return s_running;
+    return s_running.load(std::memory_order_acquire);
 }
 
 void MicroDnsServer::taskWorker(void* arg) {
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) {
         ESP_LOGE(TAG, "Gagal membuat socket UDP port 53: errno %d", errno);
-        s_running = false;
+        s_running.store(false, std::memory_order_release);
         s_taskHandle = nullptr;
+        if (s_exitSem) xSemaphoreGive(s_exitSem);
         vTaskDelete(nullptr);
         return;
     }
@@ -116,19 +126,28 @@ void MicroDnsServer::taskWorker(void* arg) {
         return;
     }
 
-    uint8_t rx_buf[384];
-    uint8_t tx_buf[384];
+    constexpr size_t DNS_BUF_SZ = 384;
+    auto rx_buf = std::make_unique<uint8_t[]>(DNS_BUF_SZ);
+    auto tx_buf = std::make_unique<uint8_t[]>(DNS_BUF_SZ);
+    if (!rx_buf || !tx_buf) {
+        ESP_LOGE(TAG, "Gagal alokasi buffer DNS di heap!");
+        close(sock);
+        s_running = false;
+        s_taskHandle = nullptr;
+        vTaskDelete(nullptr);
+        return;
+    }
 
     while (s_running) {
         struct sockaddr_in from_addr;
         socklen_t from_len = sizeof(from_addr);
-        int len = recvfrom(sock, rx_buf, sizeof(rx_buf), 0, (struct sockaddr*)&from_addr, &from_len);
+        int len = recvfrom(sock, rx_buf.get(), DNS_BUF_SZ, 0, (struct sockaddr*)&from_addr, &from_len);
 
         if (len < (int)(sizeof(DnsHeader) + 5)) {
             continue; // Paket terlalu pendek atau timeout
         }
 
-        const DnsHeader* req_hdr = reinterpret_cast<const DnsHeader*>(rx_buf);
+        const DnsHeader* req_hdr = reinterpret_cast<const DnsHeader*>(rx_buf.get());
         uint16_t flags = ntohs(req_hdr->flags);
         if ((flags & 0x8000) != 0) {
             continue; // Bukan query (abaikan paket respon)
@@ -173,13 +192,13 @@ void MicroDnsServer::taskWorker(void* arg) {
         uint16_t qtype = (static_cast<uint16_t>(rx_buf[offset]) << 8) | rx_buf[offset + 1];
         offset += 4; // Lewati QTYPE (2B) dan QCLASS (2B)
 
-        if (offset + 16 > sizeof(tx_buf)) {
+        if (offset + 16 > DNS_BUF_SZ) {
             continue; // Cegah buffer overflow tx_buf (384B)
         }
 
         // Salin Header & Question asli ke buffer balasan
-        memcpy(tx_buf, rx_buf, offset);
-        DnsHeader* res_hdr = reinterpret_cast<DnsHeader*>(tx_buf);
+        memcpy(tx_buf.get(), rx_buf.get(), offset);
+        DnsHeader* res_hdr = reinterpret_cast<DnsHeader*>(tx_buf.get());
 
         if (qtype == 1) {
             // TIPE A (IPv4): Balas dengan IP SoftAP Gateway (192.168.4.1)
@@ -212,7 +231,7 @@ void MicroDnsServer::taskWorker(void* arg) {
             memcpy(&tx_buf[ans_offset], &ip_be, 4);
             ans_offset += 4;
 
-            sendto(sock, tx_buf, ans_offset, 0, (struct sockaddr*)&from_addr, from_len);
+            sendto(sock, tx_buf.get(), ans_offset, 0, (struct sockaddr*)&from_addr, from_len);
         } else if (qtype == 28) {
             // TIPE AAAA (IPv6): Balas NOERROR dengan 0 Answer agar klien segera fallback ke IPv4
             res_hdr->flags = htons(0x8180);
@@ -221,7 +240,7 @@ void MicroDnsServer::taskWorker(void* arg) {
             res_hdr->nscount = 0;
             res_hdr->arcount = 0;
 
-            sendto(sock, tx_buf, offset, 0, (struct sockaddr*)&from_addr, from_len);
+            sendto(sock, tx_buf.get(), offset, 0, (struct sockaddr*)&from_addr, from_len);
         } else {
             // Tipe lain: Kembalikan respon NXDOMAIN
             res_hdr->flags = htons(0x8183); // NXDOMAIN
@@ -230,13 +249,14 @@ void MicroDnsServer::taskWorker(void* arg) {
             res_hdr->nscount = 0;
             res_hdr->arcount = 0;
 
-            sendto(sock, tx_buf, offset, 0, (struct sockaddr*)&from_addr, from_len);
+            sendto(sock, tx_buf.get(), offset, 0, (struct sockaddr*)&from_addr, from_len);
         }
     }
 
     close(sock);
-    s_running = false;
+    s_running.store(false, std::memory_order_release);
     s_taskHandle = nullptr;
+    if (s_exitSem) xSemaphoreGive(s_exitSem);
     vTaskDelete(nullptr);
 }
 

@@ -3,6 +3,7 @@
 #include "net_log_service.hpp"
 #include "beacon_pipeline.hpp"
 #include "config_store.hpp"
+#include "app_time.hpp"
 #include "bsp_led.hpp"
 #include "bsp_at24c256.hpp"
 #include "esp_log.h"
@@ -14,6 +15,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "cJSON.h"
 #include "psa/crypto.h"
 #include "lwip/def.h"
@@ -180,9 +182,18 @@ static char s_topicStatus[128]    = "";
 static char s_topicCmd[128]       = "";
 static char s_topicRes[128]       = "";
 static char s_topicHeartbeat[64]  = "";
-static uint32_t s_lastHeartbeatMs = 0;
-static std::atomic<uint32_t> s_lastInboundActivityMs{0};
+static std::atomic<int64_t> s_lastHeartbeatMs{0};
+static std::atomic<int64_t> s_lastInboundActivityMs{0};
+static std::atomic<bool> s_hasInboundActivity{false};
 static char s_lastError[64]       = "None";
+static SemaphoreHandle_t s_clientCtrlMutex = nullptr;
+static portMUX_TYPE s_errMux = portMUX_INITIALIZER_UNLOCKED;
+
+static void setLastErrorSafe(const char* msg) {
+    portENTER_CRITICAL(&s_errMux);
+    strlcpy(s_lastError, msg ? msg : "None", sizeof(s_lastError));
+    portEXIT_CRITICAL(&s_errMux);
+}
 
 alignas(4) static uint8_t s_batchBuffer[MQTT_BATCH_BUFFER_SIZE];
 static std::atomic<size_t> s_statBatchBufferLoad{0};
@@ -190,7 +201,8 @@ static std::atomic<size_t> s_statLastBatchPktCount{0};
 static std::atomic<uint32_t> s_statWireBytesAcc{0};
 static std::atomic<uint64_t> s_statTotalWireBytes{0};
 static std::atomic<float> s_statBandwidthKBps{0.0f};
-static uint32_t s_lastBwCalcMs = 0;
+static int64_t s_lastBwCalcMs = 0;
+static bool s_hasBwInit = false;
 
 static inline void recordWireBytes(uint32_t bytes) {
     s_statWireBytesAcc += bytes;
@@ -417,8 +429,9 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
     switch ((esp_mqtt_event_id_t)id) {
         case MQTT_EVENT_CONNECTED: {
             s_mqttConnected = true;
-            s_lastInboundActivityMs.store((uint32_t)(esp_timer_get_time() / 1000));
-            strlcpy(s_lastError, "Connected", sizeof(s_lastError));
+            s_lastInboundActivityMs.store(monotonicMs(), std::memory_order_relaxed);
+            s_hasInboundActivity.store(true, std::memory_order_release);
+            setLastErrorSafe("Connected");
             ESP_LOGI(TAG, "Terhubung ke broker MQTT!");
             Bsp::LedManager::setComState(ComLedState::NORMAL);
 
@@ -442,7 +455,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
             ESP_LOGI(TAG, "Subscribed ke topik perintah: %s", s_topicCmd);
 
             // 3. Pancarkan Heartbeat Perdana Seketika (Topik <prefix>/hb, Payload device_id)
-            s_lastHeartbeatMs = (uint32_t)(esp_timer_get_time() / 1000);
+            s_lastHeartbeatMs.store(monotonicMs(), std::memory_order_relaxed);
             publishHeartbeat();
 
             char device_id[32];
@@ -456,7 +469,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
 
         case MQTT_EVENT_DISCONNECTED: {
             s_mqttConnected = false;
-            strlcpy(s_lastError, "Disconnected", sizeof(s_lastError));
+            setLastErrorSafe("Disconnected");
             ESP_LOGW(TAG, "Terputus dari broker MQTT!");
             char det[80];
             formatMqttDisconnectDetail(event, det, sizeof(det));
@@ -468,7 +481,8 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
         }
 
         case MQTT_EVENT_PUBLISHED:
-            s_lastInboundActivityMs.store((uint32_t)(esp_timer_get_time() / 1000));
+            s_lastInboundActivityMs.store(monotonicMs(), std::memory_order_relaxed);
+            s_hasInboundActivity.store(true, std::memory_order_release);
             // Broker berhasil menerima data dan mengirimkan PUBACK (QoS 1 Ack downlink feedback)
             if (g_config.mqtt_qos == 1) {
                 ESP_LOGD(TAG, "PUBACK diterima dari broker untuk MsgID=%d", event->msg_id);
@@ -477,13 +491,15 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
             break;
 
         case MQTT_EVENT_SUBSCRIBED:
-            s_lastInboundActivityMs.store((uint32_t)(esp_timer_get_time() / 1000));
+            s_lastInboundActivityMs.store(monotonicMs(), std::memory_order_relaxed);
+            s_hasInboundActivity.store(true, std::memory_order_release);
             ESP_LOGD(TAG, "SUBACK diterima dari broker untuk MsgID=%d", event->msg_id);
             recordWireBytes(calculateSubackWireBytes());
             break;
 
         case MQTT_EVENT_DATA: {
-            s_lastInboundActivityMs.store((uint32_t)(esp_timer_get_time() / 1000));
+            s_lastInboundActivityMs.store(monotonicMs(), std::memory_order_relaxed);
+            s_hasInboundActivity.store(true, std::memory_order_release);
             if (event->current_data_offset != 0 || event->data_len != event->total_data_len) {
                 ESP_LOGW(TAG, "Fragmented MQTT payload ignored (offset=%d, len=%d, total=%d)",
                          event->current_data_offset, event->data_len, event->total_data_len);
@@ -582,7 +598,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
                         // Jalankan reboot di task terpisah dengan jeda 1000ms agar MQTT response ter-flush tuntas
                         xTaskCreatePinnedToCore([](void*) {
                             vTaskDelay(pdMS_TO_TICKS(1000));
-                            esp_restart();
+                            NetworkManager::gracefulRestart();
                         }, "reboot_task", 3072, nullptr, 5, nullptr, 1);
                     } else {
                         char errBuf[128];
@@ -597,7 +613,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
         }
 
         case MQTT_EVENT_ERROR: {
-            strlcpy(s_lastError, "MQTT Protocol/Socket Error", sizeof(s_lastError));
+            setLastErrorSafe("MQTT Protocol/Socket Error");
             ESP_LOGE(TAG, "MQTT Event Error terdeteksi!");
             char detErr[80];
             formatMqttErrorDetail(event, detErr, sizeof(detErr));
@@ -612,7 +628,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
 
 void MqttService::mqttPublisherTask(void* pvParameters) {
     esp_task_wdt_add(NULL);
-    uint32_t lastFlushTime = (uint32_t)(esp_timer_get_time() / 1000);
+    int64_t lastFlushTime = monotonicMs();
     size_t batchLen = 0;
     size_t batchCount = 0;
     uint32_t consecPubFail = 0;
@@ -620,13 +636,14 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
 
     for (;;) {
         esp_task_wdt_reset();
-        uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+        int64_t now = monotonicMs();
 
         // 0. Kalibrasi Laju Bandwidth per Detik Riil (Rolling 1000ms Sampling Window)
-        if (s_lastBwCalcMs == 0) {
+        if (!s_hasBwInit) {
             s_lastBwCalcMs = now;
+            s_hasBwInit = true;
         } else {
-            uint32_t deltaMs = (now >= s_lastBwCalcMs) ? (now - s_lastBwCalcMs) : 0;
+            int64_t deltaMs = now - s_lastBwCalcMs;
             if (deltaMs >= 1000) {
                 uint32_t bytesInWindow = s_statWireBytesAcc.exchange(0);
                 float kbps = ((float)bytesInWindow / 1024.0f) / ((float)deltaMs / 1000.0f);
@@ -680,6 +697,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                 consecPubFail = 0;
                 if (qos == 0) {
                     s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
+                    s_hasInboundActivity.store(true, std::memory_order_release);
                 }
                 recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
                 Bsp::LedManager::triggerTrafficBlip();
@@ -709,24 +727,26 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
         uint32_t netNowEpoch = (nowEpoch > 0) ? lwip_htonl(nowEpoch) : 0;
         BeaconPacket packet;
 
+        uint32_t now32 = static_cast<uint32_t>(now);
+        uint32_t fallbackUptimeSecNet = lwip_htonl(static_cast<uint32_t>(now / 1000LL));
         while (batchCount < (size_t)g_config.batch_max &&
                (batchLen + frameLen <= MQTT_BATCH_BUFFER_SIZE) &&
                bQueue != nullptr && xQueueReceive(bQueue, &packet, 0) == pdTRUE) {
-            uint32_t age = (now >= packet.timestamp) ? (now - packet.timestamp) : 0;
+            uint32_t age = elapsedMs32(now32, packet.timestamp);
             if (g_config.data_ttl > 0 && age > (uint32_t)g_config.data_ttl) {
                 Core::BeaconPipeline::recordDroppedBeacon(packet, DropReason::TTL_EXPIRED);
                 continue; // Buang paket kadaluarsa dan catat ke DropLog
             }
 
             MqttBleFrame44* outFrame = reinterpret_cast<MqttBleFrame44*>(s_batchBuffer + batchLen);
-            outFrame->timestamp = (netNowEpoch > 0) ? netNowEpoch : lwip_htonl(packet.timestamp / 1000);
+            outFrame->timestamp = (netNowEpoch > 0) ? netNowEpoch : fallbackUptimeSecNet;
             std::memcpy(outFrame->mac, &packet.raw_frame[1], 40);
             batchLen += frameLen;
             batchCount++;
         }
 
         // 5. Coba langsung publish jika batch sudah terkumpul penuh
-        now = (uint32_t)(esp_timer_get_time() / 1000);
+        now = monotonicMs();
         if (batchCount >= (size_t)g_config.batch_max || (batchLen + frameLen > MQTT_BATCH_BUFFER_SIZE)) {
             int qos = (g_config.mqtt_qos == 0) ? 0 : 1;
             int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicData,
@@ -736,6 +756,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                 consecPubFail = 0;
                 if (qos == 0) {
                     s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
+                    s_hasInboundActivity.store(true, std::memory_order_release);
                 }
                 recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
                 Bsp::LedManager::triggerTrafficBlip();
@@ -755,7 +776,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
             }
         }
         // 6. Timer-based Batch Flush
-        else if (batchCount > 0 && (now >= lastFlushTime) && ((now - lastFlushTime) >= (uint32_t)g_config.batch_flush)) {
+        else if (batchCount > 0 && ((now - lastFlushTime) >= (int64_t)g_config.batch_flush)) {
             int qos = (g_config.mqtt_qos == 0) ? 0 : 1;
             int msgId = esp_mqtt_client_publish(s_mqttClient, s_topicData,
                                                 (const char*)s_batchBuffer,
@@ -764,6 +785,7 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
                 consecPubFail = 0;
                 if (qos == 0) {
                     s_lastInboundActivityMs.store(now, std::memory_order_relaxed);
+                    s_hasInboundActivity.store(true, std::memory_order_release);
                 }
                 recordWireBytes(calculateWireBytes(strlen(s_topicData), batchLen, qos));
                 Bsp::LedManager::triggerTrafficBlip();
@@ -784,29 +806,30 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
         }
 
         // 7. Half-Open TCP / Outbox Full Failsafe Watchdog
-        uint32_t currentNow = (uint32_t)(esp_timer_get_time() / 1000);
-        uint32_t lastInbound = s_lastInboundActivityMs.load(std::memory_order_relaxed);
+        int64_t currentNow = monotonicMs();
+        int64_t lastInbound = s_lastInboundActivityMs.load(std::memory_order_relaxed);
         bool pubackStalled = (g_config.mqtt_qos == 1 &&
                               Core::BeaconPipeline::getMqttSpeed() > 0 &&
-                              lastInbound > 0 &&
-                              currentNow > lastInbound &&
-                              (currentNow - lastInbound) > 90000);
+                              s_hasInboundActivity.load(std::memory_order_acquire) &&
+                              (currentNow - lastInbound) > 90000LL);
         if (consecPubFail >= 25 || pubackStalled) {
             ESP_LOGW(TAG, "Watchdog MQTT: %s -> Memicu forceReconnect()!",
                      (consecPubFail >= 25) ? "25x gagal publish beruntun (Outbox penuh)" : "Tiada PUBACK >90s (Half-open TCP)");
             consecPubFail = 0;
             s_lastInboundActivityMs.store(currentNow, std::memory_order_relaxed);
+            s_hasInboundActivity.store(true, std::memory_order_release);
             forceReconnect();
         }
 
         // 8. Periodic Gateway Heartbeat (tiap 5000 ms / 5 detik) ke topik <prefix>/hb
         if (s_mqttConnected) {
-            uint32_t nowMs = (uint32_t)(esp_timer_get_time() / 1000);
-            uint32_t hbMs = (g_config.hb_interval >= 1 && g_config.hb_interval <= 300)
-                            ? (uint32_t)(g_config.hb_interval * 1000)
-                            : 5000;
-            if (nowMs >= s_lastHeartbeatMs && (nowMs - s_lastHeartbeatMs >= hbMs)) {
-                s_lastHeartbeatMs = nowMs;
+            int64_t nowMs = monotonicMs();
+            int64_t hbMs = (g_config.hb_interval >= 1 && g_config.hb_interval <= 300)
+                           ? (int64_t)g_config.hb_interval * 1000LL
+                           : 5000LL;
+            int64_t lastHb = s_lastHeartbeatMs.load(std::memory_order_relaxed);
+            if ((nowMs - lastHb) >= hbMs) {
+                s_lastHeartbeatMs.store(nowMs, std::memory_order_relaxed);
                 publishHeartbeat();
             }
         }
@@ -825,6 +848,9 @@ void MqttService::mqttPublisherTask(void* pvParameters) {
 }
 
 void MqttService::init() {
+    if (s_clientCtrlMutex == nullptr) {
+        s_clientCtrlMutex = xSemaphoreCreateMutex();
+    }
     updateTopicNames();
 
     if (strlen(g_config.mqtt_host) > 0 && g_config.mqtt_port > 0) {
@@ -888,16 +914,20 @@ void MqttService::init() {
 bool MqttService::isConnected() { return s_mqttConnected; }
 
 uint32_t MqttService::getLastInboundActivityMs() {
-    return s_lastInboundActivityMs.load(std::memory_order_relaxed);
+    return static_cast<uint32_t>(s_lastInboundActivityMs.load(std::memory_order_relaxed));
 }
 
 void MqttService::forceReconnect() {
     if (NetworkManager::isBootConfigMode()) {
         return;
     }
+    if (s_clientCtrlMutex != nullptr && xSemaphoreTake(s_clientCtrlMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+        return;
+    }
     if (s_mqttClient != nullptr) {
         if (!s_mqttStarted) {
             ESP_LOGI(TAG, "Memulai MQTT client pada koneksi jaringan pertama...");
+            buildStatusPayload("offline", s_lwtPayload, sizeof(s_lwtPayload));
             esp_mqtt_client_start(s_mqttClient);
             s_mqttStarted = true;
         } else {
@@ -905,12 +935,21 @@ void MqttService::forceReconnect() {
             esp_mqtt_client_reconnect(s_mqttClient);
         }
     }
+    if (s_clientCtrlMutex != nullptr) {
+        xSemaphoreGive(s_clientCtrlMutex);
+    }
 }
 
 void MqttService::disconnect() {
+    if (s_clientCtrlMutex != nullptr && xSemaphoreTake(s_clientCtrlMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+        return;
+    }
     if (s_mqttClient != nullptr && s_mqttStarted) {
         ESP_LOGI(TAG, "Memutuskan sesi MQTT (Zero-Failover: Uplink terputus)...");
         esp_mqtt_client_disconnect(s_mqttClient);
+    }
+    if (s_clientCtrlMutex != nullptr) {
+        xSemaphoreGive(s_clientCtrlMutex);
     }
 }
 

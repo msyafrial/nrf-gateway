@@ -1,11 +1,14 @@
 #include "ota_service.hpp"
 #include "app_config.hpp"
+#include "app_time.hpp"
 #include "bsp_led.hpp"
 #include "web_server.hpp"
 #include <esp_littlefs.h>
 #include <esp_timer.h>
 #include <esp_app_format.h>
 #include <esp_log.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <cstring>
 #include <cstdio>
 #include <atomic>
@@ -24,17 +27,28 @@ static std::atomic<bool> s_ota_in_progress{false};
 static bool s_flash_dirty = false;
 static size_t s_erased_bytes = 0;
 static bool s_fs_was_mounted = false;
+static SemaphoreHandle_t s_otaMutex = nullptr;
+static int64_t s_last_activity_ms64 = 0;
 
 static inline uint32_t get_millis() {
     return static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
 }
 
+static void ensureOtaMutex() {
+    if (s_otaMutex == nullptr) {
+        s_otaMutex = xSemaphoreCreateMutex();
+    }
+}
+
 void init() {
+    ensureOtaMutex();
+    if (s_otaMutex) xSemaphoreTake(s_otaMutex, portMAX_DELAY);
     s_status.in_progress = false;
     s_status.success = false;
     s_status.total_expected = 0;
     s_status.written_bytes = 0;
     s_status.last_activity_ms = 0;
+    s_last_activity_ms64 = 0;
     s_status.error_msg[0] = '\0';
     s_ota_handle = 0;
     s_target_partition = nullptr;
@@ -42,6 +56,7 @@ void init() {
     s_flash_dirty = false;
     s_erased_bytes = 0;
     s_fs_was_mounted = false;
+    if (s_otaMutex) xSemaphoreGive(s_otaMutex);
 }
 
 bool is_in_progress() {
@@ -60,7 +75,7 @@ void mark_app_valid() {
     esp_ota_mark_app_valid_cancel_rollback();
 }
 
-void abort() {
+static void abortLocked() {
     if (!s_status.in_progress && !s_ota_in_progress.load(std::memory_order_seq_cst)) return;
 
     if (s_status.target == TargetType::Firmware && s_ota_handle != 0) {
@@ -88,20 +103,46 @@ void abort() {
     Bsp::LedManager::setOtaMode(false);
 }
 
-void check_watchdog() {
-    if (s_status.in_progress && (get_millis() - s_status.last_activity_ms > OTA_INACTIVITY_TIMEOUT_MS)) {
-        snprintf(s_status.error_msg, sizeof(s_status.error_msg),
-                 "Upload timeout: koneksi terputus (10 detik inaktivitas).");
-        abort();
+void abort() {
+    ensureOtaMutex();
+    if (s_otaMutex && xSemaphoreTake(s_otaMutex, pdMS_TO_TICKS(5000)) == pdTRUE) {
+        abortLocked();
+        xSemaphoreGive(s_otaMutex);
+    } else if (!s_otaMutex) {
+        abortLocked();
     }
 }
 
+void check_watchdog() {
+    if (!s_otaMutex) return;
+    // Jika mutex sedang dipegang oleh httpd (write/erase/finalize aktif), jangan blokir web_telemetry
+    if (xSemaphoreTake(s_otaMutex, 0) != pdTRUE) return;
+    if (s_status.in_progress && (monotonicMs() - s_last_activity_ms64 > (int64_t)OTA_INACTIVITY_TIMEOUT_MS)) {
+        snprintf(s_status.error_msg, sizeof(s_status.error_msg),
+                 "Upload timeout: koneksi terputus (10 detik inaktivitas).");
+        abortLocked();
+    }
+    xSemaphoreGive(s_otaMutex);
+}
+
 bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, size_t chunk_len, char *out_err, size_t err_len) {
+    ensureOtaMutex();
+    if (s_otaMutex && xSemaphoreTake(s_otaMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+        snprintf(out_err, err_len, "Sistem OTA sibuk, coba beberapa saat lagi.");
+        return false;
+    }
+
     // Atomic check-and-set untuk pencegahan race condition sesi bersamaan
     if (s_ota_in_progress.exchange(true, std::memory_order_seq_cst)) {
+        if (s_otaMutex) xSemaphoreGive(s_otaMutex);
         snprintf(out_err, err_len, "Update sedang berlangsung dari sesi lain (409 Conflict)!");
         return false;
     }
+
+    struct OtaLockGuard {
+        SemaphoreHandle_t mtx;
+        ~OtaLockGuard() { if (mtx) xSemaphoreGive(mtx); }
+    } lockGuard{s_otaMutex};
 
     // Reset pelacak flash di baris paling atas
     s_flash_dirty = false;
@@ -113,6 +154,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
     s_status.target = target;
     s_status.total_expected = total_size;
     s_status.written_bytes = 0;
+    s_last_activity_ms64 = monotonicMs();
     s_status.last_activity_ms = get_millis();
     s_status.error_msg[0] = '\0';
     s_ota_handle = 0;
@@ -276,8 +318,19 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
 }
 
 bool write_chunk(const uint8_t *data, size_t len, size_t current_offset, bool is_final, char *out_err, size_t err_len) {
+    ensureOtaMutex();
+    if (s_otaMutex && xSemaphoreTake(s_otaMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+        snprintf(out_err, err_len, "Timeout mengunci proses OTA.");
+        return false;
+    }
+    struct OtaLockGuard {
+        SemaphoreHandle_t mtx;
+        ~OtaLockGuard() { if (mtx) xSemaphoreGive(mtx); }
+    } lockGuard{s_otaMutex};
+
     if (!s_status.in_progress || !data || len == 0) return false;
 
+    s_last_activity_ms64 = monotonicMs();
     s_status.last_activity_ms = get_millis();
 
     if (s_status.target == TargetType::Firmware) {
@@ -285,7 +338,7 @@ bool write_chunk(const uint8_t *data, size_t len, size_t current_offset, bool is
         if (err != ESP_OK) {
             snprintf(out_err, err_len, "Gagal menulis chunk OTA ke flash (0x%x).", err);
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
-            abort();
+            abortLocked();
             return false;
         }
     } else {
@@ -293,7 +346,7 @@ bool write_chunk(const uint8_t *data, size_t len, size_t current_offset, bool is
         if (target_end > s_target_partition->size) {
             snprintf(out_err, err_len, "Data LittleFS melampaui kapasitas partisi storage 1MB!");
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
-            abort();
+            abortLocked();
             return false;
         }
 
@@ -306,7 +359,7 @@ bool write_chunk(const uint8_t *data, size_t len, size_t current_offset, bool is
             if (err != ESP_OK) {
                 snprintf(out_err, err_len, "Gagal erase sektor flash LittleFS (0x%x).", err);
                 snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
-                abort();
+                abortLocked();
                 return false;
             }
             s_erased_bytes = aligned_end;
@@ -316,7 +369,7 @@ bool write_chunk(const uint8_t *data, size_t len, size_t current_offset, bool is
         if (err != ESP_OK) {
             snprintf(out_err, err_len, "Gagal menulis chunk LittleFS ke flash (0x%x).", err);
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
-            abort();
+            abortLocked();
             return false;
         }
     }
@@ -326,6 +379,16 @@ bool write_chunk(const uint8_t *data, size_t len, size_t current_offset, bool is
 }
 
 bool finalize(char *out_err, size_t err_len) {
+    ensureOtaMutex();
+    if (s_otaMutex && xSemaphoreTake(s_otaMutex, pdMS_TO_TICKS(10000)) != pdTRUE) {
+        snprintf(out_err, err_len, "Timeout mengunci finalisasi OTA.");
+        return false;
+    }
+    struct OtaLockGuard {
+        SemaphoreHandle_t mtx;
+        ~OtaLockGuard() { if (mtx) xSemaphoreGive(mtx); }
+    } lockGuard{s_otaMutex};
+
     if (!s_status.in_progress) return false;
 
     // Micro-Hardening: Truncated stream validation
@@ -333,7 +396,7 @@ bool finalize(char *out_err, size_t err_len) {
         snprintf(out_err, err_len, "Data LittleFS tidak lengkap (hanya %u dari %u byte)!",
                  (unsigned int)s_status.written_bytes, (unsigned int)s_status.total_expected);
         snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
-        abort();
+        abortLocked();
         return false;
     }
 
@@ -343,7 +406,7 @@ bool finalize(char *out_err, size_t err_len) {
         if (err != ESP_OK) {
             snprintf(out_err, err_len, "Validasi akhir partisi OTA gagal (0x%x).", err);
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
-            abort();
+            abortLocked();
             return false;
         }
 
@@ -351,7 +414,7 @@ bool finalize(char *out_err, size_t err_len) {
         if (err != ESP_OK) {
             snprintf(out_err, err_len, "Gagal menetapkan partisi boot baru (0x%x).", err);
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
-            abort();
+            abortLocked();
             return false;
         }
     } else {

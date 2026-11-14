@@ -537,7 +537,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
 
 
-        <form id="authAdminValidation" onsubmit="return handleFormSubmit('authAdminValidation', '/api/v1/config/auth', 'Credentials and network configuration updated successfully.')">
+        <form id="authAdminValidation" autocomplete="off" onsubmit="return handleAuthFormSubmit()">
 
 
 
@@ -581,7 +581,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
               <div class="ctl">
 
-                <input type="text" id="admin_user" name="admin_user" value="%admin_user%" data-nospace="true" placeholder="admin" required>
+                <input type="text" id="admin_user" name="admin_user" value="%admin_user%" data-nospace="true" placeholder="admin" autocomplete="off" required>
 
               </div>
 
@@ -603,7 +603,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
                 <div class="password-wrapper">
 
-                  <input type="password" id="admin_pass" name="admin_pass" value="%admin_pass%" placeholder="Admin Password" required>
+                  <input type="password" id="admin_pass" name="admin_pass" value="%admin_pass%" placeholder="Admin Password" autocomplete="new-password" required>
 
                   <button type="button" class="btn-toggle-pwd" title="Hold to view password" aria-label="Hold to view password" tabindex="-1">
 
@@ -681,7 +681,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
               <div class="ctl">
 
-                <input type="text" id="user_user" name="user_user" value="%user_user%" data-nospace="true" placeholder="user" required>
+                <input type="text" id="user_user" name="user_user" value="%user_user%" data-nospace="true" placeholder="user" autocomplete="off" required>
 
               </div>
 
@@ -703,7 +703,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
                 <div class="password-wrapper">
 
-                  <input type="password" id="user_pass" name="user_pass" value="%user_pass%" placeholder="Engineer Password" required>
+                  <input type="password" id="user_pass" name="user_pass" value="%user_pass%" placeholder="Engineer Password" autocomplete="new-password" required>
 
                   <button type="button" class="btn-toggle-pwd" title="Hold to view password" aria-label="Hold to view password" tabindex="-1">
 
@@ -849,7 +849,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
                 <div class="input-with-action">
 
-                  <input type="text" id="w_ssid" name="w_ssid" value="%w_ssid%" placeholder="SSID Name (Type or Scan)" required>
+                  <input type="text" id="w_ssid" name="w_ssid" value="%w_ssid%" placeholder="SSID Name (Type or Scan)" autocomplete="off" required>
 
                   <button type="button" class="btn-radar-scan" id="btnOpenWifiModal" title="Scan Nearby Wi-Fi">
 
@@ -891,7 +891,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
                 <div class="password-wrapper">
 
-                  <input type="password" id="w_password" name="w_password" value="%w_password%" placeholder="Wi-Fi Password" required>
+                  <input type="password" id="w_password" name="w_password" value="%w_password%" placeholder="Wi-Fi Password" autocomplete="new-password" required>
 
                   <button type="button" class="btn-toggle-pwd" title="Hold to view password" aria-label="Hold to view password" tabindex="-1">
 
@@ -1249,7 +1249,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
                 <div class="password-wrapper">
 
-                  <input type="password" id="ap_password" name="ap_password" value="%ap_password%" minlength="8" placeholder="Minimum 8 characters" required>
+                  <input type="password" id="ap_password" name="ap_password" value="%ap_password%" minlength="8" placeholder="Minimum 8 characters" autocomplete="new-password" required>
 
                   <button type="button" class="btn-toggle-pwd" title="Hold to view password" aria-label="Hold to view password" tabindex="-1">
 
@@ -1407,7 +1407,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
               <div class="ctl">
 
-                <input type="text" id="mqtt_user" name="mqtt_user" value="%mqtt_user%" placeholder="eyroMQTT" required>
+                <input type="text" id="mqtt_user" name="mqtt_user" value="%mqtt_user%" placeholder="eyroMQTT" autocomplete="off" required>
 
               </div>
 
@@ -1429,7 +1429,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
                 <div class="password-wrapper">
 
-                  <input type="password" id="mqtt_password" name="mqtt_password" value="%mqtt_password%" placeholder="MQTT Password" required>
+                  <input type="password" id="mqtt_password" name="mqtt_password" value="%mqtt_password%" placeholder="MQTT Password" autocomplete="new-password" required>
 
                   <button type="button" class="btn-toggle-pwd" title="Hold to view password" aria-label="Hold to view password" tabindex="-1">
 
@@ -1637,7 +1637,61 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
     document.getElementById("year").textContent = new Date().getFullYear();
 
-
+    // Anti-autofill guard for credential & password inputs in auth form
+    (function() {
+      var protectedIds = ["admin_user", "user_user", "admin_pass", "user_pass", "w_password", "ap_password", "mqtt_password"];
+      function getProtectedInputs() {
+        return protectedIds.map(function(id) { return document.getElementById(id); }).filter(Boolean);
+      }
+      function markEdited(el) {
+        if (el) el.dataset.userEdited = "true";
+      }
+      window.restoreUntouchedAuthFields = function() {
+        var restored = false;
+        getProtectedInputs().forEach(function(el) {
+          if (el.dataset.userEdited !== "true" && el.value !== el.defaultValue) {
+            el.value = el.defaultValue;
+            restored = true;
+          }
+        });
+        return restored;
+      };
+      window.resetAuthEditedFlags = function() {
+        getProtectedInputs().forEach(function(el) {
+          el.dataset.userEdited = "false";
+        });
+      };
+      window.handleAuthFormSubmit = function() {
+        window.restoreUntouchedAuthFields();
+        return handleFormSubmit("authAdminValidation", "/api/v1/config/auth", "Credentials and network configuration updated successfully.");
+      };
+      getProtectedInputs().forEach(function(el) {
+        el.dataset.userEdited = "false";
+        el.addEventListener("keydown", function(e) {
+          if (e.key !== "Tab" && e.key !== "Shift" && e.key !== "Control" && e.key !== "Alt" && e.key !== "Meta" && e.key !== "Escape") {
+            markEdited(el);
+          }
+        });
+        el.addEventListener("paste", function() { markEdited(el); });
+        el.addEventListener("input", function(e) {
+          if (e.isTrusted && document.activeElement === el) {
+            markEdited(el);
+          } else if (el.dataset.userEdited !== "true") {
+            el.value = el.defaultValue;
+          }
+        });
+      });
+      function scrubBrowserAutofill() {
+        if (window.restoreUntouchedAuthFields() && typeof window.__authCheckDirty === "function") {
+          window.__authCheckDirty();
+        }
+      }
+      setTimeout(scrubBrowserAutofill, 150);
+      setTimeout(scrubBrowserAutofill, 600);
+      window.addEventListener("pageshow", function() {
+        setTimeout(scrubBrowserAutofill, 50);
+      });
+    })();
 
     // Dirty checking for floating save dock
 
@@ -1719,6 +1773,8 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
 
 
 
+      window.__authCheckDirty = checkDirty;
+
       snapshot();
 
       form.addEventListener("input", checkDirty, true);
@@ -1785,6 +1841,10 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
             });
             }
 
+          }
+
+          if (typeof window.resetAuthEditedFlags === "function") {
+            window.resetAuthEditedFlags();
           }
 
           checkDirty();

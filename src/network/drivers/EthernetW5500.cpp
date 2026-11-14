@@ -17,9 +17,9 @@ static const char *TAG = "ETH_W5500";
 
 namespace Iotaru::Network {
 
-bool EthernetW5500::s_connected = false;
-bool EthernetW5500::s_hasIp = false;
-bool EthernetW5500::s_hardwareDetected = false;
+std::atomic<bool> EthernetW5500::s_connected{false};
+std::atomic<bool> EthernetW5500::s_hasIp{false};
+std::atomic<bool> EthernetW5500::s_hardwareDetected{false};
 static bool s_isDhcp = true;
 esp_eth_handle_t EthernetW5500::s_eth_handle = nullptr;
 esp_netif_t* EthernetW5500::s_eth_netif = nullptr;
@@ -243,9 +243,13 @@ bool EthernetW5500::begin(uint32_t ip, uint32_t gw, uint32_t mask,
         return false;
     }
 
-    // 8. Registrasi System Event Listeners
-    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &onEthEvent, nullptr));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &onIpEvent, nullptr));
+    // 8. Registrasi System Event Listeners (tanpa panic crash jika gagal)
+    esp_err_t ev1 = esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &onEthEvent, nullptr);
+    esp_err_t ev2 = esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &onIpEvent, nullptr);
+    if (ev1 != ESP_OK || ev2 != ESP_OK) {
+        ESP_LOGE(TAG, "Gagal registrasi event handler W5500 (0x%x / 0x%x)", ev1, ev2);
+        return false;
+    }
 
     // 9. Konfigurasi Static IP vs DHCP
     if (!dhcp && ip != 0) {

@@ -582,7 +582,12 @@ static bool is_valid_ipv4(const char* s, bool is_mask = false) {
     if (dots != 3 || digits == 0) return false;
     packed = (packed << 8) | static_cast<uint32_t>(val);
     if (packed == 0) return false;
-    if (!is_mask && packed == 0xFFFFFFFFUL) return false;
+    if (is_mask) {
+        uint32_t inv = ~packed;
+        if ((inv & (inv + 1U)) != 0) return false; // Harus bit 1 berurutan dari MSB
+    } else if (packed == 0xFFFFFFFFUL) {
+        return false;
+    }
     return true;
 }
 
@@ -617,10 +622,12 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
         Core::ConfigStore::loadConfigFromNvs(staged, false);
     }
 
+    bool authCredChanged = false;
     if (role == UserRole::ADMIN) {
         char val[64];
         if (get_form_param(body, "admin_user", val, sizeof(val))) {
             if (strlen(val) >= 4 && strchr(val, ':') == nullptr) {
+                if (strcmp(staged.admin_user, val) != 0) authCredChanged = true;
                 strlcpy(staged.admin_user, val, sizeof(staged.admin_user));
             }
         }
@@ -631,6 +638,7 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
                     httpd_resp_send(req, "Admin password must be at least 8 characters and cannot contain ':'", HTTPD_RESP_USE_STRLEN);
                     return ESP_OK;
                 }
+                if (strcmp(staged.admin_pass, val) != 0) authCredChanged = true;
                 strlcpy(staged.admin_pass, val, sizeof(staged.admin_pass));
             }
         }
@@ -678,7 +686,10 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
                 }
             }
         }
-        if (get_form_param(body, "user_user", val, sizeof(val))) strlcpy(staged.user_user, val, sizeof(staged.user_user));
+        if (get_form_param(body, "user_user", val, sizeof(val))) {
+            if (strcmp(staged.user_user, val) != 0) authCredChanged = true;
+            strlcpy(staged.user_user, val, sizeof(staged.user_user));
+        }
         if (get_form_param(body, "user_pass", val, sizeof(val))) {
             if (!is_masked_or_empty(val)) {
                 if (strlen(val) < 8 || strchr(val, ':') != nullptr) {
@@ -686,6 +697,7 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
                     httpd_resp_send(req, "Technician password must be at least 8 characters and cannot contain ':'", HTTPD_RESP_USE_STRLEN);
                     return ESP_OK;
                 }
+                if (strcmp(staged.user_pass, val) != 0) authCredChanged = true;
                 strlcpy(staged.user_pass, val, sizeof(staged.user_pass));
             }
         }
@@ -699,6 +711,7 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
                     httpd_resp_send(req, "Engineer password must be at least 8 characters and cannot contain ':'", HTTPD_RESP_USE_STRLEN);
                     return ESP_OK;
                 }
+                if (strcmp(staged.user_pass, val) != 0) authCredChanged = true;
                 strlcpy(staged.user_pass, val, sizeof(staged.user_pass));
             }
         }
@@ -795,8 +808,13 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
     Core::ConfigStore::saveConfigAuth(staged);
     s_auth_reboot_required = true;
 
+    if (authCredChanged) {
+        ESP_LOGW(TAG, "Audit: Kredensial akun (admin/engineer) ikut diperbarui pada commit konfigurasi.");
+    }
+
     char detAuth[80];
-    snprintf(detAuth, sizeof(detAuth), "Kredensial Akun Diperbarui oleh %s (Staged NVS)",
+    snprintf(detAuth, sizeof(detAuth), "%s oleh %s (Staged NVS)",
+             authCredChanged ? "Kredensial Akun Diperbarui" : "Konfigurasi Jaringan/MQTT Diperbarui",
              role == UserRole::ADMIN ? "Admin" : "Engineer");
     Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::AUTH_UPDATE, detAuth);
 
@@ -920,7 +938,17 @@ static esp_err_t api_config_settings_handler(httpd_req_t *req) {
             staged.hb_interval = hb;
         }
     }
-    if (get_form_param(body, "restart_schedule", val, sizeof(val))) strlcpy(staged.restart_schedule, val, sizeof(staged.restart_schedule));
+    if (get_form_param(body, "restart_schedule", val, sizeof(val))) {
+        if (val[0] == '\0') {
+            staged.restart_schedule[0] = '\0';
+        } else {
+            int hh = -1, mm = -1;
+            if (strlen(val) == 5 && val[2] == ':' && sscanf(val, "%2d:%2d", &hh, &mm) == 2 &&
+                hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+                snprintf(staged.restart_schedule, sizeof(staged.restart_schedule), "%02d:%02d", hh, mm);
+            }
+        }
+    }
     if (get_form_param(body, "discon_rst", val, sizeof(val))) {
         int dr = atoi(val);
         if (dr < 1) dr = 1;
@@ -1355,23 +1383,55 @@ static esp_err_t api_net_logs_export_handler(httpd_req_t *req) {
     httpd_resp_set_hdr(req, "Content-Disposition", disp_hdr);
 
     // Header CSV
+    auto escapeCsvCell = [](const char *src, char *dst, size_t dstSize) {
+        if (!dst || dstSize == 0) return;
+        size_t o = 0;
+        if (src && (src[0] == '=' || src[0] == '+' || src[0] == '-' || src[0] == '@' || src[0] == '\t' || src[0] == '\r')) {
+            if (o + 1 < dstSize) dst[o++] = '\'';
+        }
+        if (src) {
+            for (size_t i = 0; src[i] != '\0' && o + 2 < dstSize; ++i) {
+                char c = src[i];
+                if (c == '\r' || c == '\n') c = ' ';
+                if (c == '"') {
+                    dst[o++] = '"';
+                    dst[o++] = '"';
+                } else {
+                    dst[o++] = c;
+                }
+            }
+        }
+        dst[o] = '\0';
+    };
+
     const char *csv_head = "No,Waktu,Interface,Event,Detail\r\n";
-    httpd_resp_send_chunk(req, csv_head, strlen(csv_head));
+    if (httpd_resp_send_chunk(req, csv_head, strlen(csv_head)) != ESP_OK) {
+        return ESP_FAIL;
+    }
 
     size_t count = Network::NetLogService::getLogs(s_logStreamScratch.net, Network::MAX_NET_LOGS);
 
+    char escDetail[160];
     char lineBuf[256];
     for (size_t i = 0; i < count; i++) {
-        snprintf(lineBuf, sizeof(lineBuf), "%u,%s,%s,%s,\"%s\"\r\n",
-                 (unsigned int)s_logStreamScratch.net[i].id,
-                 s_logStreamScratch.net[i].time_str,
-                 Network::NetLogService::categoryToString(s_logStreamScratch.net[i].category),
-                 Network::NetLogService::eventToString(s_logStreamScratch.net[i].event),
-                 s_logStreamScratch.net[i].detail);
-        httpd_resp_send_chunk(req, lineBuf, strlen(lineBuf));
+        escapeCsvCell(s_logStreamScratch.net[i].detail, escDetail, sizeof(escDetail));
+        int len = snprintf(lineBuf, sizeof(lineBuf), "%u,%s,%s,%s,\"%s\"\r\n",
+                           (unsigned int)s_logStreamScratch.net[i].id,
+                           s_logStreamScratch.net[i].time_str,
+                           Network::NetLogService::categoryToString(s_logStreamScratch.net[i].category),
+                           Network::NetLogService::eventToString(s_logStreamScratch.net[i].event),
+                           escDetail);
+        if (len > 0) {
+            size_t sendLen = (len < (int)sizeof(lineBuf)) ? (size_t)len : (sizeof(lineBuf) - 1);
+            if (httpd_resp_send_chunk(req, lineBuf, sendLen) != ESP_OK) {
+                return ESP_FAIL;
+            }
+        }
     }
 
-    httpd_resp_send_chunk(req, nullptr, 0); // Selesai
+    if (httpd_resp_send_chunk(req, nullptr, 0) != ESP_OK) {
+        return ESP_FAIL;
+    }
     return ESP_OK;
 }
 
@@ -1475,7 +1535,9 @@ static esp_err_t api_drop_logs_export_handler(httpd_req_t *req) {
 
     // Header CSV (8 kolom)
     const char *csv_head = "No,Waktu,MAC Address,Tipe,Major-Minor/Tag,RSSI(dBm),Alasan,Raw 44B\r\n";
-    httpd_resp_send_chunk(req, csv_head, strlen(csv_head));
+    if (httpd_resp_send_chunk(req, csv_head, strlen(csv_head)) != ESP_OK) {
+        return ESP_FAIL;
+    }
 
     size_t count = Core::DropLogService::getLogs(s_logStreamScratch.drop, Core::MAX_DROP_LOGS);
 
@@ -1492,19 +1554,26 @@ static esp_err_t api_drop_logs_export_handler(httpd_req_t *req) {
             rawOut = raw44;
         }
 
-        snprintf(lineBuf, sizeof(lineBuf), "%u,%s,%s,%s,%s,%d,\"%s\",%s\r\n",
-                 (unsigned int)s_logStreamScratch.drop[i].id,
-                 s_logStreamScratch.drop[i].time_str,
-                 s_logStreamScratch.drop[i].mac,
-                 s_logStreamScratch.drop[i].code,
-                 s_logStreamScratch.drop[i].tag,
-                 (int)s_logStreamScratch.drop[i].rssi,
-                 Core::DropLogService::reasonToString(s_logStreamScratch.drop[i].reason),
-                 rawOut);
-        httpd_resp_send_chunk(req, lineBuf, strlen(lineBuf));
+        int len = snprintf(lineBuf, sizeof(lineBuf), "%u,%s,%s,%s,%s,%d,\"%s\",%s\r\n",
+                           (unsigned int)s_logStreamScratch.drop[i].id,
+                           s_logStreamScratch.drop[i].time_str,
+                           s_logStreamScratch.drop[i].mac,
+                           s_logStreamScratch.drop[i].code,
+                           s_logStreamScratch.drop[i].tag,
+                           (int)s_logStreamScratch.drop[i].rssi,
+                           Core::DropLogService::reasonToString(s_logStreamScratch.drop[i].reason),
+                           rawOut);
+        if (len > 0) {
+            size_t sendLen = (len < (int)sizeof(lineBuf)) ? (size_t)len : (sizeof(lineBuf) - 1);
+            if (httpd_resp_send_chunk(req, lineBuf, sendLen) != ESP_OK) {
+                return ESP_FAIL;
+            }
+        }
     }
 
-    httpd_resp_send_chunk(req, nullptr, 0); // Selesai
+    if (httpd_resp_send_chunk(req, nullptr, 0) != ESP_OK) {
+        return ESP_FAIL;
+    }
     return ESP_OK;
 }
 
@@ -1526,9 +1595,9 @@ static esp_err_t api_reboot_handler(httpd_req_t *req) {
 
     xTaskCreatePinnedToCore([](void *) {
         vTaskDelay(pdMS_TO_TICKS(1000));
-        esp_restart();
+        Network::NetworkManager::gracefulRestart();
         vTaskDelete(NULL);
-    }, "reboot_task", 2048, NULL, 5, NULL, 1);
+    }, "reboot_task", 3072, NULL, 5, NULL, 1);
 
     return ESP_OK;
 }
@@ -1774,20 +1843,26 @@ static esp_err_t api_wifi_scan_handler(httpd_req_t *req) {
     s_scan_in_progress.store(false);
     Network::NetworkManager::resetWifiScanDone();
 
-    static wifi_ap_record_t s_scan_records[30];
+    std::unique_ptr<wifi_ap_record_t[]> scan_records(new (std::nothrow) wifi_ap_record_t[30]);
+    if (!scan_records) {
+        stop_wifi_if_ethernet_active();
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"Out of memory\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
     uint16_t ap_count = 0;
     esp_wifi_scan_get_ap_num(&ap_count);
 
     if (ap_count > 30) ap_count = 30;
-    esp_wifi_scan_get_ap_records(&ap_count, s_scan_records);
+    esp_wifi_scan_get_ap_records(&ap_count, scan_records.get());
 
     // Urutkan berdasarkan kekuatan sinyal RSSI (terkuat di paling atas)
     for (int i = 0; i < (int)ap_count - 1; i++) {
         for (int j = i + 1; j < (int)ap_count; j++) {
-            if (s_scan_records[j].rssi > s_scan_records[i].rssi) {
-                wifi_ap_record_t tmp = s_scan_records[i];
-                s_scan_records[i] = s_scan_records[j];
-                s_scan_records[j] = tmp;
+            if (scan_records[j].rssi > scan_records[i].rssi) {
+                wifi_ap_record_t tmp = scan_records[i];
+                scan_records[i] = scan_records[j];
+                scan_records[j] = tmp;
             }
         }
     }
@@ -1804,26 +1879,26 @@ static esp_err_t api_wifi_scan_handler(httpd_req_t *req) {
     bool first = true;
     char escSsid[64];
     for (uint16_t i = 0; i < ap_count; i++) {
-        if (s_scan_records[i].ssid[0] == '\0') continue;
+        if (scan_records[i].ssid[0] == '\0') continue;
 
         bool duplicate = false;
         for (uint16_t k = 0; k < i; k++) {
-            if (strcmp(reinterpret_cast<const char *>(s_scan_records[i].ssid), 
-                       reinterpret_cast<const char *>(s_scan_records[k].ssid)) == 0) {
+            if (strcmp(reinterpret_cast<const char *>(scan_records[i].ssid), 
+                       reinterpret_cast<const char *>(scan_records[k].ssid)) == 0) {
                 duplicate = true;
                 break;
             }
         }
         if (duplicate) continue;
 
-        escape_json_string(reinterpret_cast<const char *>(s_scan_records[i].ssid), escSsid, sizeof(escSsid));
+        escape_json_string(reinterpret_cast<const char *>(scan_records[i].ssid), escSsid, sizeof(escSsid));
         int len = snprintf(chunk, sizeof(chunk),
             "%s{\"ssid\":\"%s\",\"rssi\":%d,\"channel\":%d,\"secure\":%s}",
             first ? "" : ",",
             escSsid,
-            s_scan_records[i].rssi,
-            s_scan_records[i].primary,
-            (s_scan_records[i].authmode != WIFI_AUTH_OPEN) ? "true" : "false"
+            scan_records[i].rssi,
+            scan_records[i].primary,
+            (scan_records[i].authmode != WIFI_AUTH_OPEN) ? "true" : "false"
         );
         first = false;
         if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK) {
@@ -1885,16 +1960,22 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
     }
 
     char err_buf[128] = {0};
-    uint8_t chunk[2048];
+    constexpr size_t OTA_CHUNK_SIZE = 2048;
+    std::unique_ptr<uint8_t[]> chunk(new (std::nothrow) uint8_t[OTA_CHUNK_SIZE]);
+    if (!chunk) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_send(req, "Insufficient memory for OTA buffer.", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
     size_t received_bytes = 0;
     bool is_first_chunk = true;
     int timeout_retries = 0;
 
     while (received_bytes < req->content_len) {
         size_t to_read = req->content_len - received_bytes;
-        if (to_read > sizeof(chunk)) to_read = sizeof(chunk);
+        if (to_read > OTA_CHUNK_SIZE) to_read = OTA_CHUNK_SIZE;
 
-        int r = httpd_req_recv(req, reinterpret_cast<char *>(chunk), to_read);
+        int r = httpd_req_recv(req, reinterpret_cast<char *>(chunk.get()), to_read);
         if (r <= 0) {
             if (r == HTTPD_SOCK_ERR_TIMEOUT) {
                 if (++timeout_retries <= 6 && Ota::is_in_progress()) continue;
@@ -1907,7 +1988,7 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
         timeout_retries = 0;
 
         if (is_first_chunk) {
-            if (!Ota::begin(target, total_size, chunk, r, err_buf, sizeof(err_buf))) {
+            if (!Ota::begin(target, total_size, chunk.get(), r, err_buf, sizeof(err_buf))) {
                 httpd_resp_set_status(req, "400 Bad Request");
                 httpd_resp_send(req, err_buf, HTTPD_RESP_USE_STRLEN);
                 return ESP_OK;
@@ -1916,7 +1997,7 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
         }
 
         bool is_final = (received_bytes + r >= req->content_len);
-        if (!Ota::write_chunk(chunk, r, received_bytes, is_final, err_buf, sizeof(err_buf))) {
+        if (!Ota::write_chunk(chunk.get(), r, received_bytes, is_final, err_buf, sizeof(err_buf))) {
             httpd_resp_set_status(req, "400 Bad Request");
             httpd_resp_send(req, err_buf, HTTPD_RESP_USE_STRLEN);
             return ESP_OK;
@@ -1948,9 +2029,9 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
 
     xTaskCreatePinnedToCore([](void *) {
         vTaskDelay(pdMS_TO_TICKS(1500));
-        esp_restart();
+        Network::NetworkManager::gracefulRestart();
         vTaskDelete(NULL);
-    }, "ota_reboot", 2048, NULL, 5, NULL, 1);
+    }, "ota_reboot", 3072, NULL, 5, NULL, 1);
 
     return ESP_OK;
 }
@@ -2020,20 +2101,36 @@ static esp_err_t api_test_ntp_handler(httpd_req_t *req) {
     hints.ai_socktype = SOCK_DGRAM;
     struct addrinfo *res = nullptr;
 
+    auto sendJson = [&](cJSON *root) -> esp_err_t {
+        if (!root) {
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            httpd_resp_send(req, "Out of memory", HTTPD_RESP_USE_STRLEN);
+            return ESP_OK;
+        }
+        char *resp_str = cJSON_PrintUnformatted(root);
+        cJSON_Delete(root);
+        if (!resp_str) {
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            httpd_resp_send(req, "Out of memory", HTTPD_RESP_USE_STRLEN);
+            return ESP_OK;
+        }
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
+        free(resp_str);
+        return ESP_OK;
+    };
+
     int gai_err = getaddrinfo(cleanServer, "123", &hints, &res);
     if (gai_err != 0 || !res) {
         ESP_LOGW(TAG, "DNS lookup gagal untuk NTP '%s' (err=%d)", cleanServer, gai_err);
         cJSON *root = cJSON_CreateObject();
-        cJSON_AddStringToObject(root, "status", "error");
-        cJSON_AddBoolToObject(root, "success", false);
-        cJSON_AddStringToObject(root, "server", cleanServer);
-        cJSON_AddStringToObject(root, "message", "DNS lookup failed: Host unreachable");
-        char *resp_str = cJSON_PrintUnformatted(root);
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
-        free(resp_str);
-        cJSON_Delete(root);
-        return ESP_OK;
+        if (root) {
+            cJSON_AddStringToObject(root, "status", "error");
+            cJSON_AddBoolToObject(root, "success", false);
+            cJSON_AddStringToObject(root, "server", cleanServer);
+            cJSON_AddStringToObject(root, "message", "DNS lookup failed: Host unreachable");
+        }
+        return sendJson(root);
     }
 
     char ipStr[INET_ADDRSTRLEN] = "";
@@ -2043,16 +2140,13 @@ static esp_err_t api_test_ntp_handler(httpd_req_t *req) {
     if (sock < 0) {
         freeaddrinfo(res);
         cJSON *root = cJSON_CreateObject();
-        cJSON_AddStringToObject(root, "status", "error");
-        cJSON_AddBoolToObject(root, "success", false);
-        cJSON_AddStringToObject(root, "server", cleanServer);
-        cJSON_AddStringToObject(root, "message", "Failed to initialize UDP socket");
-        char *resp_str = cJSON_PrintUnformatted(root);
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
-        free(resp_str);
-        cJSON_Delete(root);
-        return ESP_OK;
+        if (root) {
+            cJSON_AddStringToObject(root, "status", "error");
+            cJSON_AddBoolToObject(root, "success", false);
+            cJSON_AddStringToObject(root, "server", cleanServer);
+            cJSON_AddStringToObject(root, "message", "Failed to initialize UDP socket");
+        }
+        return sendJson(root);
     }
 
     // Set timeout receive & send 3 detik
@@ -2073,17 +2167,14 @@ static esp_err_t api_test_ntp_handler(httpd_req_t *req) {
     if (sent < (ssize_t)sizeof(ntpPacket)) {
         close(sock);
         cJSON *root = cJSON_CreateObject();
-        cJSON_AddStringToObject(root, "status", "error");
-        cJSON_AddBoolToObject(root, "success", false);
-        cJSON_AddStringToObject(root, "server", cleanServer);
-        cJSON_AddStringToObject(root, "ip", ipStr);
-        cJSON_AddStringToObject(root, "message", "Failed to transmit UDP probe frame");
-        char *resp_str = cJSON_PrintUnformatted(root);
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
-        free(resp_str);
-        cJSON_Delete(root);
-        return ESP_OK;
+        if (root) {
+            cJSON_AddStringToObject(root, "status", "error");
+            cJSON_AddBoolToObject(root, "success", false);
+            cJSON_AddStringToObject(root, "server", cleanServer);
+            cJSON_AddStringToObject(root, "ip", ipStr);
+            cJSON_AddStringToObject(root, "message", "Failed to transmit UDP probe frame");
+        }
+        return sendJson(root);
     }
 
     struct sockaddr_in fromAddr = {};
@@ -2094,17 +2185,14 @@ static esp_err_t api_test_ntp_handler(httpd_req_t *req) {
 
     if (recvd < 48) {
         cJSON *root = cJSON_CreateObject();
-        cJSON_AddStringToObject(root, "status", "error");
-        cJSON_AddBoolToObject(root, "success", false);
-        cJSON_AddStringToObject(root, "server", cleanServer);
-        cJSON_AddStringToObject(root, "ip", ipStr);
-        cJSON_AddStringToObject(root, "message", "Server tidak merespons (Timeout 3s / Port UDP 123 diblokir)");
-        char *resp_str = cJSON_PrintUnformatted(root);
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
-        free(resp_str);
-        cJSON_Delete(root);
-        return ESP_OK;
+        if (root) {
+            cJSON_AddStringToObject(root, "status", "error");
+            cJSON_AddBoolToObject(root, "success", false);
+            cJSON_AddStringToObject(root, "server", cleanServer);
+            cJSON_AddStringToObject(root, "ip", ipStr);
+            cJSON_AddStringToObject(root, "message", "Server tidak merespons (Timeout 3s / Port UDP 123 diblokir)");
+        }
+        return sendJson(root);
     }
 
     uint8_t stratum = ntpPacket[1];
@@ -2123,24 +2211,20 @@ static esp_err_t api_test_ntp_handler(httpd_req_t *req) {
     }
 
     cJSON *root = cJSON_CreateObject();
-    cJSON_AddStringToObject(root, "status", "ok");
-    cJSON_AddBoolToObject(root, "success", true);
-    cJSON_AddStringToObject(root, "server", cleanServer);
-    cJSON_AddStringToObject(root, "ip", ipStr);
-    cJSON_AddNumberToObject(root, "rtt_ms", (double)elapsedMs);
-    cJSON_AddNumberToObject(root, "stratum", stratum);
-    cJSON_AddStringToObject(root, "server_time", timeStr);
+    if (root) {
+        cJSON_AddStringToObject(root, "status", "ok");
+        cJSON_AddBoolToObject(root, "success", true);
+        cJSON_AddStringToObject(root, "server", cleanServer);
+        cJSON_AddStringToObject(root, "ip", ipStr);
+        cJSON_AddNumberToObject(root, "rtt_ms", (double)elapsedMs);
+        cJSON_AddNumberToObject(root, "stratum", stratum);
+        cJSON_AddStringToObject(root, "server_time", timeStr);
 
-    char msg[128];
-    snprintf(msg, sizeof(msg), "Server NTP aktif (Latensi: %lld ms | Stratum %d)", (long long)elapsedMs, stratum);
-    cJSON_AddStringToObject(root, "message", msg);
-
-    char *resp_str = cJSON_PrintUnformatted(root);
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
-    free(resp_str);
-    cJSON_Delete(root);
-    return ESP_OK;
+        char msg[128];
+        snprintf(msg, sizeof(msg), "Server NTP aktif (Latensi: %lld ms | Stratum %d)", (long long)elapsedMs, stratum);
+        cJSON_AddStringToObject(root, "message", msg);
+    }
+    return sendJson(root);
 }
 
 // -------------------------------------------------------------

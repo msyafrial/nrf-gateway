@@ -7,7 +7,10 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
+#include <atomic>
 #include <cstring>
+#include <memory>
 
 static const char *TAG = "MICRO_DHCPS";
 
@@ -32,28 +35,35 @@ struct __attribute__((packed)) dhcp_raw_msg {
     uint8_t  options[308]; // Options payload
 };
 
-static volatile bool s_running = false;
-static volatile bool s_hasActiveClientLease = false;
-static esp_netif_t*  s_netif = nullptr;
-static uint32_t      s_serverIp = 0xC0A80401; // 192.168.4.1 (Host Order)
-static uint32_t      s_clientIp = 0xC0A80402; // 192.168.4.2 (Host Order)
-static TaskHandle_t  s_taskHandle = nullptr;
+static std::atomic<bool> s_running{false};
+static std::atomic<bool> s_hasActiveClientLease{false};
+static esp_netif_t*      s_netif = nullptr;
+static uint32_t          s_serverIp = 0xC0A80401; // 192.168.4.1 (Host Order)
+static uint32_t          s_clientIp = 0xC0A80402; // 192.168.4.2 (Host Order)
+static TaskHandle_t      s_taskHandle = nullptr;
+static SemaphoreHandle_t s_exitSem = nullptr;
 
 bool MicroDhcpServer::start(esp_netif_t* netif, uint32_t server_ip, uint32_t client_ip) {
-    if (s_running) {
+    if (s_running.load(std::memory_order_acquire)) {
         return true;
+    }
+
+    if (s_exitSem == nullptr) {
+        s_exitSem = xSemaphoreCreateBinary();
+    } else {
+        xSemaphoreTake(s_exitSem, 0);
     }
 
     s_netif = netif;
     s_serverIp = server_ip;
     s_clientIp = client_ip;
-    s_hasActiveClientLease = false;
-    s_running = true;
+    s_hasActiveClientLease.store(false, std::memory_order_release);
+    s_running.store(true, std::memory_order_release);
 
     BaseType_t res = xTaskCreatePinnedToCore(
         taskWorker,
         "micro_dhcp_tsk",
-        2048, // Dihemat dari 3072 ke 2048 (+1 KB DRAM, stack hanya untuk socket recv/send DHCP frame kecil)
+        3072, // Stack aman 3 KB; struct dhcp_raw_msg dialokasikan di heap on-demand saat AP aktif
         nullptr,
         4,
         &s_taskHandle,
@@ -62,7 +72,7 @@ bool MicroDhcpServer::start(esp_netif_t* netif, uint32_t server_ip, uint32_t cli
 
     if (res != pdPASS) {
         ESP_LOGE(TAG, "Gagal membuat task Micro-DHCP!");
-        s_running = false;
+        s_running.store(false, std::memory_order_release);
         return false;
     }
 
@@ -71,33 +81,32 @@ bool MicroDhcpServer::start(esp_netif_t* netif, uint32_t server_ip, uint32_t cli
 }
 
 void MicroDhcpServer::stop() {
-    if (!s_running) return;
+    if (!s_running.load(std::memory_order_acquire) && s_taskHandle == nullptr) return;
 
-    s_running = false;
-    s_hasActiveClientLease = false;
+    s_running.store(false, std::memory_order_release);
+    s_hasActiveClientLease.store(false, std::memory_order_release);
 
-    // Tunggu task berhenti dengan batas waktu 800ms (> 500ms SO_RCVTIMEO)
-    for (int i = 0; i < 40 && s_taskHandle != nullptr; ++i) {
-        vTaskDelay(pdMS_TO_TICKS(20));
+    if (s_exitSem != nullptr && s_taskHandle != nullptr) {
+        xSemaphoreTake(s_exitSem, pdMS_TO_TICKS(800));
     }
     s_taskHandle = nullptr;
     ESP_LOGI(TAG, "Micro-DHCP Server dihentikan");
 }
 
 bool MicroDhcpServer::isRunning() {
-    return s_running;
+    return s_running.load(std::memory_order_acquire);
 }
 
 bool MicroDhcpServer::hasActiveClientLease() {
-    return s_hasActiveClientLease;
+    return s_hasActiveClientLease.load(std::memory_order_acquire);
 }
 
 void MicroDhcpServer::resetClientLease() {
     s_hasActiveClientLease = false;
 }
 
-static void sendDhcpReply(int sock, const dhcp_raw_msg& req, uint8_t msg_type, uint32_t server_ip_be, uint32_t client_ip_be) {
-    dhcp_raw_msg rep = {};
+static void sendDhcpReply(int sock, const dhcp_raw_msg& req, dhcp_raw_msg& rep, uint8_t msg_type, uint32_t server_ip_be, uint32_t client_ip_be) {
+    memset(&rep, 0, sizeof(rep));
     rep.op = 2; // BOOTREPLY
     rep.htype = req.htype ? req.htype : 1;
     rep.hlen = req.hlen ? req.hlen : 6;
@@ -190,8 +199,9 @@ void MicroDhcpServer::taskWorker(void* arg) {
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) {
         ESP_LOGE(TAG, "Gagal membuka socket UDP 67: %d", errno);
-        s_running = false;
+        s_running.store(false, std::memory_order_release);
         s_taskHandle = nullptr;
+        if (s_exitSem) xSemaphoreGive(s_exitSem);
         vTaskDelete(nullptr);
         return;
     }
@@ -238,19 +248,28 @@ void MicroDhcpServer::taskWorker(void* arg) {
     uint32_t s_ip_be = htonl(s_serverIp);
     uint32_t c_ip_be = htonl(s_clientIp);
 
-    dhcp_raw_msg rx_msg;
+    auto rx_msg = std::make_unique<dhcp_raw_msg>();
+    auto rep_msg = std::make_unique<dhcp_raw_msg>();
+    if (!rx_msg || !rep_msg) {
+        ESP_LOGE(TAG, "Gagal alokasi buffer DHCP di heap!");
+        close(sock);
+        s_running = false;
+        s_taskHandle = nullptr;
+        vTaskDelete(nullptr);
+        return;
+    }
 
     while (s_running) {
         struct sockaddr_in from_addr;
         socklen_t from_len = sizeof(from_addr);
-        int len = recvfrom(sock, &rx_msg, sizeof(rx_msg), 0, (struct sockaddr*)&from_addr, &from_len);
+        int len = recvfrom(sock, rx_msg.get(), sizeof(dhcp_raw_msg), 0, (struct sockaddr*)&from_addr, &from_len);
 
-        if (len < (int)(sizeof(dhcp_raw_msg) - sizeof(rx_msg.options) + 4)) {
+        if (len < (int)(sizeof(dhcp_raw_msg) - sizeof(rx_msg->options) + 4)) {
             continue; // Timeout atau paket terlalu pendek
         }
 
-        if (rx_msg.op != 1) continue; // Bukan BOOTREQUEST
-        if (ntohl(rx_msg.cookie) != 0x63825363) continue; // Magic Cookie tidak cocok
+        if (rx_msg->op != 1) continue; // Bukan BOOTREQUEST
+        if (ntohl(rx_msg->cookie) != 0x63825363) continue; // Magic Cookie tidak cocok
 
         // Parse Opsi DHCP
         uint8_t msg_type = 0;
@@ -259,25 +278,25 @@ void MicroDhcpServer::taskWorker(void* arg) {
         char opt12_hostname[64] = {0};
         size_t opt12_len = 0;
 
-        size_t max_opt_len = len - (sizeof(dhcp_raw_msg) - sizeof(rx_msg.options));
+        size_t max_opt_len = len - (sizeof(dhcp_raw_msg) - sizeof(rx_msg->options));
         size_t i = 0;
         while (i < max_opt_len) {
-            uint8_t code = rx_msg.options[i++];
+            uint8_t code = rx_msg->options[i++];
             if (code == 0) continue; // Padding
             if (code == 255) break;  // End
             if (i >= max_opt_len) break;
-            uint8_t opt_len = rx_msg.options[i++];
+            uint8_t opt_len = rx_msg->options[i++];
             if (i + opt_len > max_opt_len) break;
 
             if (code == 53 && opt_len == 1) { // DHCP Message Type
-                msg_type = rx_msg.options[i];
+                msg_type = rx_msg->options[i];
             } else if (code == 50 && opt_len == 4) { // Requested IP
-                memcpy(&opt50_ip, &rx_msg.options[i], 4);
+                memcpy(&opt50_ip, &rx_msg->options[i], 4);
             } else if (code == 54 && opt_len == 4) { // Server Identifier
-                memcpy(&opt54_ip, &rx_msg.options[i], 4);
+                memcpy(&opt54_ip, &rx_msg->options[i], 4);
             } else if (code == 12 && opt_len > 0) { // Host Name
                 opt12_len = (opt_len < sizeof(opt12_hostname) - 1) ? opt_len : (sizeof(opt12_hostname) - 1);
-                memcpy(opt12_hostname, &rx_msg.options[i], opt12_len);
+                memcpy(opt12_hostname, &rx_msg->options[i], opt12_len);
                 opt12_hostname[opt12_len] = '\0';
             }
             i += opt_len;
@@ -315,7 +334,7 @@ void MicroDhcpServer::taskWorker(void* arg) {
 
         if (msg_type == 1) { // DHCPDISCOVER
             ESP_LOGI(TAG, "Menerima DHCPDISCOVER -> Mengirim DHCPOFFER 192.168.4.2");
-            sendDhcpReply(sock, rx_msg, 2, s_ip_be, c_ip_be); // 2 = DHCPOFFER
+            sendDhcpReply(sock, *rx_msg, *rep_msg, 2, s_ip_be, c_ip_be); // 2 = DHCPOFFER
         } else if (msg_type == 3) { // DHCPREQUEST
             // Jika klien menyertakan Option 54 (Server Identifier) dan ditujukan ke server lain, abaikan
             if (opt54_ip != 0 && opt54_ip != s_ip_be) {
@@ -325,22 +344,23 @@ void MicroDhcpServer::taskWorker(void* arg) {
 
             // Sesuai RFC 2131:
             // Cek Option 50 jika ada; jika tidak ada (state RENEWING), ambil dari header ciaddr
-            uint32_t target_ip = (opt50_ip != 0) ? opt50_ip : rx_msg.ciaddr;
+            uint32_t target_ip = (opt50_ip != 0) ? opt50_ip : rx_msg->ciaddr;
 
             if (target_ip == c_ip_be) {
                 ESP_LOGI(TAG, "Menerima DHCPREQUEST valid -> Mengirim DHCPACK (Lease Terkunci)");
-                sendDhcpReply(sock, rx_msg, 5, s_ip_be, c_ip_be); // 5 = DHCPACK
-                s_hasActiveClientLease = true;
+                sendDhcpReply(sock, *rx_msg, *rep_msg, 5, s_ip_be, c_ip_be); // 5 = DHCPACK
+                s_hasActiveClientLease.store(true, std::memory_order_release);
             } else {
                 ESP_LOGW(TAG, "Menerima DHCPREQUEST untuk IP asing -> Mengirim DHCPNAK seketika");
-                sendDhcpReply(sock, rx_msg, 6, s_ip_be, 0); // 6 = DHCPNAK (yiaddr = 0.0.0.0)
+                sendDhcpReply(sock, *rx_msg, *rep_msg, 6, s_ip_be, 0); // 6 = DHCPNAK (yiaddr = 0.0.0.0)
             }
         }
     }
 
     close(sock);
-    s_running = false;
+    s_running.store(false, std::memory_order_release);
     s_taskHandle = nullptr;
+    if (s_exitSem) xSemaphoreGive(s_exitSem);
     vTaskDelete(nullptr);
 }
 

@@ -7,12 +7,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <cstring>
+#include <atomic>
 
 static const char *TAG = "AT24C256";
 
 namespace Iotaru::Bsp {
 
-static bool s_isDetected = false;
+static std::atomic<bool> s_isDetected{false};
 static i2c_master_bus_handle_t s_i2cBusHandle = nullptr;
 static i2c_master_dev_handle_t s_eepromDevHandle = nullptr;
 static SemaphoreHandle_t s_i2cMutex = nullptr;
@@ -140,31 +141,45 @@ esp_err_t At24c256::init() {
     return ESP_OK;
 }
 
-bool At24c256::isDetected() {
-    if (s_isDetected) return true;
+static bool isDetectedLocked() {
+    if (s_isDetected.load(std::memory_order_acquire) && s_eepromDevHandle != nullptr) {
+        return true;
+    }
 
-    // Dynamic runtime re-probe jika saat boot terjadi fluktuasi daya awal
-    if (s_i2cBusHandle != nullptr) {
-        if (probe()) {
-            if (!s_eepromDevHandle) {
-                i2c_device_config_t dev_config = {};
-                dev_config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-                dev_config.device_address = Pins::AT24C256_I2C_ADDR;
-                dev_config.scl_speed_hz = Pins::I2C_FREQ_HZ;
-                if (i2c_master_bus_add_device(s_i2cBusHandle, &dev_config, &s_eepromDevHandle) == ESP_OK) {
-                    s_isDetected = true;
-                    ESP_LOGI(TAG, "✅ [DYNAMIC-DETECT] IC EEPROM AT24C256 terdeteksi kembali di runtime!");
-                }
-            } else {
-                s_isDetected = true;
+    // Dynamic runtime re-probe jika saat boot terjadi fluktuasi daya awal (caller sudah memegang s_i2cMutex)
+    if (s_i2cBusHandle != nullptr &&
+        i2c_master_probe(s_i2cBusHandle, Pins::AT24C256_I2C_ADDR, 50) == ESP_OK) {
+        if (!s_eepromDevHandle) {
+            i2c_device_config_t dev_config = {};
+            dev_config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+            dev_config.device_address = Pins::AT24C256_I2C_ADDR;
+            dev_config.scl_speed_hz = Pins::I2C_FREQ_HZ;
+            if (i2c_master_bus_add_device(s_i2cBusHandle, &dev_config, &s_eepromDevHandle) == ESP_OK) {
+                s_isDetected.store(true, std::memory_order_release);
+                ESP_LOGI(TAG, "✅ [DYNAMIC-DETECT] IC EEPROM AT24C256 terdeteksi kembali di runtime!");
             }
+        } else {
+            s_isDetected.store(true, std::memory_order_release);
         }
     }
-    return s_isDetected;
+    return s_isDetected.load(std::memory_order_acquire) && (s_eepromDevHandle != nullptr);
+}
+
+bool At24c256::isDetected() {
+    if (s_isDetected.load(std::memory_order_acquire) && s_eepromDevHandle != nullptr) {
+        return true;
+    }
+    if (!s_i2cMutex) return false;
+    if (xSemaphoreTake(s_i2cMutex, pdMS_TO_TICKS(200)) != pdTRUE) {
+        return false;
+    }
+    bool detected = isDetectedLocked();
+    xSemaphoreGive(s_i2cMutex);
+    return detected;
 }
 
 esp_err_t At24c256::writePage(uint16_t memAddr, const uint8_t* data, size_t len) {
-    if (!isDetected() || !s_eepromDevHandle || !data || len == 0 || len > Pins::AT24C256_PAGE_SIZE) {
+    if (!data || len == 0 || len > Pins::AT24C256_PAGE_SIZE || !s_i2cMutex) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -175,6 +190,10 @@ esp_err_t At24c256::writePage(uint16_t memAddr, const uint8_t* data, size_t len)
 
     if (xSemaphoreTake(s_i2cMutex, pdMS_TO_TICKS(200)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
+    }
+    if (!isDetectedLocked()) {
+        xSemaphoreGive(s_i2cMutex);
+        return ESP_ERR_INVALID_STATE;
     }
 
     esp_err_t ret = i2c_master_transmit(
@@ -196,7 +215,7 @@ esp_err_t At24c256::writePage(uint16_t memAddr, const uint8_t* data, size_t len)
 }
 
 esp_err_t At24c256::readBuffer(uint16_t memAddr, uint8_t* outBuf, size_t len) {
-    if (!isDetected() || !s_eepromDevHandle || !outBuf || len == 0) {
+    if (!outBuf || len == 0 || !s_i2cMutex) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -207,6 +226,10 @@ esp_err_t At24c256::readBuffer(uint16_t memAddr, uint8_t* outBuf, size_t len) {
 
     if (xSemaphoreTake(s_i2cMutex, pdMS_TO_TICKS(200)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
+    }
+    if (!isDetectedLocked()) {
+        xSemaphoreGive(s_i2cMutex);
+        return ESP_ERR_INVALID_STATE;
     }
 
     esp_err_t ret = i2c_master_transmit_receive(
@@ -239,7 +262,7 @@ esp_err_t At24c256::readBuffer(uint16_t memAddr, uint8_t* outBuf, size_t len) {
 }
 
 esp_err_t At24c256::writeSlot(size_t slotIdx, const EepromSlotData& data) {
-    if (!isDetected() || !s_eepromDevHandle || slotIdx >= Pins::AT24C256_TOTAL_SLOTS) {
+    if (slotIdx >= Pins::AT24C256_TOTAL_SLOTS || !s_i2cMutex) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -251,14 +274,18 @@ esp_err_t At24c256::writeSlot(size_t slotIdx, const EepromSlotData& data) {
     if (xSemaphoreTake(s_i2cMutex, pdMS_TO_TICKS(400)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
     }
+    if (!isDetectedLocked()) {
+        xSemaphoreGive(s_i2cMutex);
+        return ESP_ERR_INVALID_STATE;
+    }
 
     // 1. Tulis Halaman 1 (64 Byte pertama)
-    uint8_t packet1[66];
-    packet1[0] = static_cast<uint8_t>((slotAddr >> 8) & 0xFF);
-    packet1[1] = static_cast<uint8_t>(slotAddr & 0xFF);
-    memcpy(packet1 + 2, rawBytes, Pins::AT24C256_PAGE_SIZE);
+    uint8_t packet[66];
+    packet[0] = static_cast<uint8_t>((slotAddr >> 8) & 0xFF);
+    packet[1] = static_cast<uint8_t>(slotAddr & 0xFF);
+    memcpy(packet + 2, rawBytes, Pins::AT24C256_PAGE_SIZE);
 
-    esp_err_t ret = i2c_master_transmit(s_eepromDevHandle, packet1, Pins::AT24C256_PAGE_SIZE + 2, pdMS_TO_TICKS(50));
+    esp_err_t ret = i2c_master_transmit(s_eepromDevHandle, packet, Pins::AT24C256_PAGE_SIZE + 2, pdMS_TO_TICKS(50));
     if (ret == ESP_OK) {
         waitForWriteComplete(15);
     } else {
@@ -270,12 +297,11 @@ esp_err_t At24c256::writeSlot(size_t slotIdx, const EepromSlotData& data) {
 
     // 2. Tulis Halaman 2 (64 Byte kedua: sisa teks, checksum offset 118, padding)
     uint16_t slotAddr2 = slotAddr + Pins::AT24C256_PAGE_SIZE;
-    uint8_t packet2[66];
-    packet2[0] = static_cast<uint8_t>((slotAddr2 >> 8) & 0xFF);
-    packet2[1] = static_cast<uint8_t>(slotAddr2 & 0xFF);
-    memcpy(packet2 + 2, rawBytes + Pins::AT24C256_PAGE_SIZE, Pins::AT24C256_PAGE_SIZE);
+    packet[0] = static_cast<uint8_t>((slotAddr2 >> 8) & 0xFF);
+    packet[1] = static_cast<uint8_t>(slotAddr2 & 0xFF);
+    memcpy(packet + 2, rawBytes + Pins::AT24C256_PAGE_SIZE, Pins::AT24C256_PAGE_SIZE);
 
-    ret = i2c_master_transmit(s_eepromDevHandle, packet2, Pins::AT24C256_PAGE_SIZE + 2, pdMS_TO_TICKS(50));
+    ret = i2c_master_transmit(s_eepromDevHandle, packet, Pins::AT24C256_PAGE_SIZE + 2, pdMS_TO_TICKS(50));
     if (ret == ESP_OK) {
         waitForWriteComplete(15);
     } else {
@@ -338,6 +364,89 @@ esp_err_t At24c256::wipeAll(uint8_t fillByte) {
 
     ESP_LOGI(TAG, "Wipe seluruh memori EEPROM AT24C256 (32 KB, 512 halaman) berhasil diselesaikan.");
     return ESP_OK;
+}
+
+struct EepromAsyncJob {
+    bool isSlot;
+    size_t slotIdx;
+    uint16_t memAddr;
+    size_t len;
+    union {
+        EepromSlotData slot;
+        uint8_t page[Pins::AT24C256_PAGE_SIZE];
+    } payload;
+};
+
+static QueueHandle_t s_eepromWriteQueue = nullptr;
+static TaskHandle_t s_eepromWriterTask = nullptr;
+static std::atomic<bool> s_eepromWriting{false};
+
+static void eepromWriterTask(void*) {
+    EepromAsyncJob job;
+    for (;;) {
+        if (xQueueReceive(s_eepromWriteQueue, &job, portMAX_DELAY) == pdTRUE) {
+            s_eepromWriting.store(true, std::memory_order_release);
+            if (job.isSlot) {
+                At24c256::writeSlot(job.slotIdx, job.payload.slot);
+            } else {
+                At24c256::writePage(job.memAddr, job.payload.page, job.len);
+            }
+            s_eepromWriting.store(false, std::memory_order_release);
+        }
+    }
+}
+
+void At24c256::startAsyncWriter() {
+    if (s_eepromWriteQueue == nullptr) {
+        s_eepromWriteQueue = xQueueCreate(8, sizeof(EepromAsyncJob));
+    }
+    if (s_eepromWriteQueue != nullptr && s_eepromWriterTask == nullptr) {
+        xTaskCreatePinnedToCore(eepromWriterTask, "eeprom_writer", 2560, nullptr, 2, &s_eepromWriterTask, 1);
+    }
+}
+
+bool At24c256::enqueueSlotWrite(size_t slotIdx, const EepromSlotData& data) {
+    if (!isDetected()) return false;
+    if (s_eepromWriteQueue == nullptr) {
+        return writeSlot(slotIdx, data) == ESP_OK;
+    }
+    EepromAsyncJob job = {};
+    job.isSlot = true;
+    job.slotIdx = slotIdx;
+    job.payload.slot = data;
+    if (xQueueSend(s_eepromWriteQueue, &job, pdMS_TO_TICKS(10)) == pdTRUE) {
+        return true;
+    }
+    return false;
+}
+
+bool At24c256::enqueuePageWrite(uint16_t memAddr, const uint8_t* data, size_t len) {
+    if (!isDetected() || !data || len == 0 || len > Pins::AT24C256_PAGE_SIZE) return false;
+    if (s_eepromWriteQueue == nullptr) {
+        return writePage(memAddr, data, len) == ESP_OK;
+    }
+    EepromAsyncJob job = {};
+    job.isSlot = false;
+    job.memAddr = memAddr;
+    job.len = len;
+    memcpy(job.payload.page, data, len);
+    if (xQueueSend(s_eepromWriteQueue, &job, pdMS_TO_TICKS(10)) == pdTRUE) {
+        return true;
+    }
+    return false;
+}
+
+void At24c256::flushAsyncWrites(uint32_t timeoutMs) {
+    if (s_eepromWriteQueue == nullptr) return;
+    uint32_t waited = 0;
+    while (waited < timeoutMs) {
+        if (uxQueueMessagesWaiting(s_eepromWriteQueue) == 0 &&
+            !s_eepromWriting.load(std::memory_order_acquire)) {
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+        waited += 10;
+    }
 }
 
 } // namespace Iotaru::Bsp

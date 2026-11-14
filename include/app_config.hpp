@@ -74,4 +74,20 @@ extern AppConfig g_config;
 void parseHexUUID(const char* hexStr, uint8_t* out16);
 bool matchMajorFilter(uint16_t beaconMajor, std::string_view filterStr);
 
+struct Core0FilterSnapshot {
+    uint32_t gen = 0;
+    int8_t   rssi_min = -100;
+    bool     filter_uuid_en = false;
+    uint8_t  filter_uuid_bytes[16] = {0};
+    bool     filter_major_en = false;
+    uint16_t majors[16] = {0};
+    uint8_t  major_count = 0;
+    bool     filter_unknown_en = false;
+    int      data_ttl = 5000;
+};
+
+void notifyConfigUpdated();
+uint32_t getConfigGeneration();
+void copyFilterSnapshot(Core0FilterSnapshot& out);
+
 } // namespace Iotaru

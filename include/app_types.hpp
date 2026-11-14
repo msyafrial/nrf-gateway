@@ -184,12 +184,12 @@ namespace Pins {
     constexpr int W5500_MOSI = 23;
     constexpr int W5500_RST  = 15;
     constexpr int W5500_INT  = 14;
-    constexpr int W5500_SPI_CLOCK_MHZ = 25; // 25-33 MHz DMA
+    constexpr int W5500_SPI_CLOCK_MHZ = 16; // 16 MHz SPI Clock (PCB-proven sinyal bersih anti-noise)
 
     // I2C Master & AT24C256 EEPROM
     constexpr int I2C_SDA = 21;
     constexpr int I2C_SCL = 22;
-    constexpr uint32_t I2C_FREQ_HZ = 100000;
+    constexpr uint32_t I2C_FREQ_HZ = 400000;
     constexpr uint8_t AT24C256_I2C_ADDR = 0x50;
     constexpr size_t AT24C256_PAGE_SIZE = 64;
     constexpr size_t AT24C256_SLOT_SIZE = 128;

@@ -53,6 +53,10 @@ public:
     static esp_err_t readBuffer(uint16_t memAddr, uint8_t* outBuf, size_t len);
     static esp_err_t wipeAll(uint8_t fillByte = 0xFF);
     static void recoverBus();
+    static void startAsyncWriter();
+    static bool enqueueSlotWrite(size_t slotIdx, const EepromSlotData& data);
+    static bool enqueuePageWrite(uint16_t memAddr, const uint8_t* data, size_t len);
+    static void flushAsyncWrites(uint32_t timeoutMs = 1500);
 
 private:
     static bool probe();

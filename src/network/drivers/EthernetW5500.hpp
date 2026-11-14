@@ -6,6 +6,7 @@
 #include "esp_eth.h"
 #include "esp_netif.h"
 #include "esp_event.h"
+#include <atomic>
 
 namespace Iotaru::Network {
 
@@ -44,9 +45,9 @@ public:
     static void onIpEvent(void* arg, esp_event_base_t base, int32_t id, void* data);
 
 private:
-    static bool s_connected;
-    static bool s_hasIp;
-    static bool s_hardwareDetected;
+    static std::atomic<bool> s_connected;
+    static std::atomic<bool> s_hasIp;
+    static std::atomic<bool> s_hardwareDetected;
     static esp_eth_handle_t s_eth_handle;
     static esp_netif_t* s_eth_netif;
     static esp_eth_netif_glue_handle_t s_eth_glue;

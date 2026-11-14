@@ -7,20 +7,33 @@
 #include "nvs_flash.h"
 #include "aes/esp_aes.h"
 #include "psa/crypto.h"
+#include "freertos/FreeRTOS.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
+#include <atomic>
+#include <mutex>
 
 static const char *TAG = "CONFIG_STORE";
+static std::once_flag s_cryptoInitOnce;
+static std::once_flag s_saltInitOnce;
+static char s_devSalt[33] = {0};
+static std::atomic<uint32_t> s_configGen{1};
+static portMUX_TYPE s_filterSnapMux = portMUX_INITIALIZER_UNLOCKED;
+
+static void ensurePsaCryptoInit() {
+    std::call_once(s_cryptoInitOnce, []() {
+        psa_crypto_init();
+    });
+}
 
 static void deriveHardwareKey(uint8_t key[16]) {
     uint8_t mac[6] = {0};
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
 
-    static char s_devSalt[33] = {0};
-    if (s_devSalt[0] == '\0') {
-        nvs_handle_t hSys;
+    std::call_once(s_saltInitOnce, []() {
+        nvs_handle_t hSys = 0;
         if (nvs_open("cfg_sys", NVS_READWRITE, &hSys) == ESP_OK) {
             size_t len = sizeof(s_devSalt);
             if (nvs_get_str(hSys, "k_salt", s_devSalt, &len) != ESP_OK || strlen(s_devSalt) < 16) {
@@ -34,14 +47,14 @@ static void deriveHardwareKey(uint8_t key[16]) {
         } else {
             strlcpy(s_devSalt, "SG10_IOTARU_ENC_SALT_2026", sizeof(s_devSalt));
         }
-    }
+    });
 
     uint8_t inputBuf[64];
     size_t saltLen = strlen(s_devSalt);
     memcpy(inputBuf, mac, 6);
     memcpy(inputBuf + 6, s_devSalt, saltLen);
 
-    psa_crypto_init();
+    ensurePsaCryptoInit();
     uint8_t hash[32];
     size_t hashLen = 0;
     psa_hash_compute(PSA_ALG_SHA_256, inputBuf, 6 + saltLen, hash, sizeof(hash), &hashLen);
@@ -57,7 +70,7 @@ static void deriveLegacyHardwareKey(uint8_t key[16]) {
     memcpy(inputBuf, mac, 6);
     memcpy(inputBuf + 6, salt, strlen(salt));
 
-    psa_crypto_init();
+    ensurePsaCryptoInit();
     uint8_t hash[32];
     size_t hashLen = 0;
     psa_hash_compute(PSA_ALG_SHA_256, inputBuf, 6 + strlen(salt), hash, sizeof(hash), &hashLen);
@@ -65,7 +78,10 @@ static void deriveLegacyHardwareKey(uint8_t key[16]) {
 }
 
 static void encryptSecret(const char* plaintext, char* outEncBuf, size_t maxLen) {
-    if (!plaintext || !outEncBuf || maxLen < 40) return;
+    if (!plaintext || !outEncBuf || maxLen < 70) {
+        if (outEncBuf && maxLen > 0) outEncBuf[0] = '\0';
+        return;
+    }
     size_t inLen = strlen(plaintext);
     if (inLen == 0) {
         strlcpy(outEncBuf, "", maxLen);
@@ -76,6 +92,15 @@ static void encryptSecret(const char* plaintext, char* outEncBuf, size_t maxLen)
     deriveHardwareKey(key);
 
     if (inLen > 63) inLen = 63;
+    // Pastikan ciphertext + prefix "cbc:<32hex>:" + NUL (38 + paddedLen*2) tidak terpotong oleh maxLen
+    size_t maxPlainBlocks = (maxLen - 38) / 32; // tiap blok 16B = 32 hex chars
+    if (maxPlainBlocks == 0) {
+        outEncBuf[0] = '\0';
+        return;
+    }
+    size_t maxInLen = maxPlainBlocks * 16 - 1;
+    if (inLen > maxInLen) inLen = maxInLen;
+
     size_t padLen = 16 - (inLen % 16);
     size_t paddedLen = inLen + padLen;
 
@@ -243,6 +268,54 @@ void parseHexUUID(const char* hexStr, uint8_t* out16) {
     }
 }
 
+void notifyConfigUpdated() {
+    s_configGen.fetch_add(1, std::memory_order_release);
+}
+
+uint32_t getConfigGeneration() {
+    return s_configGen.load(std::memory_order_acquire);
+}
+
+void copyFilterSnapshot(Core0FilterSnapshot& out) {
+    char majorCopy[32] = {0};
+    portENTER_CRITICAL(&s_filterSnapMux);
+    out.gen = s_configGen.load(std::memory_order_relaxed);
+    out.rssi_min = static_cast<int8_t>(g_config.rssi_min);
+    out.filter_uuid_en = (g_config.filter_uuid_en != 0);
+    std::memcpy(out.filter_uuid_bytes, g_config.filter_uuid_bytes, 16);
+    out.filter_major_en = (g_config.filter_major_en != 0);
+    strlcpy(majorCopy, g_config.filter_major, sizeof(majorCopy));
+    out.filter_unknown_en = (g_config.filter_unknown_en != 0);
+    out.data_ttl = g_config.data_ttl;
+    portEXIT_CRITICAL(&s_filterSnapMux);
+
+    out.major_count = 0;
+    std::string_view sv(majorCopy);
+    size_t start = 0;
+    size_t len = sv.length();
+    while (start < len && out.major_count < 16) {
+        while (start < len && (sv[start] == ',' || sv[start] == ' ' || sv[start] == ';')) start++;
+        if (start >= len) break;
+        size_t end = start;
+        while (end < len && sv[end] != ',' && sv[end] != ' ' && sv[end] != ';') end++;
+        std::string_view tok = sv.substr(start, end - start);
+        bool isNum = !tok.empty();
+        for (char c : tok) {
+            if (c < '0' || c > '9') { isNum = false; break; }
+        }
+        if (isNum) {
+            char tmp[16] = {0};
+            size_t cpyLen = std::min(tok.length(), sizeof(tmp) - 1);
+            std::memcpy(tmp, tok.data(), cpyLen);
+            long val = std::strtol(tmp, nullptr, 10);
+            if (val >= 0 && val <= 65535) {
+                out.majors[out.major_count++] = static_cast<uint16_t>(val);
+            }
+        }
+        start = end;
+    }
+}
+
 bool matchMajorFilter(uint16_t beaconMajor, std::string_view filterStr) {
     if (filterStr.empty()) return true;
 
@@ -368,14 +441,15 @@ void ConfigStore::initMetadata() {
 }
 
 void ConfigStore::initNvsConfiguration() {
-    nvs_handle_t hSys;
+    nvs_handle_t hSys = 0;
     uint8_t cfgValid = 0;
-    if (nvs_open("cfg_sys", NVS_READWRITE, &hSys) == ESP_OK) {
+    bool hSysOpen = (nvs_open("cfg_sys", NVS_READWRITE, &hSys) == ESP_OK);
+    if (hSysOpen) {
         nvs_get_u8(hSys, "cfg_valid", &cfgValid);
     }
 
     if (cfgValid == 1) {
-        nvs_close(hSys);
+        if (hSysOpen) nvs_close(hSys);
         ESP_LOGI(TAG, "Konfigurasi operasional (cfg_*) valid & terverifikasi.");
         return;
     }
@@ -528,7 +602,7 @@ void ConfigStore::initNvsConfiguration() {
     }
 
     // 5. Tandai cfg_valid = 1
-    if (hSys != 0) {
+    if (hSysOpen) {
         nvs_set_u8(hSys, "cfg_valid", 1);
         nvs_commit(hSys);
         nvs_close(hSys);
@@ -724,6 +798,7 @@ void ConfigStore::loadConfigFromNvs(AppConfig& targetCfg, bool allowMigration) {
 
 void ConfigStore::loadConfig() {
     loadConfigFromNvs(g_config, true);
+    notifyConfigUpdated();
 }
 
 void ConfigStore::saveConfigAuth(const AppConfig& srcCfg) {
@@ -809,6 +884,7 @@ void ConfigStore::saveConfigSettings(const AppConfig& srcCfg) {
     }
     if (&srcCfg == &g_config) {
         parseHexUUID(g_config.filter_uuid, g_config.filter_uuid_bytes);
+        notifyConfigUpdated();
     }
     ESP_LOGI(TAG, "Pengaturan Gateway berhasil disimpan ke NVS.");
 }

@@ -2,6 +2,7 @@
 #include "drop_log_service.hpp"
 #include "mqtt_service.hpp"
 #include "app_config.hpp"
+#include "app_time.hpp"
 #include "config_store.hpp"
 #include "crc_utils.hpp"
 #include "esp_log.h"
@@ -17,6 +18,8 @@ namespace Iotaru::Core {
 
 static QueueHandle_t s_beaconQueue = nullptr;
 static SemaphoreHandle_t s_beaconBufMutex = nullptr;
+static std::atomic<uint32_t> s_queueEpoch{0};
+static Core0FilterSnapshot s_c0Filter;
 
 static LiveBeaconItem s_liveBeaconBuf[LIVE_FIFO_MAX];
 static std::atomic<size_t> s_liveBeaconCount{0};
@@ -210,10 +213,15 @@ static void handleRawBleFrame(const RawBleBinaryFrame* frame) {
 
     s_totalFramesIngress.fetch_add(1, std::memory_order_relaxed);
 
+    uint32_t cfgGen = getConfigGeneration();
+    if (s_c0Filter.gen != cfgGen) {
+        copyFilterSnapshot(s_c0Filter);
+    }
+
     ParsedAdvInfo adv = parseAdvStructures(frame->payload, frame->payload_len);
 
     // 1. Filter RSSI Universal
-    bool passRssi = (frame->rssi >= (int8_t)g_config.rssi_min);
+    bool passRssi = (frame->rssi >= s_c0Filter.rssi_min);
     if (!passRssi) {
         char tag[24];
         formatTag(tag, sizeof(tag), adv.has_major, adv.major, adv.minor, frame->mac);
@@ -224,8 +232,8 @@ static void handleRawBleFrame(const RawBleBinaryFrame* frame) {
     }
 
     // 2. Conditional Filter UUID (HANYA jika paket memiliki UUID)
-    if (g_config.filter_uuid_en && adv.has_uuid) {
-        if (std::memcmp(adv.uuid, g_config.filter_uuid_bytes, 16) != 0) {
+    if (s_c0Filter.filter_uuid_en && adv.has_uuid) {
+        if (std::memcmp(adv.uuid, s_c0Filter.filter_uuid_bytes, 16) != 0) {
             char tag[24];
             formatTag(tag, sizeof(tag), adv.has_major, adv.major, adv.minor, frame->mac);
             BeaconPipeline::recordDroppedBeacon(getBeaconTypeCode(adv.type), tag, frame->rssi,
@@ -236,8 +244,15 @@ static void handleRawBleFrame(const RawBleBinaryFrame* frame) {
     }
 
     // 3. Conditional Filter Major (HANYA jika paket memiliki Major)
-    if (g_config.filter_major_en && adv.has_major) {
-        if (!Iotaru::matchMajorFilter(adv.major, g_config.filter_major)) {
+    if (s_c0Filter.filter_major_en && adv.has_major && s_c0Filter.major_count > 0) {
+        bool majorMatch = false;
+        for (uint8_t i = 0; i < s_c0Filter.major_count; ++i) {
+            if (s_c0Filter.majors[i] == adv.major) {
+                majorMatch = true;
+                break;
+            }
+        }
+        if (!majorMatch) {
             char tag[24];
             formatTag(tag, sizeof(tag), adv.has_major, adv.major, adv.minor, frame->mac);
             BeaconPipeline::recordDroppedBeacon(getBeaconTypeCode(adv.type), tag, frame->rssi,
@@ -248,7 +263,7 @@ static void handleRawBleFrame(const RawBleBinaryFrame* frame) {
     }
 
     // 4. Conditional Filter Reject Unknown BLE Format
-    if (g_config.filter_unknown_en) {
+    if (s_c0Filter.filter_unknown_en) {
         bool isKnown = (adv.type == BeaconType::IBEACON ||
                         adv.type == BeaconType::IBEACON_EXT ||
                         adv.type == BeaconType::EDDYSTONE ||
@@ -338,10 +353,12 @@ void BeaconPipeline::recordLiveBeacon(const BeaconPacket& p) {
 void BeaconPipeline::pruneExpired() {
     if (s_beaconQueue == nullptr || g_config.data_ttl <= 0) return;
     BeaconPacket front;
-    uint32_t nowMs = (uint32_t)(esp_timer_get_time() / 1000);
+    uint32_t nowMs = static_cast<uint32_t>(Iotaru::monotonicMs());
+    uint32_t epoch = s_queueEpoch.load(std::memory_order_acquire);
 
-    while (xQueuePeek(s_beaconQueue, &front, 0) == pdTRUE) {
-        if ((nowMs - front.timestamp) > (uint32_t)g_config.data_ttl) {
+    while (s_queueEpoch.load(std::memory_order_acquire) == epoch &&
+           xQueuePeek(s_beaconQueue, &front, 0) == pdTRUE) {
+        if (Iotaru::elapsedMs32(nowMs, front.timestamp) > (uint32_t)g_config.data_ttl) {
             BeaconPacket discarded;
             if (xQueueReceive(s_beaconQueue, &discarded, 0) == pdTRUE) {
                 if (Network::MqttService::isConnected()) {
@@ -357,6 +374,7 @@ void BeaconPipeline::pruneExpired() {
 
 void BeaconPipeline::flushQueue() {
     if (s_beaconQueue != nullptr) {
+        s_queueEpoch.fetch_add(1, std::memory_order_acq_rel);
         xQueueReset(s_beaconQueue);
         ESP_LOGI(TAG, "Antrean beacon di-flush bersih (MQTT connected).");
     }
@@ -503,11 +521,11 @@ void BeaconPipeline::updateMetrics() {
     uint32_t curIngress = s_totalFramesIngress.load(std::memory_order_relaxed);
     uint32_t curDrop = getTotalDropped();
 
-    s_readSpeed = (curRead >= s_lastReadSnap) ? (curRead - s_lastReadSnap) : 0;
-    s_scanSpeed = (curIngress >= s_lastIngressSnap) ? (curIngress - s_lastIngressSnap) : 0;
-    s_dropSpeed = (curDrop >= s_lastDropSnap) ? (curDrop - s_lastDropSnap) : 0;
-    s_mqttSpeed = (curPublished >= s_lastMqttPublishedSnap) ? (curPublished - s_lastMqttPublishedSnap) : 0;
-    s_mqttBatchSpeed = (curBatches >= s_lastMqttBatchSnap) ? (curBatches - s_lastMqttBatchSnap) : 0;
+    s_readSpeed = static_cast<uint32_t>(curRead - s_lastReadSnap);
+    s_scanSpeed = static_cast<uint32_t>(curIngress - s_lastIngressSnap);
+    s_dropSpeed = static_cast<uint32_t>(curDrop - s_lastDropSnap);
+    s_mqttSpeed = static_cast<uint32_t>(curPublished - s_lastMqttPublishedSnap);
+    s_mqttBatchSpeed = static_cast<uint32_t>(curBatches - s_lastMqttBatchSnap);
 
     s_lastReadSnap = curRead;
     s_lastIngressSnap = curIngress;
@@ -564,6 +582,17 @@ void BeaconPipeline::recordDroppedBeacon(const char* code, const char* tag, int8
         case DropReason::UNKNOWN_FORMAT:    s_dropUnknownFormat++; break;
         case DropReason::QUEUE_OVERFLOW:    s_dropQueueOverflow++; break;
         case DropReason::MQTT_FAIL:         s_dropMqttFailed++; break;
+    }
+
+    static std::atomic<int64_t> s_lastDetailFormatUs{0};
+    if (reason != DropReason::MQTT_FAIL && reason != DropReason::QUEUE_OVERFLOW) {
+        int64_t nowUs = esp_timer_get_time();
+        int64_t prevUs = s_lastDetailFormatUs.load(std::memory_order_relaxed);
+        if ((nowUs - prevUs) < 25000LL) {
+            DropLogService::record(code, tag, rssi, reason, 1, nullptr, nullptr);
+            return;
+        }
+        s_lastDetailFormatUs.store(nowUs, std::memory_order_relaxed);
     }
 
     char macStr[18];
