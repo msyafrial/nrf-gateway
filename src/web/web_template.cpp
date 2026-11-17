@@ -511,7 +511,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
     } else if (key == "scan_mode_text") {
         snprintf(out_buf, max_len, "%s", (cfg.scan_mode == 1) ? "Passive" : "Active");
     } else if (key == "scan_mode_color") {
-        snprintf(out_buf, max_len, "%s", (cfg.scan_mode == 1) ? "#34d399" : "#38bdf8");
+        snprintf(out_buf, max_len, "%s", (cfg.scan_mode == 1) ? "var(--scan-passive-color, #34d399)" : "var(--scan-active-color, #38bdf8)");
     } else if (key == "queue_max" || key == "beacon_queue_max") {
         snprintf(out_buf, max_len, "%u", (unsigned int)BEACON_QUEUE_MAX);
     } else if (key == "filter_uuid_en") {
@@ -567,7 +567,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
             if (val >= 0 && val <= 65535) {
                 snprintf(out_buf, max_len, "Major %ld Valid", val);
             } else {
-                snprintf(out_buf, max_len, "Maks 65535");
+                snprintf(out_buf, max_len, "Max 65535");
             }
         }
     } else if (key == "rssi_min") {
@@ -583,7 +583,7 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
         if (abs_val > 100) abs_val = 100;
         int pct = static_cast<int>(((abs_val - 30.0f) / 70.0f) * 100.0f);
         snprintf(out_buf, max_len,
-                 "linear-gradient(to right, #0284c7 0%%, #38bdf8 %d%%, #1e293b %d%%, #1e293b 100%%)",
+                 "linear-gradient(to right, var(--slider-fill-start, #0284c7) 0%%, var(--slider-fill-end, #38bdf8) %d%%, var(--slider-track, #1e293b) %d%%, var(--slider-track, #1e293b) 100%%)",
                  pct, pct);
     } else if (key == "rssi_cat_class") {
         int abs_val = abs(cfg.rssi_min);
@@ -593,10 +593,10 @@ static bool get_placeholder_value_with_cfg(std::string_view key, char *out_buf, 
         else snprintf(out_buf, max_len, "rssi-cat-badge max");
     } else if (key == "rssi_cat_text") {
         int abs_val = abs(cfg.rssi_min);
-        if (abs_val <= 60) snprintf(out_buf, max_len, "Kuat / Dekat");
-        else if (abs_val <= 80) snprintf(out_buf, max_len, "Standar");
-        else if (abs_val <= 95) snprintf(out_buf, max_len, "Luas / Jauh");
-        else snprintf(out_buf, max_len, "Maksimal");
+        if (abs_val <= 60) snprintf(out_buf, max_len, "Strong / Near");
+        else if (abs_val <= 80) snprintf(out_buf, max_len, "Standard");
+        else if (abs_val <= 95) snprintf(out_buf, max_len, "Wide / Far");
+        else snprintf(out_buf, max_len, "Maximum");
     } else if (key == "batch_max") {
         snprintf(out_buf, max_len, "%d", cfg.batch_max);
     } else if (key == "batch_flush") {

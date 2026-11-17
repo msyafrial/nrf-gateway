@@ -1,18 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cubeacon %model% - Login</title>
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/img/favicon.png?v=%firmware_version%">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/img/apple-touch-icon.png?v=%firmware_version%">
+  <script>try { var t = localStorage.getItem("cubeacon_theme"); if (t !== "light" && t !== "dark") { t = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; } document.documentElement.dataset.theme = t; } catch (e) { document.documentElement.dataset.theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; }</script>
   <style>
     /* Critical Pre-paint CSS: Eliminates White Canvas Flash */
-    html, body {
+    html,
+    body {
       background-color: #070c14 !important;
       color: #f8fafc;
       margin: 0;
       padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
     }
+
+    html[data-theme="light"],
+    html[data-theme="light"] body {
+      background-color: #f1f5f9 !important;
+      color: #0f172a;
+    }
+
     /* Instant Banner Suppression before external CSS loads */
     .pending-reboot-banner,
     .ap-banner-card,
@@ -32,34 +44,75 @@
       background: linear-gradient(135deg, #0b1120 0%, #1e293b 100%);
       padding: 16px;
     }
+
     .login-wrapper {
       max-width: 400px;
       width: 100%;
     }
+
     .login-card {
+      position: relative;
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 20px;
       padding: 36px 28px;
-      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     }
+
+    .login-theme-btn {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: var(--ctl-h-md, 34px);
+      height: var(--ctl-h-md, 34px);
+      padding: 0;
+      border-radius: var(--ctl-r-md, 8px);
+      background: rgba(30, 41, 59, 0.72);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      color: #cbd5e1;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+
+    .login-theme-btn:hover {
+      background: rgba(51, 65, 85, 0.9);
+      border-color: rgba(56, 189, 248, 0.45);
+      color: #f8fafc;
+    }
+
+    .login-theme-btn svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
     .login-brand {
       display: flex;
       align-items: center;
       justify-content: center;
       margin-bottom: 20px;
     }
+
     .login-logo-img {
       height: 48px;
       width: auto;
       object-fit: contain;
     }
+
     .login-title {
       text-align: center;
       font-size: 1.15rem;
       font-weight: 700;
       color: var(--text-main);
     }
+
     .login-sub {
       text-align: center;
       font-size: 0.82rem;
@@ -67,27 +120,32 @@
       margin-top: 4px;
       margin-bottom: 24px;
     }
+
     .login-form {
       display: flex;
       flex-direction: column;
       gap: 16px;
     }
+
     .login-btn {
       width: 100%;
-      height: 46px;
+      height: 44px;
       background: var(--primary);
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      font-size: 0.95rem;
-      font-weight: 600;
+      color: var(--primary-fg, #0f172a);
+      border: 1px solid var(--primary-border, rgba(255, 255, 255, 0.22));
+      border-radius: var(--ctl-r-lg, 10px);
+      font-size: 0.94rem;
+      font-weight: 700;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: all 0.16s ease;
       margin-top: 8px;
-      box-shadow: 0 4px 14px var(--primary-glow);
+      box-shadow: 0 2px 8px var(--primary-glow);
     }
+
     .login-btn:hover {
       background: var(--primary-hover);
+      color: var(--primary-fg, #0f172a);
+      transform: translateY(-1px);
     }
 
     /* Session Expired Notice Banner */
@@ -106,15 +164,24 @@
       line-height: 1.4;
       animation: fadeInSlide 0.25s ease-out;
     }
+
     .session-expired-banner svg {
       flex-shrink: 0;
       color: #ef4444;
     }
+
     @keyframes fadeInSlide {
-      from { opacity: 0; transform: translateY(-4px); }
-      to { opacity: 1; transform: translateY(0); }
+      from {
+        opacity: 0;
+        transform: translateY(-4px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
-  
+
     /* AP Banner Mobile & Desktop Styling */
     .ap-banner-card {
       display: flex;
@@ -130,11 +197,13 @@
       width: 100%;
       box-sizing: border-box;
     }
+
     .ap-banner-left {
       display: flex;
       align-items: center;
       gap: 12px;
     }
+
     .ap-pulse-ring {
       position: relative;
       width: 14px;
@@ -143,6 +212,7 @@
       align-items: center;
       justify-content: center;
     }
+
     .ap-pulse-ring::before {
       content: "";
       position: absolute;
@@ -153,11 +223,24 @@
       opacity: 0.75;
       animation: apPulseAnim 1.6s cubic-bezier(0.24, 0, 0.38, 1) infinite;
     }
+
     @keyframes apPulseAnim {
-      0% { transform: scale(0.95); opacity: 0.8; }
-      70% { transform: scale(2.4); opacity: 0; }
-      100% { transform: scale(2.4); opacity: 0; }
+      0% {
+        transform: scale(0.95);
+        opacity: 0.8;
+      }
+
+      70% {
+        transform: scale(2.4);
+        opacity: 0;
+      }
+
+      100% {
+        transform: scale(2.4);
+        opacity: 0;
+      }
     }
+
     .ap-pulse-dot {
       width: 10px;
       height: 10px;
@@ -165,16 +248,19 @@
       background: #0284c7;
       box-shadow: 0 0 8px #38bdf8;
     }
+
     .ap-banner-title {
       font-size: 13.5px;
       font-weight: 600;
       color: #f8fafc;
     }
+
     .ap-banner-subtitle {
       font-size: 12px;
       color: #94a3b8;
       margin-top: 2px;
     }
+
     .ap-timer-pill {
       display: inline-block;
       background: rgba(56, 189, 248, 0.15);
@@ -186,6 +272,7 @@
       font-weight: 600;
       font-size: 11.5px;
     }
+
     @media (max-width: 640px) {
       .ap-banner-card {
         flex-direction: column;
@@ -194,8 +281,71 @@
       }
     }
 
+    html[data-theme="light"] body {
+      background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%) !important;
+      color: #0f172a;
+    }
+
+    html[data-theme="light"] .login-card {
+      background: #ffffff;
+      border-color: #e2e8f0;
+      box-shadow: 0 20px 40px -12px rgba(15, 23, 42, 0.12), 0 1px 3px rgba(15, 23, 42, 0.06);
+    }
+
+    html[data-theme="light"] .login-theme-btn {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+      color: #334155;
+    }
+
+    html[data-theme="light"] .login-theme-btn:hover {
+      background: #e2e8f0;
+      border-color: #0284c7;
+      color: #0f172a;
+    }
+
+    html[data-theme="light"] .session-expired-banner {
+      background: #fef2f2;
+      border-color: #fecaca;
+      color: #b91c1c;
+    }
+
+    html[data-theme="light"] .session-expired-banner svg {
+      color: #dc2626;
+    }
+
+    html[data-theme="light"] .ap-banner-card {
+      background: linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%);
+      border-color: rgba(2, 132, 199, 0.3);
+      box-shadow: 0 8px 20px rgba(2, 132, 199, 0.08);
+    }
+
+    html[data-theme="light"] .ap-banner-title {
+      color: #0f172a;
+    }
+
+    html[data-theme="light"] .ap-banner-subtitle {
+      color: #475569;
+    }
+
+    html[data-theme="light"] .ap-timer-pill {
+      background: #e0f2fe;
+      color: #075985;
+      border-color: #7dd3fc;
+    }
+
+    input::placeholder {
+      color: #8c9eb5;
+      opacity: 1;
+    }
+
+    html[data-theme="light"] input::placeholder {
+      color: #64748b;
+      opacity: 1;
+    }
   </style>
 </head>
+
 <body>
   <div class="login-wrapper">
     <!-- Banner Mode AP jika diakses via Hotspot -->
@@ -207,20 +357,34 @@
         <div class="ap-banner-text">
           <div class="ap-banner-title">Config Hotspot Mode Active</div>
           <div class="ap-banner-subtitle">
-            SSID: <strong id="apBannerSsid">%ap_ssid%</strong> &bull; Auto-off: <span id="apBannerTimer" class="ap-timer-pill">300s</span>
+            SSID: <strong id="apBannerSsid">%ap_ssid%</strong> &bull; Auto-off: <span id="apBannerTimer"
+              class="ap-timer-pill">300s</span>
           </div>
         </div>
       </div>
     </div>
 
     <div class="login-card">
+      <button type="button" class="login-theme-btn" id="themeToggleBtn" aria-label="Switch to Light Mode"
+        title="Switch to Light Mode">
+        <svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path
+            d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+        </svg>
+        <svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+        </svg>
+      </button>
       <div class="login-brand">
         <img src="assets/img/logo.png" alt="Cubeacon" class="login-logo-img">
       </div>
-      <div class="login-title">Autentikasi Gateway %model%</div>
+      <script>try { if (document.documentElement.dataset.theme === "light") { var l = document.querySelector(".login-logo-img"); if (l) l.src = "assets/img/logo-light.png"; var tb = document.getElementById("themeToggleBtn"); if (tb) { tb.title = "Switch to Dark Mode"; tb.setAttribute("aria-label", tb.title); tb.setAttribute("aria-pressed", "true"); } } } catch (e) { }</script>
+      <div class="login-title">Gateway Authentication</div>
       <div class="login-sub">Sign in as Administrator or Field Technician</div>
       <div id="sessionExpiredBanner" class="session-expired-banner" style="display:none;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"></circle>
           <line x1="12" y1="8" x2="12" y2="12"></line>
           <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -230,24 +394,29 @@
       <form class="login-form" autocomplete="off" onsubmit="return false;">
         <div class="item">
           <label for="username">Username</label>
-          <input type="text" id="username" name="username" placeholder="Enter username" autocomplete="username" spellcheck="false" required autofocus>
+          <input type="text" id="username" name="username" placeholder="Enter username" autocomplete="username"
+            spellcheck="false" required autofocus>
         </div>
         <div class="item">
           <label for="password">Password</label>
           <div class="password-wrapper">
-            <input type="password" id="password" name="password" placeholder="Enter password" autocomplete="current-password" spellcheck="false" required>
-            <button type="button" class="btn-toggle-pwd" title="Tahan untuk melihat password" aria-label="Tahan untuk melihat password" tabindex="-1">
-                    <svg class="eye-closed" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
-                      <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
-                      <line x1="2" y1="2" x2="22" y2="22"/>
-                      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
-                    </svg>
-                    <svg class="eye-open" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                      <circle cx="12" cy="12" r="3"/>
-                    </svg>
-                  </button>
+            <input type="password" id="password" name="password" placeholder="Enter password"
+              autocomplete="current-password" spellcheck="false" required>
+            <button type="button" class="btn-toggle-pwd" title="Hold to reveal password"
+              aria-label="Hold to reveal password" tabindex="-1">
+              <svg class="eye-closed" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+                <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+                <line x1="2" y1="2" x2="22" y2="22" />
+                <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+              </svg>
+              <svg class="eye-open" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
           </div>
         </div>
         <button type="button" id="btnLogin" class="login-btn" onclick="handleLogin(event)">Sign In to Gateway</button>
@@ -255,7 +424,7 @@
     </div>
   </div>
 
-    <script>
+  <script>
     // Jika sesi login masih aktif, alihkan langsung ke Overview (kecuali jika diarahkan karena expired)
     (function checkActiveSession() {
       const urlParams = new URLSearchParams(window.location.search);
@@ -268,10 +437,10 @@
             window.location.replace("/");
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     })();
 
-    document.addEventListener("DOMContentLoaded", function() {
+    document.addEventListener("DOMContentLoaded", function () {
       // Periksa apakah pengguna diarahkan karena sesi habis
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.get("expired") === "1" || urlParams.has("expired")) {
@@ -284,6 +453,9 @@
       function onEnter(e) {
         if (e.key === "Enter") {
           e.preventDefault();
+          if (e.repeat || isLoginSubmitting || document.querySelector(".swal-lite-overlay:not(.swal-lite-closing)")) {
+            return;
+          }
           handleLogin(e);
         }
       }
@@ -291,8 +463,31 @@
       if (pInput) pInput.addEventListener("keydown", onEnter);
     });
 
+    let isLoginSubmitting = false;
+
+    function setLoginBusy(busy) {
+      isLoginSubmitting = !!busy;
+      const btn = document.getElementById("btnLogin");
+      if (btn) {
+        btn.disabled = !!busy;
+        btn.setAttribute("aria-busy", busy ? "true" : "false");
+      }
+    }
+
+    function refocusPasswordField() {
+      const pwdEl = document.getElementById("password");
+      if (pwdEl) {
+        pwdEl.focus();
+        if (typeof pwdEl.select === "function") pwdEl.select();
+      }
+    }
+
     function handleLogin(e) {
       if (e) e.preventDefault();
+      if (isLoginSubmitting || document.querySelector(".swal-lite-overlay:not(.swal-lite-closing)")) {
+        return;
+      }
+
       const userEl = document.getElementById("username");
       const pwdEl = document.getElementById("password");
       const u = userEl ? userEl.value.trim() : "";
@@ -304,8 +499,9 @@
         return;
       }
 
+      setLoginBusy(true);
       Swal.fire({
-        title: "Memverifikasi...",
+        title: "Authenticating...",
         text: "Connecting to gateway authentication service",
         allowOutsideClick: false,
         showConfirmButton: false,
@@ -321,94 +517,103 @@
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: params
       })
-      .then(res => {
-        Swal.close();
-        if (res.status === 200) {
-          // Kosongkan nilai kredensial di DOM sebelum navigasi untuk mencegah WAM/Passkey pop-up
-          if (pwdEl) pwdEl.value = "";
-          if (userEl) userEl.value = "";
-          window.location.href = "/";
-        } else if (res.status === 409) {
-          return res.json().then(data => {
-            Swal.fire({
-              icon: "warning",
-              title: "Active Sessions Exceeded (Max 2 Clients)",
-              html: `<div style="text-align:left;font-size:0.92rem;line-height:1.6;">
+        .then(res => {
+          Swal.close();
+          if (res.status === 200) {
+            // Kosongkan nilai kredensial di DOM sebelum navigasi untuk mencegah WAM/Passkey pop-up
+            if (pwdEl) pwdEl.value = "";
+            if (userEl) userEl.value = "";
+            window.location.href = "/";
+          } else if (res.status === 409) {
+            return res.json().then(data => {
+              setLoginBusy(false);
+              return Swal.fire({
+                icon: "warning",
+                title: "Active Sessions Exceeded (Max 2 Clients)",
+                html: `<div style="text-align:left;font-size:0.92rem;line-height:1.6;">
                 Currently <b>2 client sessions</b> are actively connected to the gateway.<br><br>
-                <span style="color:#94a3b8;">For configuration integrity and security, please <b>sign out</b> on another client before accessing this session.</span>
+                <span class="ota-c-muted">For configuration integrity and security, please <b>sign out</b> on another client before accessing this session.</span>
               </div>`,
-              confirmButtonText: "Mengerti",
-              confirmButtonColor: "#0284c7"
+                confirmButtonText: "OK",
+                confirmButtonColor: "var(--swal-btn-info, var(--primary))"
+              }).then(refocusPasswordField);
+            }).catch(() => {
+              setLoginBusy(false);
+              return Swal.fire("Session Limit Reached", "Maximum active session limit reached (2 devices). Please sign out from another device.", "warning")
+                .then(refocusPasswordField);
             });
-          }).catch(() => {
-            Swal.fire("Sesi Penuh", "Maximum active session limit reached (2 devices). Please sign out from another device.", "warning");
-          });
-        } else if (res.status === 429) {
-          return res.text().then(text => {
-            Swal.fire("Too Many Attempts", text || "Too many failed attempts. Please wait 60 seconds.", "warning");
-          });
-        } else {
-          return res.text().then(text => {
-            Swal.fire("Authentication Failed", text || "Invalid username or password.", "error");
-          });
+          } else if (res.status === 429) {
+            return res.text().then(text => {
+              setLoginBusy(false);
+              return Swal.fire("Too Many Attempts", text || "Too many failed attempts. Please wait 60 seconds.", "warning")
+                .then(refocusPasswordField);
+            });
+          } else {
+            return res.text().then(text => {
+              setLoginBusy(false);
+              return Swal.fire("Authentication Failed", text || "Invalid username or password.", "error")
+                .then(refocusPasswordField);
+            });
+          }
+        })
+        .catch(err => {
+          setLoginBusy(false);
+          Swal.close();
+          Swal.fire("Connection Error", err.message || "Gateway unreachable.", "error")
+            .then(refocusPasswordField);
+        });
+    }
+
+    // =============================================================================
+    // HOLD-TO-REVEAL PASSWORD TOGGLE MODULE
+    // =============================================================================
+    function initPasswordToggles() {
+      document.querySelectorAll(".btn-toggle-pwd").forEach(btn => {
+        if (btn.dataset.pwdBound) return;
+        btn.dataset.pwdBound = "true";
+
+        const wrapper = btn.closest(".password-wrapper");
+        if (!wrapper) return;
+        const input = wrapper.querySelector("input");
+        if (!input) return;
+
+        function reveal(e) {
+          if (e) e.preventDefault();
+          input.type = "text";
+          btn.classList.add("revealed");
         }
-      })
-      .catch(err => {
-        Swal.close();
-        Swal.fire("Connection Error", err.message || "Gateway unreachable.", "error");
+
+        function conceal(e) {
+          if (e) e.preventDefault();
+          input.type = "password";
+          btn.classList.remove("revealed");
+        }
+
+        // Pointer events support mouse hold, touch hold on mobile, and stylus
+        btn.addEventListener("pointerdown", reveal);
+        btn.addEventListener("pointerup", conceal);
+        btn.addEventListener("pointercancel", conceal);
+        btn.addEventListener("pointerleave", conceal);
+
+        // Keyboard navigation: hold Space or Enter to peek
+        btn.addEventListener("keydown", function (e) {
+          if (e.key === " " || e.key === "Enter") {
+            reveal(e);
+          }
+        });
+        btn.addEventListener("keyup", function (e) {
+          if (e.key === " " || e.key === "Enter") {
+            conceal(e);
+          }
+        });
+
+        btn.addEventListener("click", function (e) {
+          e.preventDefault();
+        });
       });
     }
-  
-// =============================================================================
-// HOLD-TO-REVEAL PASSWORD TOGGLE MODULE
-// =============================================================================
-function initPasswordToggles() {
-  document.querySelectorAll(".btn-toggle-pwd").forEach(btn => {
-    if (btn.dataset.pwdBound) return;
-    btn.dataset.pwdBound = "true";
 
-    const wrapper = btn.closest(".password-wrapper");
-    if (!wrapper) return;
-    const input = wrapper.querySelector("input");
-    if (!input) return;
-
-    function reveal(e) {
-      if (e) e.preventDefault();
-      input.type = "text";
-      btn.classList.add("revealed");
-    }
-
-    function conceal(e) {
-      if (e) e.preventDefault();
-      input.type = "password";
-      btn.classList.remove("revealed");
-    }
-
-    // Pointer events support mouse hold, touch hold on mobile, and stylus
-    btn.addEventListener("pointerdown", reveal);
-    btn.addEventListener("pointerup", conceal);
-    btn.addEventListener("pointercancel", conceal);
-    btn.addEventListener("pointerleave", conceal);
-
-    // Keyboard navigation: hold Space or Enter to peek
-    btn.addEventListener("keydown", function(e) {
-      if (e.key === " " || e.key === "Enter") {
-        reveal(e);
-      }
-    });
-    btn.addEventListener("keyup", function(e) {
-      if (e.key === " " || e.key === "Enter") {
-        conceal(e);
-      }
-    });
-
-    btn.addEventListener("click", function(e) {
-      e.preventDefault();
-    });
-  });
-}
-
-document.addEventListener("DOMContentLoaded", initPasswordToggles);
+    document.addEventListener("DOMContentLoaded", initPasswordToggles);
 
     // AP Mode Watcher untuk Halaman Login
     let apCountdownInterval = null;
@@ -443,7 +648,7 @@ document.addEventListener("DOMContentLoaded", initPasswordToggles);
             }
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
 
     let lastLoginApTouchTime = 0;
@@ -470,7 +675,7 @@ document.addEventListener("DOMContentLoaded", initPasswordToggles);
             if (timerEl) timerEl.textContent = currentApRemainingSec + "s";
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
 
     const loginEvents = ["mousedown", "keydown", "input", "touchstart", "scroll"];
@@ -489,6 +694,137 @@ document.addEventListener("DOMContentLoaded", initPasswordToggles);
     }
 
     document.addEventListener("DOMContentLoaded", checkLoginApStatus);
-</script>
+
+    (function () {
+      const THEME_KEY = "cubeacon_theme";
+      const ICON_SUN = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>';
+      const ICON_MOON = '<svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>';
+
+      let activeVt = null;
+      let animTimer = null;
+      let iconTimer = null;
+      let preloadedAlt = "";
+
+      function getTheme() {
+        return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+      }
+
+      function preloadAltLogo(curTheme) {
+        const alt = curTheme === "light" ? "assets/img/logo.png" : "assets/img/logo-light.png";
+        if (preloadedAlt === alt || !document.querySelector(".login-logo-img")) return;
+        preloadedAlt = alt;
+        try {
+          const img = new Image();
+          img.decoding = "async";
+          img.onerror = function () {};
+          img.src = alt;
+        } catch (e) {}
+      }
+
+      function decodeLoginLogoBounded(maxMs) {
+        const logo = document.querySelector(".login-logo-img");
+        if (!logo || logo.complete || typeof logo.decode !== "function") return Promise.resolve();
+        return Promise.race([
+          logo.decode().catch(function () {}),
+          new Promise(function (resolve) { setTimeout(resolve, maxMs || 80); })
+        ]);
+      }
+
+      function syncLoginTheme(theme) {
+        const isLight = theme === "light";
+        document.documentElement.dataset.theme = theme;
+        const logo = document.querySelector(".login-logo-img");
+        if (logo) {
+          const target = isLight ? "assets/img/logo-light.png" : "assets/img/logo.png";
+          if (logo.getAttribute("src") !== target) logo.setAttribute("src", target);
+        }
+        const btn = document.getElementById("themeToggleBtn");
+        if (btn) {
+          btn.title = isLight ? "Switch to Dark Mode" : "Switch to Light Mode";
+          btn.setAttribute("aria-label", btn.title);
+          btn.setAttribute("aria-pressed", isLight ? "true" : "false");
+          if (!btn.querySelector(".theme-icon-sun") || !btn.querySelector(".theme-icon-moon")) {
+            btn.innerHTML = isLight ? ICON_MOON : ICON_SUN;
+          }
+        }
+      }
+
+      function applyLoginTheme(next, persist, animate) {
+        const prev = getTheme();
+        const commit = function () {
+          if (persist) {
+            try { localStorage.setItem(THEME_KEY, next); } catch (e) { }
+          }
+          syncLoginTheme(next);
+        };
+        const reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+        if (!animate || prev === next || document.hidden || reduceMotion) {
+          if (activeVt) { try { activeVt.skipTransition(); } catch (e) {} activeVt = null; }
+          document.documentElement.classList.remove("theme-animating");
+          commit();
+          preloadAltLogo(next);
+          return;
+        }
+        if (typeof document.startViewTransition === "function") {
+          if (activeVt) { try { activeVt.skipTransition(); } catch (e) {} activeVt = null; }
+          document.documentElement.classList.remove("theme-animating");
+          try {
+            const vt = document.startViewTransition(function () {
+              commit();
+              return decodeLoginLogoBounded(80);
+            });
+            activeVt = vt;
+            const clearVt = function () { if (activeVt === vt) activeVt = null; };
+            if (vt.updateCallbackDone) vt.updateCallbackDone.catch(function () {});
+            if (vt.ready) vt.ready.catch(function () {});
+            if (vt.finished) vt.finished.catch(function () {}).finally(clearVt);
+            preloadAltLogo(next);
+            return;
+          } catch (e) {
+            activeVt = null;
+          }
+        }
+        const root = document.documentElement;
+        root.classList.add("theme-animating");
+        if (animTimer) clearTimeout(animTimer);
+        animTimer = setTimeout(function () { root.classList.remove("theme-animating"); animTimer = null; }, 340);
+        commit();
+        root.classList.remove("theme-icon-pop");
+        void root.offsetWidth;
+        root.classList.add("theme-icon-pop");
+        if (iconTimer) clearTimeout(iconTimer);
+        iconTimer = setTimeout(function () { root.classList.remove("theme-icon-pop"); iconTimer = null; }, 380);
+        preloadAltLogo(next);
+      }
+
+      function hasSavedTheme() {
+        try {
+          const saved = localStorage.getItem(THEME_KEY);
+          return saved === "light" || saved === "dark";
+        } catch (e) {
+          return false;
+        }
+      }
+
+      const btn = document.getElementById("themeToggleBtn");
+      if (btn) {
+        btn.addEventListener("click", function () {
+          const next = getTheme() === "light" ? "dark" : "light";
+          applyLoginTheme(next, true, true);
+        });
+      }
+      if (window.matchMedia) {
+        const mq = window.matchMedia("(prefers-color-scheme: light)");
+        const onOsThemeChange = function (e) {
+          if (!hasSavedTheme()) applyLoginTheme(e.matches ? "light" : "dark", false, !document.hidden);
+        };
+        if (mq.addEventListener) mq.addEventListener("change", onOsThemeChange);
+        else if (mq.addListener) mq.addListener(onOsThemeChange);
+      }
+      window.addEventListener("load", function () { preloadAltLogo(getTheme()); });
+      syncLoginTheme(getTheme());
+    })();
+  </script>
 </body>
+
 </html>

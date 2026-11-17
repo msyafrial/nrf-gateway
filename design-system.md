@@ -5465,4 +5465,252 @@ Setiap berkas master HTML terotentikasi (`index.html`, `test.html`, `log.html`, 
 - **Penguatan *Preemption-Safe Pruning* (`src/core/beacon_pipeline.cpp`)**:
   - `BeaconPipeline::pruneExpired()`: mengambil `nowMs` di dalam loop setelah `xQueuePeek()`, dan setelah `xQueueReceive()` memverifikasi ulang umur `discarded` terhadap `checkNowMs`. Jika paket ternyata masih segar (ter-preempt oleh `mqttPublisherTask` di antara `Peek` dan `Receive`), paket dikembalikan ke depan antrean via `xQueueSendToFront(s_beaconQueue, &discarded, 0)` lalu `break` tanpa mencatat drop palsu.
 
+---
 
+## 155. Modal Countdown Reboot Terpadu Terkunci (`web_src/assets/js/app.js`, `web_src/assets/css/app.css`) (2026-11-14)
+- **Komponen Modal Terpusat (`executeGatewayReboot()` & `ensureGatewayRebootModal()`)**:
+  - Mengganti dialog `Swal` statis ber-tombol `"OK"` pada seluruh jalur reboot (**Device Settings `/settings`**, **Auth & Network Settings `/auth`** pada `handleFormSubmit()`, **Manual Reboot** Sidebar/Power Sheet pada `triggerReboot()`, serta **Pending Reboot Banner** pada `triggerRebootNow()`) dengan satu modal terpusat `#gatewayRebootModal` yang mengadopsi gaya visual identik dengan `#otaModal` di halaman Update Firmware (`.wifi-modal-backdrop`, `.ota-modal-box`, `.ota-spinner`, `.ota-progress-track`, `.ota-progress-fill`, `.ota-meta-row`, `.ota-percent-badge`).
+- **Kunci Interaksi Wajib Tunggu (*Mandatory Wait*)**:
+  - Tanpa tombol tutup (`×`), klik area backdrop di luar kotak modal diabaikan, tombol `Escape`/`Enter`/`Space` diblokir oleh `blockRebootModalKeys` selama proses reboot aktif, dan tombol aksi `#btnGatewayRebootAction` tetap berstatus `disabled` bertuliskan `"Rebooting..."` (`.ota-modal-actions .btn:disabled` dengan `cursor: not-allowed`).
+  - Menampilkan spinner fase pengiriman `POST /api/v1/system/reboot` lalu beralih ke ikon centang hijau `#22c55e`, progress bar mulus (`reboot-smooth`, berubah hijau `.is-complete` saat `100%`), serta countdown `10s -> 0s` sebelum mengarahkan otomatis ke `/login.html`.
+
+
+
+---
+
+## 156. Standarisasi Technical English Web UI & Abstraksi Terminologi Platform (2026-11-15)
+- **Konversi Bahasa Indonesia -> Technical English**:
+  - Seluruh copy Web UI, tooltip telemetry, modal OTA/login, header CSV ekspor (`/api/v1/system/net-logs/export`, `/api/v1/system/drop-logs/export`), API response, `emergency_page.cpp` (`<html lang="en">`), serta pesan `NetLogService` / status interface kini 100% berbahasa Inggris teknis engineer yang ringkas dan netral.
+  - Tes NTP (`POST /api/v1/system/test-ntp`) menggunakan format zona waktu netral `UTC+7`.
+- **Abstraksi Terminologi Internal MCU/RTOS/SDK**:
+  - `NVS` -> **`System Storage`** (seluruh banner pending reboot, dialog save/reset, `web_routes.cpp`, dan NetLog).
+  - `FREERTOS INGRESS QUEUE` / `Queue RTOS` -> **`INGRESS FRAME QUEUE`** / **`Ingress Queue`** (`test.html`, `test.js`).
+  - `FREE HEAP RAM` -> **`FREE RAM`** (`test.html`).
+  - Menghapus eksposur nama chipset/SDK/build-tool (`ESP32`, `ESP-IDF`, `nRF`, `W5500 (SPI3 Host)`, `LittleFS`, `PlatformIO`) pada pesan UI/error OTA, Recovery Console, `docs.html`, dan log status Ethernet.
+  - **Dipertahankan:** Istilah umum **`EEPROM`**, **`Flash`**, **`Hardware`**, konstanta validasi binary internal (`0x50AA`, `"littlefs"`, whitelist model `esp32_ibeacon_espidf`), REST endpoint, dan JSON field keys tetap utuh untuk kompatibilitas 100%.
+
+---
+
+## 157. Perbaikan Alignment Subcard Wi-Fi Overview & Penyederhanaan Label QoS (2026-11-15)
+- **Proteksi Overflow Baris `Signal Strength` (`web_src/index.html`)**:
+  - Menambahkan `overflow: hidden` pada `.sg-subcard-val-wrap` serta `flex-shrink: 0` pada `.sg-signal-bars` dan `.sg-subcard-val` agar SSID chip (`.sg-wifi-ssid`) terpotong elipsis rapi saat panjang dan ikon bar sinyal maupun nilai RSSI (`%d dBm`) tidak pernah bertabrakan ke kiri menimpa label `Signal Strength`.
+  - Nilai RSSI Overview menampilkan format angka murni `-XX dBm` tanpa label kualitatif tambahan seperti `(Excellent)`.
+- **Label Ringkas Dropdown MQTT QoS (`web_src/auth.html`)**:
+  - Mengubah teks opsi `#mqtt_qos` menjadi tepat `QoS 1` dan `QoS 0` tanpa keterangan tambahan agar muat utuh di dalam kontrol `.cell .ctl` berlebar `150px` tanpa *clipping* (`text truncation`).
+
+---
+
+## 158. Proteksi Session-Expired Race & Konsistensi Redirect OTA Firmware/Filesystem (`web_src/assets/js/firmware.js`) (2026-11-15)
+- **Pencegahan False Redirect `/login.html?expired=1` Saat OTA (`startUploadExecution()` & `completeOtaUpdate()`)**:
+  - Mengaktifkan `window.isManualLoggingOut = true` sejak upload OTA aktif dimulai hingga countdown reboot selesai, sehingga interceptor global `window.fetch` dan `verifySessionNow()` di `app.js` tidak memicu redirect ke `/login.html?expired=1` ketika cookie dihapus oleh server (`Set-Cookie: Max-Age=0`) atau saat ESP32 selesai boot ulang sebelum 10 detik berakhir.
+  - Apabila upload/verifikasi gagal (`xhr.status !== 200` atau `xhr.onerror`), timer countdown dibatalkan via `clearOtaCountdown()` dan `window.isManualLoggingOut` dipulihkan ke `false`.
+- **Konsistensi Target Redirect Akhir (`startCountdownAndRedirect()`)**:
+  - Menyatukan logika selesai OTA via `completeOtaUpdate()` dan mengarahkan akhir countdown langsung ke `/login.html` (`http://192.168.4.1/login.html` saat AP Mode) menggunakan `window.location.replace(...)` agar upload Firmware maupun Filesystem selalu mendarat identik di halaman login bersih.
+
+---
+
+## 159. Enterprise Hybrid Dual-Theme System (Default Dark + Light Mode) (2026-11-15)
+- **Arsitektur Dual-Theme (`html[data-theme="dark" | "light"]`)**:
+  - Default theme saat pertama kali dibuka adalah **`dark`** (menjaga 100% tampilan gelap eksisting), dikendalikan melalui `localStorage` key `cubeacon_theme` (`"dark"` / `"light"`).
+  - Script *pre-paint* sinkron pada `<head>` di seluruh 8 halaman Web UI (`index.html`, `settings.html`, `auth.html`, `firmware.html`, `log.html`, `test.html`, `docs.html`, `login.html`) dan `/recovery` (`src/web/emergency_page.cpp`) menetapkan `document.documentElement.dataset.theme` sebelum CSS eksternal dimuat serta menerapkan warna canvas awal (`#070c14` vs `#f1f5f9`) untuk mengeliminasi white/black flash (FOUC).
+- **Enterprise Hybrid Brand Chrome & Logo Dual-Mode**:
+  - `.sidebar` Desktop pada seluruh halaman aplikasi dipertahankan tetap **Deep Slate `#0f172a`** baik di Dark Mode maupun Light Mode (`logo.png` putih tetap kontras tinggi).
+  - Kontainer konten utama (`.main-panel`), `.navbar`, `.card` / `.bento-card` / `.sg-card`, input form, tabel, bottom-nav mobile, bottom action sheets (`sheetConfig`, `sheetPower`), modals (`#otaModal`, `#gatewayRebootModal`, `#wifiScanModal`, `SwalLite`), toasts, save dock (`#floatingSaveDock`), serta banner peringatan beradaptasi ke Light Mode.
+  - Aset `web_src/assets/img/logo-light.png` (`959x200` RGBA, wordmark `#0f172a`) disinkronkan oleh `scripts/build_web_assets.py` dan dimuat secara sinkron/dinamis untuk `.mobile-logo-img` & `.login-logo-img` ketika `data-theme="light"`.
+- **Palette Calibration & Light IDE (`web_src/assets/css/app.css`)**:
+  - Light Mode surface tokens: `--bg-main: #f1f5f9` (Slate 100), `--card-bg: #ffffff`, `--card-border: #e2e8f0`, `--text-main: #0f172a` (Slate 900), `--text-muted: #475569` (Slate 600), `--text-dim: #64748b` (Slate 500), `--primary: #2563eb`.
+  - Aksen semantik WCAG AA di atas permukaan terang: `--accent-cyan: #0284c7`, `--accent-emerald: #059669`, `--accent-amber: #b45309`, `--accent-rose: #be123c`, `--accent-purple: #6d28d9`.
+  - Code viewport & inspektor hex (`docs.html` `.docs-terminal-card`, `.docs-code-viewport`, `.docs-proto-viewport`, `.docs-byte-strip`, dan `log.html` `.raw-drawer`, `.raw-hex-box`) menggunakan konsep **Light IDE** (`#f8fafc` surface, `#e2e8f0` border, token syntax terkalibrasi seperti `.ck-kw: #db2777`, `.ck-fn: #2563eb`, `.ck-str: #059669`, `.ck-num: #b45309`, `.ck-prop: #0284c7`, `.ck-cmt: #64748b`).
+- **Kontrol Switcher & Integrasi Komponen Dinamis JS/Canvas/Firmware**:
+  - `#themeToggleBtn` ditempatkan di dalam `.navbar-actions` bersama `#mobileLogoutBtn` pada navbar atas (di Desktop & Mobile), di pojok kanan atas `.login-card` pada `login.html`, serta di `.theme-bar` pada `src/web/emergency_page.cpp`.
+  - `web_src/assets/js/app.js` mengekspor `getAppTheme()`, `setAppTheme(theme, persist)`, `toggleAppTheme()`, dan `syncThemeUI()`, serta memancarkan event `themechange` agar modul dinamis ikut memperbarui canvas/inline UI:
+    - `web_src/assets/js/swal-lite.js`: Mengonsumsi variabel CSS `--swal-overlay`, `--swal-bg`, `--swal-border`, `--swal-shadow`, `--swal-title`, `--swal-text`, `--swal-cancel-*`, `--swal-spinner-track`.
+    - `web_src/assets/js/settings.js`: Gradien trek slider RSSI membaca `var(--slider-track)` dan merender ulang saat `themechange`.
+    - `web_src/assets/js/firmware.js`: Kartu konfirmasi OTA (`Swal.fire`) dan status modal OTA menggunakan kelas semantik `.ota-confirm-card` / `.ota-c-*` dan `.is-complete`.
+    - `web_src/assets/js/test.js`: Grafik canvas (`drawChart`) membaca palet warna adaptif `--chart-*` melalui `getChartTheme()` (tanpa neon shadow blur berlebih pada Light Mode) serta menggambar ulang langsung pada `themechange`; badge status `IDLE`/`RUNNING` menggunakan kelas CSS murni (`.status-pill`, `.status-pill.ready`).
+    - `web_src/assets/js/log.js` & `web_src/index.html`: Seluruh warna teks status/hex dinamis menggunakan token CSS `var(--text-main)` / `var(--text-muted)` / `var(--text-dim)` / `var(--accent-*)`.
+    - `src/web/emergency_page.cpp`: Mendukung CSS `html[data-theme="light"]` secara standalone di internal flash recovery UI.
+
+---
+
+## 160. Full Adaptive Light Sidebar, Logo-Light Swap & Sidebar Contrast Normalization (2026-11-15)
+- **Full Light Sidebar (`html[data-theme="light"] .sidebar` di `web_src/assets/css/app.css`)**:
+  - Mengubah sidebar desktop di Light Mode dari tetap gelap (`#0f172a`) menjadi **Full Adaptive White (`#ffffff`)** dengan `border-right: 1px solid #e2e8f0` dan bayangan halus `1px 0 3px rgba(15, 23, 42, 0.03)` agar konsisten menyeluruh dengan `.navbar`, kanvas `#f1f5f9`, bottom-nav mobile, login card, dan recovery UI.
+  - **Logo Light Mode (`web_src/assets/img/logo-light.png`)**: Menggunakan aset resmi terbaru (`959x200` RGBA, optimasi lossless `58,133 B`). `web_src/assets/js/app.js` (`syncThemeLogos`) dan script sinkron *pre-paint* pada seluruh 7 halaman aplikasi kini menukar `.sidebar-logo-img` bersamaan dengan `.mobile-logo-img` menjadi `assets/img/logo-light.png` saat Light Mode aktif.
+  - **Token & Kontras Light Sidebar**:
+    - `.logo` border & `.sidebar-logout` border: `#e2e8f0`.
+    - `.user` card: `#f8fafc` + border `#e2e8f0`, `.user-avatar`: `#e0f2fe` / border `#bae6fd` / ikon `#0284c7`, `.user-info`: `#0f172a`.
+    - Item navigasi inactive: label `#334155`, ikon `#64748b`; hover: `#f1f5f9` background, teks & ikon `#0f172a`.
+    - Item navigasi active (`li.active a` & `li.nav-test-highlight.active a`): Soft Sky Surface `#f0f9ff`, border `#bae6fd`, rel aksen kiri `3.5px` `#0284c7` (`::before`), label `#075985`, ikon `#0284c7`, `font-weight: 600` (tanpa solid royal-blue glow agar selaras dengan logo/tabs dan memberi prioritas visual utama ke tombol CTA konten); hover `#e0f2fe` / border `#7dd3fc` / teks `#0c4a6e`.
+    - Logout: `#be123c` teks & ikon, hover `#fff1f2` / `#9f1239`.
+- **Peningkatan Kontras Dark Sidebar & Penyatuan Hierarki `.nav-test-highlight`**:
+  - Pada Dark Mode (`#0f172a`, `border-right: 1px solid #1e293b`), kontras teks menu inactive dinaikkan ke `#cbd5e1` (ikon `#94a3b8` -> `#ffffff` saat hover/active), `.user` memakai `#1e293b`/`rgba(30, 41, 59, 0.55)`, item active memakai surface `rgba(56, 189, 248, 0.12)` + border `rgba(56, 189, 248, 0.24)` + rel aksen kiri `3.5px` `#38bdf8` + label `#f8fafc` + ikon `#38bdf8`, serta `Logout` diseragamkan ke `#fb7185` (hover `#fda4af`).
+  - Kotak cyan neon permanen pada `.sidebar-nav li.nav-test-highlight a` dihapus pada kedua tema sehingga seluruh menu navigasi memiliki hierarki konsisten dengan satu fokus aktif yang jelas, sekaligus menuntaskan konflik spesifisitas teks cyan `#38bdf8` di atas pill biru `#2563eb` pada `test.html`.
+
+---
+
+## 161. Kalibrasi Kontras Semantik WCAG AA Light Mode & Tokenisasi Dinamis (`app.css`, JS, HTML, C++ Recovery/SSR) (2026-11-15)
+- **Upgrade Token Semantik Light Mode (`html[data-theme="light"]` di `web_src/assets/css/app.css`)**:
+  - **Primary Info / Interactive Accent**: `--accent-cyan`, `--input-focus`, `--cyan-neon`, `--accent`, `--eddy`, `--chart-c-bw` ditingkatkan dari `#0284c7` ke **`#0369a1` (`5.93:1` pada `#ffffff`)** dengan hover/mobile center-pill **`#075985`** pada `#e0f2fe` (`>= 4.5:1`); `.ap-timer-pill` pada `app.css` dan `login.html` dikalibrasi ke `#075985` di atas `#e0f2fe` / border `#7dd3fc`.
+  - **Success / Passive BLE**: `--accent-emerald`, `--good`, `--chart-c-mqtt`, `--scan-passive-color`, `.sw input:checked + i`, `.btn-banner-reboot` ditingkatkan dari `#059669`/`#10b981` ke **`#047857` (`5.48:1` pada `#ffffff`)** dan hover `#065f46`; `--fw-ver-color` pada `.dropzone-file-badge` (`#e6f4fc`) dikalibrasi ke **`#065f46`**.
+  - **Warning / Attention / Protected Wi-Fi / Medium RSSI**: `--accent-amber: #b45309` (`5.02:1`), `--warn: #9a3412`, `.btn-ap-stop` (`#9a3412` di atas `#fff7ed`, hover `#7c2d12`), dan Warning confirm CTA **`#c2410c` (`5.18:1`)**.
+  - **Danger / Critical / Stop CTA**: `.btn-stop` (`#be123c`, hover `#9f1239`, `5.97:1`), Danger confirm CTA **`#b91c1c` (`6.47:1`)**.
+  - **Muted, Dim, Disabled & Placeholders**: `--text-dim` ditingkatkan dari `#64748b` ke **`#475569` (`6.74:1` pada `#f1f5f9`)**; `input::placeholder` menggunakan `#64748b` (`4.76:1` pada `#ffffff`), sedangkan `input:disabled` / `.row.off .fld` / `.btn-page:disabled` / `.ota-modal-actions .btn:disabled` / `.btn-rescan:disabled` memakai **`#475569`** dengan `opacity: 1` (menggantikan washout `opacity: 0.35–0.78`).
+- **Eliminasi Hardcoded Dark-Mode Hex di JS, HTML, dan C++**:
+  - `:root` menyediakan token semantik terpusat (`--scan-passive-color`, `--scan-active-color`, `--fw-ver-color`, `--ota-err-color`, `--ota-warn-color`, `--slider-fill-start/end`, `--toast-icon-color`, `--wifi-lock-protected/open`, `--swal-confirm-bg/hover`, `--swal-btn-*`, `--swal-icon-*`) yang mempertahankan warna asli Dark Mode sambil diganti nilai WCAG AA saat `html[data-theme="light"]` aktif.
+  - `web_src/assets/js/swal-lite.js`, `app.js`, `firmware.js`, `log.js`, `test.js`, `settings.js` kini mengonsumsi variabel CSS semantik tersebut alih-alih warna pastel/neon statis (`#2ca8ff`, `#10b981`, `#f97316`, `#ef4444`, `#38bdf8`, `#4ade80`).
+  - `web_src/index.html`, `firmware.html`, `auth.html`, `log.html`, `docs.html`, serta `src/web/web_template.cpp` (`scan_mode_color`, `rssi_slider_bg`) memakai variabel CSS semantik; `.docs-json-preview`, `.docs-qos-callout`, dan `.docs-byte-cell` pada Light Mode dikalibrasi penuh ke teks Slate gelap (`#334155` / `#0f172a`, `opacity: 1`).
+  - `src/web/emergency_page.cpp`: Mode terang `/recovery` menggunakan `--emerald: #047857`, `--rose: #b91c1c`, dan `.btn-primary: #b45309` (`>= 5.02:1`).
+- **Verifikasi Playwright Chromium Light Mode (25 views, Desktop 1440px & Mobile 390px)**: Lolos penuh dengan `totalIssues: 0` dan `anyOverflow: false` menggunakan evaluasi Porter-Duff ancestor-opacity compositing.
+
+---
+
+## 162. Kalibrasi Kontras Dark Mode WCAG AA & Lebar Search Test (2026-11-16)
+- **Teks Muted & Placeholder Dark Mode (`web_src/assets/css/app.css`, `web_src/log.html`, `web_src/docs.html`, `web_src/index.html`, `web_src/settings.html`, `web_src/login.html`, `src/web/emergency_page.cpp`, `web_src/assets/js/firmware.js`, `web_src/assets/js/log.js`)**:
+  - Menaikkan token `--text-dim` pada `:root` dari `#64748b` menjadi `#8c9eb5` serta menyelaraskan placeholder (`input::placeholder`, `textarea::placeholder`), `.hud-sub-stats`, `.raw-tag-lbl`, `.docs-terminal-meta`, `.docs-guide-label`, `.ck-cmt`, `.docs-proto-raw-lbl`, `.docs-proto-sample-lbl`, `.docs-byte-cell .cell-offset`, `.sg-subcard-val.unassigned`, `.rssi-slider-wrap .ticks`, `.log-search-icon`, `.empty-state`, dan area teks sekunder modal log agar rasio kontras memenuhi `>= 4.5:1` pada permukaan gelap sambil mempertahankan override `html[data-theme="light"]`.
+- **Kontrol Disabled & Row Dimmed (`web_src/assets/css/app.css`, `web_src/log.html`, `web_src/auth.html`)**:
+  - Mengganti efek pudar berbasis `opacity` rendah (`0.35–0.85`) pada `input:disabled`, `select:disabled`, `.btn-pag:disabled`, `.btn-page:disabled`, `.btn-rescan:disabled`, `.ota-modal-actions .btn:disabled`, `#ap_ssid_display`, `#mqtt_client_id`, serta `.row.dimmed .fld` / `.row.off .fld` / `.cell.dimmed .fld` / `.cell.off .fld` menjadi `opacity: 1` dengan warna permukaan dan teks eksplisit (`#8c9eb5` / `#94a3b8`) serta `cursor: not-allowed`.
+- **Tombol Aksi Semantik, OTA Error & Logout (`web_src/assets/css/app.css`, `web_src/assets/js/swal-lite.js`, `web_src/assets/js/app.js`, `web_src/assets/js/firmware.js`, `web_src/assets/js/log.js`, `web_src/assets/js/test.js`, `src/web/emergency_page.cpp`)**:
+  - Kalibrasi warna latar tombol ber-teks putih ke standar WCAG AA (`>= 4.5:1`): `--swal-confirm-bg` / `--swal-btn-info` -> `#0277b5` (`:hover` `#0369a1`), `--swal-btn-emerald` & `.btn-banner-reboot` -> `#057a55` (`:hover` `#046c4e`), `--swal-btn-amber` -> `#c2410c`, `--swal-btn-danger` -> `#dc2626`, `.btn-stop` -> `#e11d48` (`:hover` `#be123c`), `.btn-dock-save` -> `linear-gradient(135deg, #0369a1, #0277b5)`.
+  - Kalibrasi indikator error OTA Dark Mode (`--ota-err-color` & `.ota-c-err` `#f87171`, `--ota-badge-err-color` `#fca5a5`, `--rose` di `emergency_page.cpp` `#f87171`) serta `.mobile-logout-btn` (`#fb7185`).
+- **Perbaikan Clipping Placeholder Search Filter Test (`web_src/assets/css/app.css`)**:
+  - Memperlebar `.filter-search-box.compact` dari `250px` menjadi `325px` (`max-width: 100%`) agar placeholder `#tagFilterInput` tidak terpotong di viewport desktop.
+
+---
+
+## 163. Konsistensi Enterprise Control System: Buttons, Toggles, Selectors & Dropdowns (2026-11-16)
+- **Skala & Token Kontrol Terpadu (`:root` di `web_src/assets/css/app.css`)**:
+  - **Size Scale Hierarchy**: `sm` (`--ctl-h-sm: 28px`, `--ctl-r-sm: 6px`), `md` (`--ctl-h-md: 34px`, `--ctl-r-md: 8px`), `lg` (`--ctl-h-lg: 42px`, `--ctl-r-lg: 10px`); pada viewport sentuh `<= 768px`, form input/select dan tombol aksi utama menerapkan `min-height: 44px`.
+  - **Sidebar-Matched Sky Blue Primary CTA (`--primary`)**:
+    - **Dark Mode**: `--primary: #38bdf8`, `--primary-fg: #0f172a` (`8.33:1` WCAG AAA), hover `--primary-hover: #7dd3fc`, rim `--primary-border: rgba(255, 255, 255, 0.22)`, fokus `--focus-ring: #38bdf8`, tanpa efek *neon glow blur* berat; pill aktif tonal menggunakan `--accent-pill-bg: rgba(56, 189, 248, 0.14)`, `--accent-pill-border: rgba(56, 189, 248, 0.35)`, `--accent-pill-fg: #38bdf8`.
+    - **Light Mode (`html[data-theme="light"]`)**: `--primary: #0369a1` (`5.93:1` WCAG AA+), `--primary-fg: #ffffff`, hover `--primary-hover: #075985`, rim `--primary-border: #0284c7`, fokus `--focus-ring: #0284c7`; pill aktif tonal selaras sidebar menggunakan `#f0f9ff`/`#e0f2fe`, border `#bae6fd`/`#0284c7`, ink `#075985`.
+  - **Keyboard Accessibility & Reduced Motion**: Aturan global `:focus-visible` (`2px solid var(--focus-ring)`) dan `@media (prefers-reduced-motion: reduce)` aktif di Web UI maupun `/recovery`.
+- **Standarisasi Toggle Switch (`.sw`)**:
+  - Mempertahankan indikator teks **`ON` / `OFF`** di dalam kapsul berukuran seragam **`52x28px`** pada Desktop maupun Mobile (menghapus pengecilan `!important` mobile serta *dead CSS* `.ios-switch` / `.ios-slider`).
+  - Kontras WCAG AA: Dark ON `#057a55` + `#ffffff` (`5.36:1`), Dark OFF `#334155` + `#cbd5e1` (`6.97:1`), Light ON `#047857` + `#ffffff` (`5.48:1`), Light OFF `#cbd5e1` + `#334155` (`6.97:1`).
+- **Opsi A Segmented Controls & Selector Hierarchy**:
+  - Rail standar `height: 42px; padding: 4px; border-radius: 10px` dengan item `height: 32px; line-height: 1; border-radius: 7px` dan *elevated neutral active thumb* (`#1e293b` / `#f8fafc` Dark; `#ffffff` / `#0f172a` Light) untuk `.segmented-control`, `.seg`, `.master-tabs`, dan filter log toolbar; aksen semantik Rose dipertahankan khusus pada `.master-tabs .segment-btn.active.tab-drop`.
+  - Hierarki `docs.html`: `.docs-vendor-tab` pada skala `34px / 8px`, sedangkan `.docs-lang-pill`, `.docs-subproto-pill`, dan `.docs-copy-action-btn` pada `28px / 6px`. Pagination `.btn-pag` & `.btn-page` serta `.btn-raw-hex` distandarkan ke `28px / 6px`.
+- **Uniform Custom `<select>` Chevron & Standalone Recovery Parity**:
+  - Seluruh `<select>` di `app.css` dan `src/web/emergency_page.cpp` (`/recovery`) menggunakan `appearance: none`, SVG *chevron* seragam berbasis `--select-chevron`, `padding: 0 38px 0 14px`, `height: 42px` (`min-height: 44px` di `<= 768px`), dan properti `background-color` agar ikon *chevron* tetap tampil di kedua tema.
+  - Inline style pada `#btnMainSave`, `#btnTestNtp`, `#btnOtaAction`, `#btnGatewayRebootAction`, serta duplikasi lokal `.btn-ap-stop` dibersihkan menjadi kelas CSS terpusat; `web_src/assets/js/swal-lite.js` mendukung `--swal-confirm-fg` (kontras `#0f172a` saat info Sky `#38bdf8` di Dark Mode) serta layout tombol anti-clipping.
+
+---
+
+## 164. Post-Audit Refinements: `.seg` Active Cascade, Tier-3 Input/Button Alignment, Mobile Log Rail Wrap & Drop Telemetry Polish (2026-11-16)
+- **Perbaikan Cascade `.seg button` pada `auth.html` (`web_src/assets/css/app.css`)**:
+  - Memperbarui `.seg button:hover:not(.on)` menjadi `.seg button:hover:not(.on):not(.active)` serta menambahkan `.seg button.active` (termasuk `html[data-theme="light"] .seg button:hover:not(.on):not(.active)` dan `html[data-theme="light"] .seg button.active`) agar kontrol uplink `#btnModeWifi` / `#btnModeEth` pada `.seg.segmented-control` selalu menampilkan thumb solid Opsi A (`--seg-thumb-bg` / `--seg-thumb-fg` / `--seg-thumb-border`) tanpa tertimpa warna hover pudar saat diklik.
+- **Penyeragaman Tinggi Form Input Tier-3 terhadap Tombol Pendamping (`web_src/assets/css/app.css`, `web_src/settings.html`)**:
+  - Menaikkan `input[type=text]`, `input[type=number]`, `input[type=time]`, `.step`, `.rv`, serta `.paste`/`.addon` dari `38px / 8px` menjadi **`--ctl-h-lg` (`42px`) / `--ctl-r-lg` (`10px`)** pada Desktop dan **`44px`** pada viewport sentuh `<= 768px`, dengan `.grp { align-items: center; }`.
+  - Memastikan pasangan `#ntp_server` + `#btnTestNtp` (`settings.html`) dan `#w_ssid` + `#btnOpenWifiModal` (`auth.html`) sejajar simetris tepat (`42px` Desktop, `44px` Mobile, `topDiff = 0`).
+- **Perbaikan Mobile Filter Rail `#categoryFilterNet` & `#categoryFilterDrop` (`web_src/log.html`)**:
+  - Mempertahankan rail 1 baris `42px` pada Desktop, sementara pada `@media (max-width: 768px)` `.log-toolbar-card .segmented-control` bertransisi ke `flex-wrap: wrap` ber-container penuh (`height: auto`, `overflow-x: visible`) dengan `.segment-btn { flex: 1 0 auto; min-width: fit-content; height: 36px; padding: 0 10px; }` sehingga seluruh pill (`SoftAP`, `System`, dan filter drop) tampil utuh tanpa *right-edge clipping* (`OverflowNodes: 0`).
+- **Konsistensi Tabel Drop Telemetry (`web_src/log.html`, `web_src/assets/css/app.css`)**:
+  - Menambahkan fallback dasar `.badge-reason` dan alias `.badge-reason.amber` (selaras `.badge-reason.warning`) di tema gelap maupun terang, melengkapi warna dot `.pulse-dot-sm` (`.warning`, `.amber`, `.orange`, `.danger`, `.slate`, `.neutral`), serta menetapkan `.rssi-val { white-space: nowrap; }` dan lebar kolom `<th style="width: 108px; white-space: nowrap;">RSSI</th>` agar nilai `-92 dBm` / `-75 dBm` tampil satu baris rapi.
+- **Perbaikan `.native-time` & `.cell .ctl-t .fld` (`web_src/assets/css/app.css`)**:
+  - Melebarkan `.cell .ctl-t .fld` dari `112px` ke `148px` di Desktop (`width: auto !important` pada `<= 768px`) dan menyetel `input[type="time"].native-time` dengan `font-size: 0.9rem`, `padding: 0 10px 0 12px`, serta menghapus `min-height: 44px` tetap agar `#restart_schedule` sejajar `42px` Desktop / `44px` Mobile dengan `#discon_rst` dan teks `03:00 AM` tampil utuh tanpa terpotong.
+  - Menambahkan `html[data-theme="light"] input[type="time"].native-time { color-scheme: light; }` agar ikon jam bawaan pada input waktu terlihat jelas di Light Mode.
+
+---
+
+## 165. Single Floating Save Dock Pattern & Enterprise Desktop Calibration (2026-11-16)
+- **Penghapusan Tombol Statis Bawah (`#btnMainSave` / `.form-actions-bottom`)**:
+  - Menghapus `.form-actions-bottom` dari `web_src/auth.html` dan `web_src/settings.html` serta rule CSS terkait di `web_src/assets/css/app.css` untuk mengeliminasi dual-CTA Save.
+  - `#floatingSaveDock` menjadi satu-satunya titik submit form saat status *dirty*, dilengkapi atribut aksesibilitas `role="region"`, `aria-label="Unsaved configuration changes"`, dan `aria-live="polite"`, dengan teks UI tetap **`You have unsaved changes`**, **`Discard`**, dan **`Save`**.
+- **Kalibrasi Enterprise Desktop Dock & Bottom Clearance (`web_src/assets/css/app.css`)**:
+  - **Desktop (`>= 769px`)**: `.floating-save-dock` diskalakan ke `width: min(calc(100vw - var(--sidebar-w, 260px) - 56px), 740px); max-width: calc(100vw - var(--sidebar-w, 260px) - 40px);` di `bottom: 20px;` (sejajar poros tengah main container `1000px`), `.floating-save-box` ber-`min-height: 62px; padding: 10px 14px 10px 20px; border-radius: 14px;`, serta tombol CTA dock `.btn-dock-cancel` (`min-width: 96px`) & `.btn-dock-save` (`min-width: 112px`) mengikuti skala Tier-3 **`--ctl-h-lg` (`42px`) / `--ctl-r-lg` (`10px`)**.
+  - **Bottom Scroll Clearance**: `body.has-floating-dock footer` di Desktop menerima `padding-bottom: 104px` dan di Mobile (`<= 768px`) `padding-bottom: calc(var(--bottom-nav-h, 64px) + 84px)` (dengan `.content` tetap ringkas `24px`), sehingga kartu terbawah maupun `<footer>` tetap tampil utuh di atas `#floatingSaveDock` saat di-scroll penuh.
+- **Pengaman UX, Dirty-Row Indicator & Perbaikan State (`web_src/assets/js/app.js`, `settings.js`, `auth.html`)**:
+  - **Indikator Baris Berubah & Error**: `window.evaluateFormDirtyState` menandai `.row.is-modified` / `.cell.is-modified` dengan aksen garis vertikal kiri (`#f59e0b` Dark / `#d97706` Light); `handleFormSubmit()` dan handler `invalid` menargetkan `.row, .cell, .item` untuk menyorot `.has-error` dan menggulir otomatis ke input bermasalah pertama.
+  - **Penjaga Navigasi `Swal` + `beforeunload`**: Link navigasi internal (sidebar, bottom nav, `#sheetConfig`, mobile logo) di-intercept menggunakan dialog konfirmasi `Swal` (*"Unsaved Changes"*, **`Stay`** / **`Discard & Leave`**) dengan pengecualian modal `/reboot`, `/reset`, `/logout`, serta fallback `beforeunload` browser dan shortcut **`Ctrl+S` / `Cmd+S`**.
+  - **Sinkronisasi Snapshot & Rollback**: `auth.html` mengulang `snapshot()` pasca-`DOMContentLoaded` dan memanggil `window.syncDhcpState("wifi")` / `window.syncDhcpState("eth")` pada `Discard`; `settings.js` memanggil `checkDirty()` pada fallback `#ntp_server` tombol `Test probe`.
+
+---
+
+## 166. Pembersihan Header Logout Desktop & Scroll Safety Sidebar (2026-11-16)
+- **Single Exit Point pada Desktop (`>= 861px`) di `web_src/assets/css/app.css`**:
+  - Menyembunyikan `.mobile-logout-btn` (`#mobileLogoutBtn`) di dalam `.navbar-actions` pada `@media (min-width: 861px)` (`display: none`) karena `.sidebar` dan `#sidebarLogoutBtn` (`.sidebar-logout`) selalu tampil permanen di layar Desktop, sehingga menyisakan `#themeToggleBtn` saja di pojok kanan atas header untuk mencegah redundansi dan salah klik.
+  - Mempertahankan `#mobileLogoutBtn` (`display: inline-flex`) pada viewport Tablet/Mobile `<= 860px` ketika `.sidebar` disembunyikan oleh `@media (max-width: 860px)`.
+- **Scroll Safety `.sidebar-wrapper`**:
+  - Menambahkan `overflow-y: auto` pada `.sidebar-wrapper` agar item paling bawah (`.sidebar-logout`) tetap terjangkau pada jendela browser Desktop ber-tinggi pendek (`< 700px`).
+
+---
+
+## 167. Full Mobile & Landscape Responsive Audit — Zero Overlap & Anti-Truncation (2026-11-16)
+- **Penyelarasan Breakpoint Navigasi `860px` pada `#floatingSaveDock` (`web_src/assets/css/app.css`)**:
+  - Memindahkan transisi `#floatingSaveDock` dan clearance `body.has-floating-dock footer` dari `@media (min-width: 769px) / (max-width: 768px)` menjadi **`@media (min-width: 861px) / (max-width: 860px)`** agar sinkron 1:1 dengan breakpoint `.sidebar` / `.bottom-nav`, menghilangkan tumpang-tindih antara floating save dock dan `.bottom-nav` pada ponsel landscape/tablet sempit `769px–860px` (mis. `844x390`).
+  - Memungkinkan `.floating-save-text` wrap secara bersih ke 2 baris pada layar sangat sempit (`320px`) alih-alih terpotong elipsis.
+- **Perbaikan Overflow `#restartRow` `641px–900px` (`web_src/assets/css/app.css`)**:
+  - Mengubah selector `@media (max-width: 900px)` dari `.cell .ctl { width: 136px; }` menjadi `.cell .ctl:not(.ctl-t) { width: 136px; }` disertai `.cell .ctl-t { width: auto; max-width: 100%; }` sehingga baris `#restartRow` (`time` + switch toggle `.sw`) tidak lagi terdorong keluar batas kartu/viewport pada resolusi `844x390`.
+- **Anti-Truncation Multi-Line Wrapping Teks Terbaca (`web_src/index.html`, `web_src/log.html`, `web_src/assets/css/app.css`)**:
+  - **Gateway Overview (`web_src/index.html`)**: Menghapus pemotongan elipsis satu baris pada `.sg-wifi-ssid`, `.sg-mqtt-host-val`, `.sg-subtitle`, dan `.sg-version-tile-val` (`white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere;`) serta `white-space: normal` + `min-width: 0` pada `.sg-subcard-title-wrap h4`, `.sg-subcard-role`, `.sg-mqtt-header > div:first-child`, dan `.sg-subcard-val-wrap { flex-wrap: wrap; }` sehingga SSID Wi-Fi panjang, host MQTT, subtitle, peran interface (`Secondary / LAN Port` di samping badge `Link Down`), header `MQTT Telemetry` di samping badge `Connected`, dan versi firmware tampil penuh tanpa elipsis atau tabrakan pada seluruh rasio mobile (`320px–844px`).
+  - **Firmware Dropzone (`web_src/assets/css/app.css`)**: Menetapkan `minmax(0, 1fr)` pada `.bento-grid` / `.bento-grid.single`, `min-width: 0` pada `.item` & `.dropzone-selected-box` / `.dropzone-file-details`, serta mengizinkan `.dropzone-filename` membungkus ke beberapa baris agar nama file `.bin` panjang tidak melebarkan halaman melebihi `320px`/`390px` maupun terpotong.
+  - **Drop Telemetry Summary Cards & System Logs (`web_src/assets/css/app.css`, `web_src/log.html`)**: Menghapus `text-overflow: ellipsis` pada `.drop-card-header` (`flex-wrap: nowrap; align-items: flex-start;` agar `.drop-dot` tetap sejajar di baris pertama), `.drop-card-sub`, serta `.sg-subtitle` agar judul/persentase (`MAJOR MISMATCH`, `UNKNOWN FORMAT`, `100.00% Ingress Rate`) tampil utuh pada grid sempit `320x568`.
+  - **Modal, Wi-Fi Picker, Bottom Sheets & `Swal` (`web_src/assets/css/app.css`, `web_src/assets/js/swal-lite.js`)**: Mengizinkan `.wifi-ssid-text` (`#wifiScanModal`) dan `.ota-filename-text` (`#gatewayRebootModal` / `#otaModal`) membungkus bersih ke 2+ baris tanpa elipsis (`flex: 1 1 auto; min-width: 0` pada `.wifi-info`, `.wifi-lock-icon { width: 16px; height: 16px; min-width: 16px; flex-shrink: 0; }`, dan `flex-shrink: 0` pada `.wifi-meta`); mengubah `.wifi-modal-box` dan `.bottom-sheet` serta `.swal-lite-box` menggunakan `max-height: calc(100dvh - 24px)` (`- 16px` untuk sheet) + `overflow-y: auto; overscroll-behavior: contain` agar konten modal/sheet pada ponsel landscape pendek (`640x360`, `844x390`) tetap terjangkau utuh tanpa vertical clipping.
+
+---
+
+## 168. OS/System Theme Auto-Detection (`prefers-color-scheme`) Fallback (2026-11-16)
+- **Pre-Paint System Theme Resolution (8 Halaman `web_src/*.html` + `src/web/emergency_page.cpp`)**:
+  - Ketika `localStorage.getItem("cubeacon_theme")` belum diset (`null` atau bukan `"light"` / `"dark"` — mis. akses pertama ke IP/mDNS gateway baru), inisialisasi `<head>` otomatis mengevaluasi `window.matchMedia("(prefers-color-scheme: light)").matches` sebelum *first paint* (jatuh ke `"dark"` bila browser tidak mendukung atau mode OS gelap).
+  - Pilihan manual pengguna yang tersimpan di `localStorage["cubeacon_theme"]` (`"light"` atau `"dark"`) tetap memegang prioritas utama sehingga override manual per *origin* tidak pernah tertimpa perubahan OS.
+- **Sinkronisasi Perubahan Tema OS Secara Live (`web_src/assets/js/app.js`, `web_src/login.html`, `src/web/emergency_page.cpp`)**:
+  - Menambahkan listener `matchMedia("(prefers-color-scheme: light)")` (`change`) dengan penjaga `hasSavedTheme()`: jika pengguna belum pernah menyimpan override manual di *origin* tersebut, perubahan tema OS otomatis memperbarui tema UI (`setAppTheme(..., false)` / `syncLoginTheme` / `syncRecoveryTheme`), logo (`logo-light.png` / `logo.png`), state tombol toggle, dan grafik canvas tanpa menulis paksa ke `localStorage`.
+
+---
+
+## 169. Kalibrasi Vertikal Sidebar Desktop Tanpa Scrollbar Klasik (2026-11-16)
+- **Kalibrasi Density Vertikal `.sidebar-wrapper` ([web_src/assets/css/app.css](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/assets/css/app.css#L225-L505))**:
+  - Merapatkan spacing vertikal sidebar agar seluruh 10 item navigasi termasuk `#sidebarLogoutBtn` muat penuh di viewport laptop standar (`~600px–768px`) tanpa perlu scroll: `.sidebar-wrapper` (`padding: 18px 16px 16px`), `.sidebar .logo` (`padding-bottom: 14px; margin-bottom: 12px`, `.sidebar-logo-img` `38px`), `.sidebar .user` (`padding: 8px 12px; margin-bottom: 14px`), `.sidebar-nav` (`gap: 3px`), `.sidebar-nav li a` (`padding: 8px 13px`), `.sidebar-nav li.active a::before` (`top: 7px; bottom: 7px`), dan `.sidebar-logout` (`padding-top: 10px`).
+- **Hidden Fallback Scrollbar**:
+  - Mempertahankan `overflow-y: auto` pada `.sidebar-wrapper` khusus jendela browser ekstrem pendek (`< ~580px`) sembari menyembunyikan batang scrollbar OS (`scrollbar-width: none; -ms-overflow-style: none;` dan `.sidebar-wrapper::-webkit-scrollbar { width: 0; height: 0; display: none; }`) agar lebar dan estetika sidebar tetap bersih di Windows/macOS.
+
+---
+
+## 170. Enterprise Soft Crossfade Theme Engine (2026-11-16)
+- **Komposisi GPU Seamless Dissolve (`View Transitions API` + Non-Destructive Blending)** ([web_src/assets/css/app.css](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/assets/css/app.css), [src/web/emergency_page.cpp](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/web/emergency_page.cpp)):
+  - Mengunci `::view-transition { pointer-events: none; }`, menahan `::view-transition-old(root)` (`animation: none; opacity: 1; mix-blend-mode: normal;`), dan melarutkan `::view-transition-new(root)` menggunakan `@keyframes themeFadeInOverlay` (`0 -> 1`) selama `340ms` (`cubic-bezier(0.22, 1, 0.36, 1)`) agar perpindahan Dark ↔ Light menyatu mulus lintas latar, kartu, gradien `login.html`, logo PNG (`logo.png` ↔ `logo-light.png`), dan `<canvas>` chart tanpa penurunan opasitas tengah (*alpha dip*) maupun *flash*.
+- **Scoped Color-Only Fallback & Race-Safety Guard** ([web_src/assets/js/app.js](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/assets/js/app.js), [web_src/login.html](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/login.html), [src/web/emergency_page.cpp](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/web/emergency_page.cpp)):
+  - **Spam-click & Promise Guard**: Memanggil `skipTransition()` pada transisi aktif sebelumnya sebelum memulai transisi baru dan menangani `.finished` / `.ready` / `.updateCallbackDone` agar tidak pernah memunculkan `AbortError`.
+  - **Preload & Bounded Decode Logo (`<= 80ms`)**: Meng-cache logo tema lawan secara malas pasca-`window.load` (`preloadAlternateLogo`) serta menunggu decode terikat maks `80ms` pada gambar belum termuat (`decodeLogosBounded`) sehingga swap gambar tidak berkedip walau baru pertama diklik di jaringan ESP32 lambat.
+  - **Color-Only Scoped Fallback**: Jika `document.startViewTransition` tidak tersedia, mengaktifkan kelas sementara `html.theme-animating` selama `340ms` hanya untuk `background-color`, `color`, `border-color`, `box-shadow`, `fill`, `stroke` (tanpa menyentuh `transform`/`opacity`), plus micro-pop ikon pada `.theme-icon-pop`.
+  - **Reduced-Motion & Background-Tab Guard**: Melewati animasi seketika ketika `prefers-reduced-motion: reduce`, `document.hidden === true`, atau saat initial load agar halaman tetap bebas kedip.
+
+---
+
+## 171. Penyederhanaan Judul Kartu Login (2026-11-16)
+- **Hapus Akhiran Model di `.login-title` ([web_src/login.html](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/login.html#L378))**:
+  - Mengubah `<div class="login-title">Gateway Authentication — %model%</div>` menjadi `Gateway Authentication` agar judul tetap ringkas 1 baris rapi di layar mobile (`320px–390px`) tanpa memecah kode model ke baris baru (`<title>` tab browser tetap mempertahankan model perangkat).
+
+---
+
+## 172. Zero-FOUC Dual-Icon CSS Theme Toggle Control (2026-11-16)
+- **Pre-Paint Pure CSS Visibility (`0ms`, Tanpa Menunggu JS)** ([web_src/assets/css/app.css](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/assets/css/app.css), [src/web/emergency_page.cpp](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/web/emergency_page.cpp)):
+  - Seluruh `#themeToggleBtn` (8 halaman `web_src/*.html`) dan `#recoveryThemeBtn` ([emergency_page.cpp](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/web/emergency_page.cpp)) kini merender kedua ikon SVG (`.theme-icon-sun` & `.theme-icon-moon`) serta label (`.theme-label-light` & `.theme-label-dark`), dan visibilitasnya langsung dikendalikan murni oleh CSS `html[data-theme="light"]` sejak frame ke-0 (menghilangkan FOUC Matahari → Bulan saat Light Mode aktif).
+  - Pada `@media (max-width: 768px)`, aturan `.theme-toggle-btn .theme-toggle-label, html[data-theme="light"] .theme-toggle-btn .theme-toggle-label { display: none; }` menjaga kedua label tetap tersembunyi di tombol compact mobile.
+- **Non-Destructive A11y Sync di JS** ([web_src/assets/js/app.js](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/assets/js/app.js), [web_src/login.html](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/login.html), [src/web/emergency_page.cpp](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/web/emergency_page.cpp)):
+  - `syncThemeButton`, `syncLoginTheme`, dan `syncRecoveryTheme` memperbarui `title`, `aria-label`, dan `aria-pressed` tanpa menimpa DOM `innerHTML` saat dual-ikon tersedia.
+
+---
+
+## 173. SwalLite Keyboard Focus Trap & Login Anti-Resubmit Guard (2026-11-16)
+- **SwalLite Modal Keyboard & Focus Management** ([web_src/assets/js/swal-lite.js](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/assets/js/swal-lite.js)):
+  - Overlay kini menerapkan atribut aksesibilitas `role="dialog"` dan `aria-modal="true"`, serta `.swal-lite-box` diberi `tabindex="-1"` (dengan `.swal-lite-box:focus { outline: none; }`).
+  - Saat dialog dibuka (`Swal.fire`), fokus dipindahkan secara sinkron ke tombol utama (`.swal-lite-confirm`, atau `.swal-lite-cancel` bila `focusCancel` / tanpa confirm, atau `.swal-lite-box` saat mode loading tanpa tombol), sehingga fokus tidak tertinggal di input formulir latar belakang.
+  - Handler keyboard *capture-phase* (`keydown` pada `document` selama modal aktif) menangkap tombol `Enter` (menjalankan aksi konfirmasi/batal sesuai tombol terfokus dan menghentikan propagasi event agar formulir di belakang tidak ikut tersubmit), `Escape` (menutup modal kecuali saat `isLoadingState()` non-dismissible atau `allowEscapeKey === false`), serta `Tab`/`Shift+Tab` (*focus trap* di dalam modal); event `e.repeat` diabaikan agar tahan tekan `Enter` tidak langsung menutup dialog error.
+  - Penutupan melalui `finish()` dan `Swal.close()` membersihkan listener keyboard secara sinkron, mencegah *race condition* `activeModal = null` antardialog berurutan, dan mengembalikan fokus secara sinkron ke elemen pemicu sebelum *promise* resolve.
+- **Login Form Enter & In-Flight Submit Guard** ([web_src/login.html](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/login.html)):
+  - Handler `onEnter` dan `handleLogin` kini memblokir eksekusi ulang ketika `isLoginSubmitting` aktif atau `.swal-lite-overlay` sedang terbuka (serta menonaktifkan `#btnLogin` sementara selama permintaan `/api/v1/auth/login` berjalan).
+  - Setelah dialog gagal/peringatan (`401`, `409`, `429`, atau kesalahan koneksi) ditutup lewat `Enter`, klik `OK`, atau `Escape`, fokus otomatis diarahkan kembali ke `#password` dan teks kata sandi terseleksi (`refocusPasswordField`) agar pengguna dapat langsung mengetik ulang kata sandi.
+
+---
+
+## 174. Brand Favicon & Mobile Touch Icon (2026-11-17)
+- **Ekstraksi Emblem Kubus 3D Biru (`Opsi A — Transparan Bersih`)**:
+  - Diekstrak langsung dari area ikon kubus (`x = 0..174, y = 0..200`) pada [logo-light.png](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/assets/img/logo-light.png), dipusatkan 1:1 dengan padding ~8% berlatar transparan dan di-resample LANCZOS menjadi:
+    - [web_src/assets/img/favicon.png](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/assets/img/favicon.png) (`64 × 64 px` RGBA, ~4 KB) untuk tab browser desktop & mobile HiDPI.
+    - [web_src/assets/img/apple-touch-icon.png](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/web_src/assets/img/apple-touch-icon.png) (`180 × 180 px` RGBA, ~16 KB) untuk ikon shortcut/bookmark iOS & Android.
+- **Pemasangan Lintas Seluruh Halaman & Route Server**:
+  - Seluruh 8 halaman HTML (`index.html`, `login.html`, `auth.html`, `settings.html`, `firmware.html`, `log.html`, `test.html`, `docs.html`) menyertakan `<link rel="icon" type="image/png" sizes="64x64" href="assets/img/favicon.png?v=%firmware_version%">` dan `<link rel="apple-touch-icon" sizes="180x180" href="assets/img/apple-touch-icon.png?v=%firmware_version%">`.
+  - Endpoint `/favicon.ico` di [src/web/web_routes.cpp](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/web/web_routes.cpp#L279-L289) melayani `/storage/assets/img/favicon.png` (publik tanpa autentikasi, `image/png`, cache 1 hari) bila LittleFS aktif, dan fallback aman ke `204 No Content` jika filesystem tidak siap.
+  - Halaman darurat [src/web/emergency_page.cpp](file:///c:/Users/syafr/OneDrive/Documents/PlatformIO/Projects/esp32_ibeacon_espidf/src/web/emergency_page.cpp) menyematkan versi inline `32 × 32 px` (`data:image/png;base64,...`) agar tab *Emergency Recovery* tetap menampilkan ikon saat partisi LittleFS gagal mount.

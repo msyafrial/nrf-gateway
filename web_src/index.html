@@ -1,18 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cubeacon %model% - Gateway Overview</title>
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/img/favicon.png?v=%firmware_version%">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/img/apple-touch-icon.png?v=%firmware_version%">
+  <script>try{var t=localStorage.getItem("cubeacon_theme");if(t!=="light"&&t!=="dark"){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}</script>
   <style>
     /* Critical Pre-paint CSS: Eliminates White Canvas Flash */
-    html, body {
+    html,
+    body {
       background-color: #070c14 !important;
       color: #f8fafc;
       margin: 0;
       padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
     }
+
+    html[data-theme="light"],
+    html[data-theme="light"] body {
+      background-color: #f1f5f9 !important;
+      color: #0f172a;
+    }
+
     /* Instant Banner Suppression before external CSS loads */
     .pending-reboot-banner,
     .ap-banner-card,
@@ -20,7 +32,7 @@
     .session-expired-banner {
       display: none;
     }
-  
+
     body[data-role="engineer"] .role-admin-only,
     body[data-role="engineer"] #mqtt,
     body[data-role="engineer"] .nav-docs {
@@ -29,893 +41,1089 @@
   </style>
   <link rel="stylesheet" href="assets/css/app.css?v=%firmware_version%">
   <script src="assets/js/swal-lite.js?v=%firmware_version%" defer></script>
-<style>
-  .ap-banner-card {
-    display: none;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.88) 100%);
-    border: 1px solid rgba(59, 130, 246, 0.45);
-    box-shadow: 0 8px 24px rgba(2, 132, 199, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(12px);
-    border-radius: 12px;
-    padding: 12px 18px;
-    margin-bottom: 20px;
-    position: relative;
-    overflow: hidden;
-  }
-  .ap-banner-card::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; bottom: 0;
-    width: 4px;
-    background: linear-gradient(180deg, #38bdf8, #0284c7);
-  }
-  .ap-banner-left { display: flex; align-items: center; gap: 14px; }
-  .ap-pulse-ring { position: relative; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
-  .ap-pulse-dot { width: 10px; height: 10px; border-radius: 50%; background: #0284c7; box-shadow: 0 0 10px #38bdf8; z-index: 2; }
-  .ap-pulse-ring::after {
-    content: "";
-    position: absolute;
-    width: 100%; height: 100%;
-    border-radius: 50%;
-    background: #38bdf8;
-    animation: apPulseAnim 1.6s ease-out infinite;
-    z-index: 1;
-  }
-  @keyframes apPulseAnim {
-    0% { transform: scale(0.95); opacity: 0.8; }
-    70% { transform: scale(2.4); opacity: 0; }
-    100% { transform: scale(2.4); opacity: 0; }
-  }
-  .ap-banner-text { display: flex; flex-direction: column; gap: 2px; }
-  .ap-banner-title { font-size: 0.95rem; font-weight: 600; color: #f8fafc; letter-spacing: 0.2px; }
-  .ap-banner-subtitle { font-size: 0.82rem; color: #94a3b8; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .ap-banner-subtitle strong { color: #38bdf8; font-weight: 600; }
-  .ap-timer-pill {
-    background: rgba(56, 189, 248, 0.15);
-    color: #38bdf8;
-    border: 1px solid rgba(56, 189, 248, 0.3);
-    padding: 1px 8px;
-    border-radius: 9999px;
-    font-size: 0.76rem;
-    font-weight: 600;
-    font-family: monospace;
-  }
-  .btn-ap-stop {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 14px;
-    background: rgba(249, 115, 22, 0.15);
-    border: 1px solid rgba(249, 115, 22, 0.4);
-    color: #fb923c;
-    border-radius: 8px;
-    font-size: 0.84rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-  }
-  .btn-ap-stop:hover {
-    background: rgba(249, 115, 22, 0.28);
-    border-color: rgba(249, 115, 22, 0.7);
-    color: #fdba74;
-    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25);
-    transform: translateY(-1px);
-  }
-  @media (max-width: 640px) {
-    .ap-banner-card { flex-direction: column; align-items: stretch; gap: 12px; }
-    .btn-ap-stop { width: 100%; justify-content: center; }
-  }
-
-  /* ========================================================================= */
-  /* SG-10 OVERVIEW BENTO GRID & DUAL INTERFACE SYSTEM (2026 CYBERNETIC DARK)  */
-  /* ========================================================================= */
-  .content {
-    max-width: 1440px !important;
-    width: 100% !important;
-    padding: 24px 28px 28px 28px !important;
-  }
-
-  /* 1. SLIM TOP HEADER CARD */
-  .sg-header-card {
-    background: #0d121f;
-    border: 1px solid #1a2333;
-    border-radius: 14px;
-    padding: 16px 22px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
-    display: flex;
-    align-items: center;
-    margin-bottom: 20px;
-  }
-
-  .sg-header-left {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    min-width: 0;
-  }
-  .sg-chip-icon {
-    width: 42px;
-    height: 42px;
-    border-radius: 10px;
-    background: rgba(30, 58, 138, 0.25);
-    border: 1px solid rgba(59, 130, 246, 0.35);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #60a5fa;
-    flex-shrink: 0;
-  }
-  .sg-title-group {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-  @media (min-width: 640px) {
-    .sg-title-group {
-      flex-direction: row;
+  <style>
+    .ap-banner-card {
+      display: none;
       align-items: center;
-      gap: 10px;
+      justify-content: space-between;
+      gap: 16px;
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.88) 100%);
+      border: 1px solid rgba(59, 130, 246, 0.45);
+      box-shadow: 0 8px 24px rgba(2, 132, 199, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(12px);
+      border-radius: 12px;
+      padding: 12px 18px;
+      margin-bottom: 20px;
+      position: relative;
+      overflow: hidden;
     }
-  }
-  .sg-title {
-    font-size: 1.08rem;
-    font-weight: 700;
-    color: #ffffff;
-    letter-spacing: 0.01em;
-    white-space: nowrap;
-    margin: 0;
-    line-height: 1.2;
-  }
-  .sg-title-dot {
-    display: none;
-    color: #475569;
-    font-size: 1rem;
-  }
-  @media (min-width: 640px) {
-    .sg-title-dot {
-      display: inline;
+
+    .ap-banner-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 4px;
+      background: linear-gradient(180deg, #38bdf8, #0284c7);
     }
-  }
-  .sg-subtitle {
-    font-size: 0.88rem;
-    color: #94a3b8;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    margin: 0;
-  }
 
-  /* 2. BENTO MAIN GRID */
-  .sg-bento-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 20px;
-    width: 100%;
-    margin-bottom: 20px;
-  }
-  @media (min-width: 1080px) {
-    .sg-bento-grid {
-      grid-template-columns: minmax(340px, 36%) 1fr;
-      gap: 24px;
-      align-items: stretch;
+    .ap-banner-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
     }
-  }
 
-  /* PANEL KIRI (IDENTITAS & SISTEM) */
-  .sg-panel-left {
-    background: #0d121f;
-    border: 1px solid #1a2333;
-    border-radius: 16px;
-    padding: 24px 26px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-  }
-
-  /* PANEL KANAN (STATUS & KONEKTIVITAS) */
-  .sg-panel-right {
-    background: #0d121f;
-    border: 1px solid #1a2333;
-    border-radius: 16px;
-    padding: 24px 26px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    gap: 16px;
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-  }
-
-  /* PANEL HEADERS (SEAMLESS CLEAN HEADER, NO DIVIDER) */
-  .sg-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding-bottom: 6px;
-    margin-bottom: 12px;
-    gap: 12px;
-  }
-  @media (max-width: 640px) {
-    .sg-card-header {
-      flex-direction: column;
-      align-items: stretch;
-      gap: 12px;
-    }
-  }
-  .sg-card-title-group {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    min-width: 0;
-  }
-  .sg-card-icon {
-    width: 42px;
-    height: 42px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  .sg-card-icon.navy {
-    background: rgba(26, 36, 54, 0.7);
-    border: 1px solid rgba(51, 65, 85, 0.6);
-    color: #94a3b8;
-  }
-  .sg-card-header h3 {
-    font-size: 1.05rem;
-    font-weight: 700;
-    color: #ffffff;
-    margin: 0;
-    line-height: 1.25;
-    letter-spacing: -0.01em;
-  }
-  .sg-card-header p {
-    font-size: 0.84rem;
-    color: #8191a6;
-    margin: 3px 0 0 0;
-  }
-
-  /* SINGLE MODE BADGE PILL (CAPSULE PILL) */
-  .sg-net-header-badges {
-    display: flex;
-    align-items: center;
-  }
-  @media (max-width: 640px) {
-    .sg-net-header-badges {
-      width: 100%;
-    }
-    .sg-net-header-badges .sg-badge-pill {
-      width: 100%;
+    .ap-pulse-ring {
+      position: relative;
+      width: 14px;
+      height: 14px;
+      display: flex;
+      align-items: center;
       justify-content: center;
     }
-  }
-  .sg-badge-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 7px 18px;
-    border-radius: 9999px;
-    font-size: 0.84rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-    min-width: 0;
-    transition: all 0.2s ease;
-  }
-  .sg-badge-pill.mode-wifi {
-    background: rgba(16, 185, 129, 0.08);
-    border: 1px solid rgba(16, 185, 129, 0.45);
-    color: #10b981;
-  }
-  .sg-badge-pill.mode-eth {
-    background: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.45);
-    color: #60a5fa;
-  }
-  .sg-badge-pill.mode-smart {
-    background: rgba(168, 85, 247, 0.1);
-    border: 1px solid rgba(168, 85, 247, 0.45);
-    color: #c084fc;
-  }
-  .sg-badge-pill.mode-offline {
-    background: rgba(239, 68, 68, 0.12);
-    border: 1px solid rgba(239, 68, 68, 0.45);
-    color: #ef4444;
-  }
-  .sg-dot {
-    font-size: 0.78rem;
-    line-height: 1;
-    display: inline-block;
-  }
 
-  /* KEY-VALUE ROWS (LEFT PANEL) */
-  .sg-kv-list {
-    display: flex;
-    flex-direction: column;
-  }
-  .sg-kv-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    gap: 12px;
-  }
-  .sg-kv-row:last-child {
-    border-bottom: none;
-  }
-  .sg-kv-label {
-    font-size: 0.88rem;
-    font-weight: 500;
-    color: #94a3b8;
-    flex-shrink: 0;
-  }
-  .sg-kv-value {
-    font-weight: 700;
-    color: #ffffff;
-    font-size: 0.96rem;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-  .sg-chip-code {
-    background: #141c2c;
-    border: 1px solid #233148;
-    border-radius: 8px;
-    padding: 5px 14px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.90rem;
-    font-weight: 700;
-    color: #ffffff;
-  }
+    .ap-pulse-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #0284c7;
+      box-shadow: 0 0 10px #38bdf8;
+      z-index: 2;
+    }
 
-  /* COPY BUTTON */
-  .sg-copy-btn {
-    background: transparent;
-    border: none;
-    color: #94a3b8;
-    cursor: pointer;
-    padding: 4px;
-    border-radius: 5px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s ease;
-    flex-shrink: 0;
-  }
-  .sg-copy-btn:hover {
-    background: #1e293b;
-    color: #ffffff;
-  }
-  .sg-copy-btn:active {
-    transform: scale(0.9);
-  }
+    .ap-pulse-ring::after {
+      content: "";
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: #38bdf8;
+      animation: apPulseAnim 1.6s ease-out infinite;
+      z-index: 1;
+    }
 
-  /* TRIPLE VERSION TILES */
-  .sg-version-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    margin-top: auto;
-    margin-bottom: 6px;
-    padding-top: 0;
-    border-top: none;
-  }
-  .sg-version-tile {
-    background: #090e18;
-    border: 1px solid #1a2333;
-    border-radius: 10px;
-    padding: 10px 6px;
-    text-align: center;
-  }
-  .sg-version-tile-label {
-    font-size: 0.68rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: #8191a6;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .sg-version-tile-val {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 1.02rem;
-    font-weight: 700;
-    color: #ffffff;
-    margin-top: 3px;
-  }
+    @keyframes apPulseAnim {
+      0% {
+        transform: scale(0.95);
+        opacity: 0.8;
+      }
 
-  /* SUBCARDS GRID & INTERFACES (WI-FI & ETHERNET) */
-  .sg-subcards-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 16px;
-    margin-top: 10px;
-  }
-  @media (min-width: 680px) {
-    .sg-subcards-grid {
-      grid-template-columns: 1fr 1fr;
-      gap: 18px;
-    }
-  }
+      70% {
+        transform: scale(2.4);
+        opacity: 0;
+      }
 
-  .sg-interface-card {
-    background: #090e18;
-    border: 1px solid #1a2333;
-    border-radius: 14px;
-    padding: 20px 22px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    transition: all 0.2s ease;
-    min-width: 0;
-  }
-  .sg-interface-card.active-online,
-  .sg-interface-card.active-wifi,
-  .sg-interface-card.active-eth {
-    border-color: rgba(16, 185, 129, 0.4);
-  }
-  .sg-interface-card.link-down {
-    border-color: #1a2333;
-  }
+      100% {
+        transform: scale(2.4);
+        opacity: 0;
+      }
+    }
 
-  /* Subcard Header */
-  .sg-subcard-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding-bottom: 14px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    gap: 8px;
-  }
-  .sg-subcard-header-left {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-  }
-  .sg-subcard-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  .sg-subcard-icon.emerald {
-    background: rgba(16, 185, 129, 0.12);
-    border: 1px solid rgba(16, 185, 129, 0.25);
-    color: #10b981;
-  }
-  .sg-subcard-icon.blue {
-    background: rgba(59, 130, 246, 0.12);
-    border: 1px solid rgba(59, 130, 246, 0.25);
-    color: #60a5fa;
-  }
-  .sg-subcard-icon.slate {
-    background: rgba(30, 41, 59, 0.6);
-    border: 1px solid rgba(51, 65, 85, 0.5);
-    color: #8191a6;
-  }
-  .sg-subcard-icon.cyan {
-    background: rgba(56, 189, 248, 0.12);
-    border: 1px solid rgba(56, 189, 248, 0.25);
-    color: #38bdf8;
-  }
-  .sg-subcard-title-wrap {
-    min-width: 0;
-  }
-  .sg-subcard-title-wrap h4 {
-    font-size: 0.98rem;
-    font-weight: 700;
-    color: #ffffff;
-    margin: 0;
-    line-height: 1.2;
-    white-space: nowrap;
-  }
-  .sg-subcard-role {
-    font-size: 0.80rem;
-    font-weight: 400;
-    display: block;
-    margin-top: 2px;
-    color: #8191a6;
-    white-space: nowrap;
-  }
+    .ap-banner-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
 
-  /* Subcard Status Badges */
-  .sg-subcard-status-badge {
-    padding: 3px 9px;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  .sg-subcard-status-badge.active {
-    background: rgba(16, 185, 129, 0.12);
-    color: #10b981;
-    border: 1px solid rgba(16, 185, 129, 0.4);
-  }
-  .sg-subcard-status-badge.amber {
-    background: rgba(245, 158, 11, 0.12);
-    color: #f59e0b;
-    border: 1px solid rgba(245, 158, 11, 0.38);
-  }
-  .sg-subcard-status-badge.slate {
-    background: #1e293b;
-    color: #94a3b8;
-    border: 1px solid #334155;
-  }
+    .ap-banner-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #f8fafc;
+      letter-spacing: 0.2px;
+    }
 
-  /* Subcard Data Rows (Clean Divided Rows) */
-  .sg-subcard-data {
-    display: flex;
-    flex-direction: column;
-  }
-  .sg-subcard-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    gap: 8px;
-  }
-  .sg-subcard-row:last-child {
-    border-bottom: none;
-    padding-bottom: 2px;
-  }
-  .sg-subcard-label {
-    font-size: 0.86rem;
-    font-weight: 500;
-    color: #94a3b8;
-    flex-shrink: 0;
-  }
-  .sg-subcard-val-wrap {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 6px;
-    flex-shrink: 1;
-    min-width: 0;
-  }
-  .sg-wifi-ssid {
-    max-width: 130px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.82rem;
-    font-weight: 500;
-    color: #94a3b8;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 6px;
-    padding: 2px 7px;
-    flex-shrink: 1;
-    min-width: 0;
-    line-height: 1.3;
-  }
-  .sg-subcard-val {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-weight: 700;
-    font-size: 0.94rem;
-    color: #ffffff;
-    white-space: nowrap;
-    letter-spacing: -0.01em;
-  }
-  .sg-subcard-val.slate-mac {
-    color: #f1f5f9;
-    font-size: 0.90rem;
-  }
-  .sg-subcard-val.unassigned {
-    font-weight: 400;
-    color: #64748b;
-    font-size: 0.88rem;
-  }
-  .sg-subcard-val.amber, .sg-subcard-link-text.amber {
-    color: #f59e0b;
-    font-weight: 700;
-    font-size: 0.94rem;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  }
+    .ap-banner-subtitle {
+      font-size: 0.82rem;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
 
-  /* Signal Bars */
-  .sg-signal-bars {
-    display: flex;
-    align-items: flex-end;
-    gap: 3px;
-    height: 14px;
-    margin-right: 2px;
-  }
-  .sg-signal-bar {
-    width: 3.5px;
-    border-radius: 1px;
-    background: #1e293b;
-  }
-  .sg-signal-bar.on {
-    background: #10b981;
-  }
-  .sg-signal-bar:nth-child(1) { height: 4px; }
-  .sg-signal-bar:nth-child(2) { height: 7px; }
-  .sg-signal-bar:nth-child(3) { height: 10px; }
-  .sg-signal-bar:nth-child(4) { height: 14px; }
+    .ap-banner-subtitle strong {
+      color: #38bdf8;
+      font-weight: 600;
+    }
 
-  /* 3. SLIM MQTT TELEMETRY CARD (Inside Network Status & Connectivity) */
-  .sg-mqtt-card {
-    margin-top: 12px;
-    padding: 10px 14px 12px 14px;
-    border-radius: 12px;
-    background: #090e18;
-    border: 1px solid #1a2333;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    transition: all 0.2s ease;
-  }
-  .sg-mqtt-card.active-online,
-  .sg-mqtt-card.active-mqtt {
-    border-color: rgba(16, 185, 129, 0.45);
-    box-shadow: 0 4px 18px rgba(16, 185, 129, 0.08);
-  }
-  .sg-mqtt-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  }
-  .sg-mqtt-header-left {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-  .sg-mqtt-header-left h4 {
-    font-size: 0.92rem;
-    font-weight: 700;
-    color: #ffffff;
-    margin: 0;
-    line-height: 1.2;
-    white-space: nowrap;
-  }
-  .sg-mqtt-role {
-    font-size: 0.78rem;
-    color: #8191a6;
-    margin-left: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  @media (max-width: 640px) {
-    .sg-mqtt-role {
-      display: none;
-    }
-  }
-
-  /* 3. SLIM MQTT TELEMETRY CARD (Single-Row Streamlined Layout) */
-  .sg-mqtt-data-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .sg-mqtt-col-host {
-    grid-column: 1 / -1;
-  }
-  @media (min-width: 640px) {
-    .sg-mqtt-data-grid {
-      grid-template-columns: minmax(130px, 1.9fr) minmax(55px, 0.75fr) minmax(95px, 1.15fr) minmax(75px, 0.9fr) minmax(65px, 0.75fr);
-      gap: 8px;
-      align-items: stretch;
-    }
-    .sg-mqtt-col-host {
-      grid-column: auto;
-    }
-  }
-  .sg-mqtt-col {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 3px;
-    min-width: 0;
-    background: #080c14;
-    border: 1px solid #1a2333;
-    border-radius: 8px;
-    padding: 7px 10px;
-    box-sizing: border-box;
-  }
-  .sg-mqtt-col-label {
-    font-size: 0.68rem;
-    font-weight: 600;
-    color: #8191a6;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    line-height: 1.2;
-  }
-  .sg-mqtt-col-val {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.88rem;
-    font-weight: 700;
-    color: #ffffff;
-    min-width: 0;
-    width: 100%;
-    line-height: 1.2;
-  }
-  .sg-mqtt-col-host .sg-mqtt-col-val {
-    justify-content: space-between;
-  }
-  .sg-mqtt-host-val {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-    flex: 1 1 auto;
-  }
-
-  /* 4. TOAST NOTIFICATION */
-  .sg-toast {
-    position: fixed;
-    bottom: calc(var(--bottom-nav-h, 64px) + 16px);
-    left: 16px;
-    right: 16px;
-    z-index: 999;
-    transform: translateY(20px);
-    opacity: 0;
-    pointer-events: none;
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    display: flex;
-    justify-content: center;
-  }
-  @media (min-width: 640px) {
-    .sg-toast {
-      bottom: 24px;
-      right: 24px;
-      left: auto;
-      justify-content: flex-end;
-    }
-  }
-  .sg-toast.show {
-    transform: translateY(0);
-    opacity: 1;
-    pointer-events: auto;
-  }
-  .sg-toast-box {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
-    border-radius: 10px;
-    background: #1e293b;
-    border: 1px solid #334155;
-    color: #ffffff;
-    font-size: 0.78rem;
-    font-weight: 500;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
-  }
-
-  /* 4. MOBILE VIEWPORT ADAPTATIONS (< 640px) */
-  @media (max-width: 640px) {
-    .content {
-      padding: 16px 12px !important;
-    }
-    .sg-bento-grid {
-      grid-template-columns: minmax(0, 1fr) !important;
-      width: 100% !important;
-    }
-    .sg-panel-left, .sg-panel-right {
-      min-width: 0 !important;
-      max-width: 100% !important;
-      width: 100% !important;
-      box-sizing: border-box !important;
-    }
-    .sg-version-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-      gap: 6px !important;
-      margin-top: 16px !important;
-    }
-    .sg-version-tile {
-      min-width: 0 !important;
-      overflow: hidden !important;
-      padding: 8px 3px !important;
-    }
-    .sg-version-tile-label {
-      font-size: 0.62rem !important;
-    }
-    .sg-version-tile-val {
-      font-size: 0.85rem !important;
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
-      white-space: nowrap !important;
-    }
-    .sg-diagnostic-tile {
-      width: 100% !important;
-      box-sizing: border-box !important;
-      min-width: 0 !important;
-    }
-    .sg-header-card {
-      padding: 14px 16px;
-      margin-bottom: 14px;
-    }
-    .sg-panel-left, .sg-panel-right {
-      padding: 18px 14px;
-      border-radius: 14px;
-    }
-    .sg-interface-card {
-      padding: 16px 14px;
-    }
-    .sg-subcard-header {
-      padding-bottom: 10px;
-    }
-    .sg-subcard-title-wrap h4 {
-      font-size: 0.92rem;
-    }
-    .sg-subcard-role {
+    .ap-timer-pill {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 1px 8px;
+      border-radius: 9999px;
       font-size: 0.76rem;
+      font-weight: 600;
+      font-family: monospace;
     }
-    .sg-subcard-status-badge {
-      font-size: 0.70rem;
-      padding: 2px 7px;
+
+    @media (max-width: 640px) {
+      .ap-banner-card {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+      }
     }
-    .sg-subcard-row {
-      padding: 12px 0;
+
+    /* ========================================================================= */
+    /* SG-10 OVERVIEW BENTO GRID & DUAL INTERFACE SYSTEM (2026 CYBERNETIC DARK)  */
+    /* ========================================================================= */
+    .content {
+      max-width: 1440px !important;
+      width: 100% !important;
+      padding: 24px 28px 28px 28px !important;
     }
-    .sg-subcard-label {
-      font-size: 0.82rem;
+
+    /* 1. SLIM TOP HEADER CARD */
+    .sg-header-card {
+      background: #0d121f;
+      border: 1px solid #1a2333;
+      border-radius: 14px;
+      padding: 16px 22px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+      display: flex;
+      align-items: center;
+      margin-bottom: 20px;
     }
-    .sg-subcard-val {
+
+    .sg-header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .sg-chip-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      background: rgba(30, 58, 138, 0.25);
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #60a5fa;
+      flex-shrink: 0;
+    }
+
+    .sg-title-group {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    @media (min-width: 640px) {
+      .sg-title-group {
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+      }
+    }
+
+    .sg-title {
+      font-size: 1.08rem;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+      margin: 0;
+      line-height: 1.2;
+    }
+
+    .sg-title-dot {
+      display: none;
+      color: #475569;
+      font-size: 1rem;
+    }
+
+    @media (min-width: 640px) {
+      .sg-title-dot {
+        display: inline;
+      }
+    }
+
+    .sg-subtitle {
       font-size: 0.88rem;
+      color: #94a3b8;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      line-height: 1.35;
+      margin: 0;
     }
-    .sg-version-grid {
+
+    /* 2. BENTO MAIN GRID */
+    .sg-bento-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+      width: 100%;
+      margin-bottom: 20px;
+    }
+
+    @media (min-width: 1080px) {
+      .sg-bento-grid {
+        grid-template-columns: minmax(340px, 36%) 1fr;
+        gap: 24px;
+        align-items: stretch;
+      }
+    }
+
+    /* PANEL KIRI (IDENTITAS & SISTEM) */
+    .sg-panel-left {
+      background: #0d121f;
+      border: 1px solid #1a2333;
+      border-radius: 16px;
+      padding: 24px 26px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    /* PANEL KANAN (STATUS & KONEKTIVITAS) */
+    .sg-panel-right {
+      background: #0d121f;
+      border: 1px solid #1a2333;
+      border-radius: 16px;
+      padding: 24px 26px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 16px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    /* PANEL HEADERS (SEAMLESS CLEAN HEADER, NO DIVIDER) */
+    .sg-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 6px;
+      margin-bottom: 12px;
+      gap: 12px;
+    }
+
+    @media (max-width: 640px) {
+      .sg-card-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+      }
+    }
+
+    .sg-card-title-group {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .sg-card-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .sg-card-icon.navy {
+      background: rgba(26, 36, 54, 0.7);
+      border: 1px solid rgba(51, 65, 85, 0.6);
+      color: #94a3b8;
+    }
+
+    .sg-card-header h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin: 0;
+      line-height: 1.25;
+      letter-spacing: -0.01em;
+    }
+
+    .sg-card-header p {
+      font-size: 0.84rem;
+      color: #8191a6;
+      margin: 3px 0 0 0;
+    }
+
+    /* SINGLE MODE BADGE PILL (CAPSULE PILL) */
+    .sg-net-header-badges {
+      display: flex;
+      align-items: center;
+    }
+
+    @media (max-width: 640px) {
+      .sg-net-header-badges {
+        width: 100%;
+      }
+
+      .sg-net-header-badges .sg-badge-pill {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+
+    .sg-badge-pill {
+      display: inline-flex;
+      align-items: center;
       gap: 8px;
-      margin-top: 16px;
+      padding: 7px 18px;
+      border-radius: 9999px;
+      font-size: 0.84rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      min-width: 0;
+      transition: all 0.2s ease;
     }
-    .sg-version-tile {
-      padding: 10px 4px;
+
+    .sg-badge-pill.mode-wifi {
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.45);
+      color: #10b981;
     }
-    .sg-version-tile-val {
-      font-size: 0.94rem;
+
+    .sg-badge-pill.mode-eth {
+      background: rgba(59, 130, 246, 0.08);
+      border: 1px solid rgba(59, 130, 246, 0.45);
+      color: #60a5fa;
     }
+
+    .sg-badge-pill.mode-smart {
+      background: rgba(168, 85, 247, 0.1);
+      border: 1px solid rgba(168, 85, 247, 0.45);
+      color: #c084fc;
+    }
+
+    .sg-badge-pill.mode-offline {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      color: #ef4444;
+    }
+
+    .sg-dot {
+      font-size: 0.78rem;
+      line-height: 1;
+      display: inline-block;
+    }
+
+    /* KEY-VALUE ROWS (LEFT PANEL) */
+    .sg-kv-list {
+      display: flex;
+      flex-direction: column;
+    }
+
     .sg-kv-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       padding: 12px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      gap: 12px;
     }
+
+    .sg-kv-row:last-child {
+      border-bottom: none;
+    }
+
     .sg-kv-label {
-      font-size: 0.82rem;
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: #94a3b8;
+      flex-shrink: 0;
     }
+
     .sg-kv-value {
+      font-weight: 700;
+      color: #ffffff;
+      font-size: 0.96rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .sg-chip-code {
+      background: #141c2c;
+      border: 1px solid #233148;
+      border-radius: 8px;
+      padding: 5px 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.90rem;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    /* COPY BUTTON */
+    .sg-copy-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      cursor: pointer;
+      min-width: 28px;
+      min-height: 28px;
+      padding: 4px;
+      border-radius: var(--ctl-r-sm, 6px);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+    }
+
+    .sg-copy-btn:hover {
+      background: #1e293b;
+      color: #ffffff;
+    }
+
+    .sg-copy-btn:active {
+      transform: scale(0.9);
+    }
+
+    /* TRIPLE VERSION TILES */
+    .sg-version-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: auto;
+      margin-bottom: 6px;
+      padding-top: 0;
+      border-top: none;
+    }
+
+    .sg-version-tile {
+      background: #090e18;
+      border: 1px solid #1a2333;
+      border-radius: 10px;
+      padding: 10px 6px;
+      text-align: center;
+    }
+
+    .sg-version-tile-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #8191a6;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sg-version-tile-val {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 1.02rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-top: 3px;
+    }
+
+    /* SUBCARDS GRID & INTERFACES (WI-FI & ETHERNET) */
+    .sg-subcards-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      margin-top: 10px;
+    }
+
+    @media (min-width: 680px) {
+      .sg-subcards-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+    }
+
+    .sg-interface-card {
+      background: #090e18;
+      border: 1px solid #1a2333;
+      border-radius: 14px;
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.2s ease;
+      min-width: 0;
+    }
+
+    .sg-interface-card.active-online,
+    .sg-interface-card.active-wifi,
+    .sg-interface-card.active-eth {
+      border-color: rgba(16, 185, 129, 0.4);
+    }
+
+    .sg-interface-card.link-down {
+      border-color: #1a2333;
+    }
+
+    /* Subcard Header */
+    .sg-subcard-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      gap: 8px;
+    }
+
+    .sg-subcard-header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .sg-subcard-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .sg-subcard-icon.emerald {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      color: #10b981;
+    }
+
+    .sg-subcard-icon.blue {
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      color: #60a5fa;
+    }
+
+    .sg-subcard-icon.slate {
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      color: #8191a6;
+    }
+
+    .sg-subcard-icon.cyan {
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      color: #38bdf8;
+    }
+
+    .sg-subcard-title-wrap {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .sg-subcard-title-wrap h4 {
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin: 0;
+      line-height: 1.25;
+      white-space: normal;
+      overflow-wrap: break-word;
+    }
+
+    .sg-subcard-role {
+      font-size: 0.80rem;
+      font-weight: 400;
+      display: block;
+      margin-top: 2px;
+      color: #8191a6;
+      white-space: normal;
+      line-height: 1.25;
+    }
+
+    /* Subcard Status Badges */
+    .sg-subcard-status-badge {
+      padding: 3px 9px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .sg-subcard-status-badge.active {
+      background: rgba(16, 185, 129, 0.12);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+
+    .sg-subcard-status-badge.amber {
+      background: rgba(245, 158, 11, 0.12);
+      color: #f59e0b;
+      border: 1px solid rgba(245, 158, 11, 0.38);
+    }
+
+    .sg-subcard-status-badge.slate {
+      background: #1e293b;
+      color: #94a3b8;
+      border: 1px solid #334155;
+    }
+
+    /* Subcard Data Rows (Clean Divided Rows) */
+    .sg-subcard-data {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sg-subcard-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      gap: 8px;
+    }
+
+    .sg-subcard-row:last-child {
+      border-bottom: none;
+      padding-bottom: 2px;
+    }
+
+    .sg-subcard-label {
+      font-size: 0.86rem;
+      font-weight: 500;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+
+    .sg-subcard-val-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 6px;
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: visible;
+    }
+
+    .sg-wifi-ssid {
+      max-width: 100%;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      text-align: right;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: #94a3b8;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 2px 7px;
+      flex-shrink: 1;
+      min-width: 0;
+      line-height: 1.3;
+    }
+
+    .sg-subcard-val {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-weight: 700;
+      font-size: 0.94rem;
+      color: #ffffff;
+      white-space: nowrap;
+      letter-spacing: -0.01em;
+      flex-shrink: 0;
+    }
+
+    .sg-subcard-val.slate-mac {
+      color: #f1f5f9;
       font-size: 0.90rem;
     }
+
+    .sg-subcard-val.unassigned {
+      font-weight: 400;
+      color: var(--text-dim, #8c9eb5);
+      font-size: 0.88rem;
+    }
+
+    .sg-subcard-val.amber,
+    .sg-subcard-link-text.amber {
+      color: #f59e0b;
+      font-weight: 700;
+      font-size: 0.94rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* Signal Bars */
+    .sg-signal-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 14px;
+      margin-right: 2px;
+      flex-shrink: 0;
+    }
+
+    .sg-signal-bar {
+      width: 3.5px;
+      border-radius: 1px;
+      background: #1e293b;
+    }
+
+    .sg-signal-bar.on {
+      background: #10b981;
+    }
+
+    .sg-signal-bar:nth-child(1) {
+      height: 4px;
+    }
+
+    .sg-signal-bar:nth-child(2) {
+      height: 7px;
+    }
+
+    .sg-signal-bar:nth-child(3) {
+      height: 10px;
+    }
+
+    .sg-signal-bar:nth-child(4) {
+      height: 14px;
+    }
+
+    /* 3. SLIM MQTT TELEMETRY CARD (Inside Network Status & Connectivity) */
     .sg-mqtt-card {
-      padding: 12px 14px;
+      margin-top: 12px;
+      padding: 10px 14px 12px 14px;
+      border-radius: 12px;
+      background: #090e18;
+      border: 1px solid #1a2333;
+      display: flex;
+      flex-direction: column;
       gap: 8px;
+      transition: all 0.2s ease;
     }
+
+    .sg-mqtt-card.active-online,
+    .sg-mqtt-card.active-mqtt {
+      border-color: rgba(16, 185, 129, 0.45);
+      box-shadow: 0 4px 18px rgba(16, 185, 129, 0.08);
+    }
+
+    .sg-mqtt-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .sg-mqtt-header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .sg-mqtt-header-left h4 {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin: 0;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    .sg-mqtt-role {
+      font-size: 0.78rem;
+      color: #8191a6;
+      margin-left: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    @media (max-width: 640px) {
+      .sg-mqtt-role {
+        display: none;
+      }
+    }
+
+    /* 3. SLIM MQTT TELEMETRY CARD (Single-Row Streamlined Layout) */
+    .sg-mqtt-data-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .sg-mqtt-col-host {
+      grid-column: 1 / -1;
+    }
+
+    @media (min-width: 640px) {
+      .sg-mqtt-data-grid {
+        grid-template-columns: minmax(130px, 1.9fr) minmax(55px, 0.75fr) minmax(95px, 1.15fr) minmax(75px, 0.9fr) minmax(65px, 0.75fr);
+        gap: 8px;
+        align-items: stretch;
+      }
+
+      .sg-mqtt-col-host {
+        grid-column: auto;
+      }
+    }
+
+    .sg-mqtt-col {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 3px;
+      min-width: 0;
+      background: #080c14;
+      border: 1px solid #1a2333;
+      border-radius: 8px;
+      padding: 7px 10px;
+      box-sizing: border-box;
+    }
+
     .sg-mqtt-col-label {
-      font-size: 0.76rem;
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: #8191a6;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      line-height: 1.2;
     }
+
     .sg-mqtt-col-val {
-      font-size: 0.86rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #ffffff;
+      min-width: 0;
+      width: 100%;
+      line-height: 1.2;
     }
-    .sg-wifi-ssid {
-      max-width: 85px;
-      font-size: 0.76rem;
-      padding: 1px 5px;
+
+    .sg-mqtt-col-host .sg-mqtt-col-val {
+      justify-content: space-between;
     }
-  }
-</style>
+
+    .sg-mqtt-host-val {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      min-width: 0;
+      flex: 1 1 auto;
+      line-height: 1.3;
+    }
+
+    /* 4. TOAST NOTIFICATION */
+    .sg-toast {
+      position: fixed;
+      bottom: calc(var(--bottom-nav-h, 64px) + 16px);
+      left: 16px;
+      right: 16px;
+      z-index: 999;
+      transform: translateY(20px);
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      justify-content: center;
+    }
+
+    @media (min-width: 640px) {
+      .sg-toast {
+        bottom: 24px;
+        right: 24px;
+        left: auto;
+        justify-content: flex-end;
+      }
+    }
+
+    .sg-toast.show {
+      transform: translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .sg-toast-box {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-radius: 10px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #ffffff;
+      font-size: 0.78rem;
+      font-weight: 500;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+    }
+
+    /* 4. MOBILE VIEWPORT ADAPTATIONS (< 640px) */
+    @media (max-width: 640px) {
+      .content {
+        padding: 16px 12px !important;
+      }
+
+      .sg-bento-grid {
+        grid-template-columns: minmax(0, 1fr) !important;
+        width: 100% !important;
+      }
+
+      .sg-panel-left,
+      .sg-panel-right {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+
+      .sg-version-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        gap: 6px !important;
+        margin-top: 16px !important;
+      }
+
+      .sg-version-tile {
+        min-width: 0 !important;
+        overflow: hidden !important;
+        padding: 8px 3px !important;
+      }
+
+      .sg-version-tile-label {
+        font-size: 0.62rem !important;
+      }
+
+      .sg-version-tile-val {
+        font-size: 0.85rem !important;
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        overflow-wrap: anywhere !important;
+        word-break: break-word !important;
+        line-height: 1.25 !important;
+      }
+
+      .sg-diagnostic-tile {
+        width: 100% !important;
+        box-sizing: border-box !important;
+        min-width: 0 !important;
+      }
+
+      .sg-header-card {
+        padding: 14px 16px;
+        margin-bottom: 14px;
+      }
+
+      .sg-panel-left,
+      .sg-panel-right {
+        padding: 18px 14px;
+        border-radius: 14px;
+      }
+
+      .sg-interface-card {
+        padding: 16px 14px;
+      }
+
+      .sg-subcard-header {
+        padding-bottom: 10px;
+      }
+
+      .sg-subcard-title-wrap h4 {
+        font-size: 0.92rem;
+      }
+
+      .sg-subcard-role {
+        font-size: 0.76rem;
+      }
+
+      .sg-subcard-status-badge {
+        font-size: 0.70rem;
+        padding: 2px 7px;
+      }
+
+      .sg-subcard-row {
+        padding: 12px 0;
+      }
+
+      .sg-subcard-label {
+        font-size: 0.82rem;
+      }
+
+      .sg-subcard-val {
+        font-size: 0.88rem;
+      }
+
+      .sg-version-grid {
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      .sg-version-tile {
+        padding: 10px 4px;
+      }
+
+      .sg-version-tile-val {
+        font-size: 0.94rem;
+      }
+
+      .sg-kv-row {
+        padding: 12px 0;
+      }
+
+      .sg-kv-label {
+        font-size: 0.82rem;
+      }
+
+      .sg-kv-value {
+        font-size: 0.90rem;
+      }
+
+      .sg-mqtt-card {
+        padding: 12px 14px;
+        gap: 8px;
+      }
+
+      .sg-mqtt-col-label {
+        font-size: 0.76rem;
+      }
+
+      .sg-mqtt-col-val {
+        font-size: 0.86rem;
+      }
+
+      .sg-wifi-ssid {
+        max-width: 100%;
+        font-size: 0.76rem;
+        padding: 2px 6px;
+      }
+
+      .sg-mqtt-header {
+        gap: 8px;
+      }
+
+      .sg-mqtt-header > div:first-child {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+
+      .sg-mqtt-header > div:first-child * {
+        white-space: normal;
+        overflow-wrap: break-word;
+        line-height: 1.25;
+      }
+    }
+  </style>
 </head>
+
 <body data-role="%user_role%">
   <div class="wrapper">
     <!-- Sidebar (Desktop) -->
@@ -926,68 +1134,116 @@
         </div>
         <div class="user">
           <div class="user-avatar">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
           </div>
           <span class="user-info">%user%</span>
         </div>
         <ul class="sidebar-nav">
           <li class="active">
             <a href="/">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
+                <path d="M22 12A10 10 0 0 0 12 2v10z" />
+              </svg>
               <span>Overview</span>
             </a>
           </li>
           <li class="nav-test-highlight">
             <a href="/test">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
               <span>Live Test Monitor</span>
             </a>
           </li>
           <li>
             <a href="/log">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                <path d="M4 11a9 9 0 0 1 9 9" />
+                <path d="M4 4a16 16 0 0 1 16 16" />
+                <circle cx="5" cy="19" r="1" />
+              </svg>
               <span>System Logs</span>
             </a>
           </li>
           <li>
             <a href="/auth">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
               <span>Auth Settings</span>
             </a>
           </li>
           <li>
             <a href="/settings">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                <path
+                  d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
               <span>Device Settings</span>
             </a>
           </li>
-<li class="nav-docs role-admin-only"><a href="/docs">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <li class="nav-docs role-admin-only"><a href="/docs">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
               <span>Docs</span>
             </a>
           </li>
 
           <li>
             <a href="/firmware">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+                <path d="M12 12v9" />
+                <path d="m16 16-4-4-4 4" />
+              </svg>
               <span>Update Firmware</span>
             </a>
           </li>
           <li>
             <a href="/reset">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                <path d="M8 16H3v5" />
+              </svg>
               <span>Reset Config</span>
             </a>
           </li>
           <li>
             <a href="/reboot">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+                <line x1="12" y1="2" x2="12" y2="12" />
+              </svg>
               <span>Reboot</span>
             </a>
           </li>
           <li class="sidebar-logout">
             <a href="/logout" id="sidebarLogoutBtn">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
               <span>Logout</span>
             </a>
           </li>
@@ -1004,63 +1260,85 @@
           </a>
           <span class="navbar-brand">Gateway Overview</span>
         </div>
-        <a href="/logout" class="mobile-logout-btn" id="mobileLogoutBtn" title="Logout">
-          <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          <span>Logout</span>
-        </a>
+        <div class="navbar-actions">
+          <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Switch to Light Mode"
+            title="Switch to Light Mode">
+            <svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path
+                d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+            </svg>
+            <svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            <span class="theme-toggle-label theme-label-light">Light</span>
+            <span class="theme-toggle-label theme-label-dark">Dark</span>
+          </button>
+          <a href="/logout" class="mobile-logout-btn" id="mobileLogoutBtn" title="Logout">
+            <svg viewBox="0 0 24 24">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            <span>Logout</span>
+          </a>
+        </div>
       </header>
+      <script>try{if(document.documentElement.dataset.theme==="light"){document.querySelectorAll(".sidebar-logo-img,.mobile-logo-img").forEach(function(e){e.src="assets/img/logo-light.png";});}}catch(e){}</script>
 
       <section class="content">
-      <!-- PENDING REBOOT FLOATING BANNER (INDUSTRIAL SAFETY) -->
-      <div id="pendingRebootBanner" class="pending-reboot-banner" style="display:none;">
-        <div class="pending-banner-text">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-            <line x1="12" y1="9" x2="12" y2="13"/>
-            <line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
-          <span>Network configuration changes saved to NVS. Reboot required to apply to hardware.</span>
+        <!-- PENDING REBOOT FLOATING BANNER (INDUSTRIAL SAFETY) -->
+        <div id="pendingRebootBanner" class="pending-reboot-banner" style="display:none;">
+          <div class="pending-banner-text">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              style="min-width:22px;min-height:22px;width:22px;height:22px;flex-shrink:0;">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            <span>Network configuration changes saved to system storage. Reboot required to apply to hardware.</span>
+          </div>
+          <div class="pending-banner-actions">
+            <button type="button" class="btn-banner-reboot" onclick="triggerRebootNow()">Reboot Now</button>
+            <button type="button" class="btn-banner-discard" onclick="discardPendingNetworkChanges()">Discard</button>
+          </div>
         </div>
-        <div class="pending-banner-actions">
-          <button type="button" class="btn-banner-reboot" onclick="triggerRebootNow()">Reboot Now</button>
-          <button type="button" class="btn-banner-discard" onclick="discardPendingNetworkChanges()">Discard</button>
+
+        <!-- ================= AP MODE CONFIG BANNER COMPONENT ================= -->
+        <div id="apModeBanner" class="ap-banner-card" style="display:none;">
+          <div class="ap-banner-left">
+            <div class="ap-pulse-ring"><span class="ap-pulse-dot"></span></div>
+            <div class="ap-banner-text">
+              <div class="ap-banner-title">Configuration Hotspot Active</div>
+              <div class="ap-banner-subtitle">
+                SSID: <strong id="apBannerSsid">%ap_ssid%</strong> &bull; Auto-off idle: <span id="apBannerTimer"
+                  class="ap-timer-pill">300s</span>
+              </div>
+            </div>
+          </div>
+          <div class="ap-banner-right">
+            <button type="button" id="btnStopAp" class="btn-ap-stop" title="Disable Configuration Hotspot">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="1" y1="1" x2="23" y2="23" />
+                <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55" />
+                <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39" />
+                <path d="M10.71 5.05A16 16 0 0 1 22.58 9" />
+                <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88" />
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+                <line x1="12" y1="20" x2="12.01" y2="20" />
+              </svg>
+              <span>Disable AP</span>
+            </button>
+          </div>
         </div>
-      </div>
 
-<!-- ================= AP MODE CONFIG BANNER COMPONENT ================= -->
-<div id="apModeBanner" class="ap-banner-card" style="display:none;">
-  <div class="ap-banner-left">
-    <div class="ap-pulse-ring"><span class="ap-pulse-dot"></span></div>
-    <div class="ap-banner-text">
-      <div class="ap-banner-title">Configuration Hotspot Active</div>
-      <div class="ap-banner-subtitle">
-        SSID: <strong id="apBannerSsid">%ap_ssid%</strong> &bull; Auto-off idle: <span id="apBannerTimer" class="ap-timer-pill">300s</span>
-      </div>
-    </div>
-  </div>
-  <div class="ap-banner-right">
-    <button type="button" id="btnStopAp" class="btn-ap-stop" title="Disable Configuration Hotspot">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="1" y1="1" x2="23" y2="23"/>
-        <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
-        <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
-        <path d="M10.71 5.05A16 16 0 0 1 22.58 9"/>
-        <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
-        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
-        <line x1="12" y1="20" x2="12.01" y2="20"/>
-      </svg>
-      <span>Disable AP</span>
-    </button>
-  </div>
-</div>
-
-<script>
-if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.") === 0 || "%ap_banner_active%" === "1") {
-  var b = document.getElementById("apModeBanner");
-  if (b) b.style.display = "flex";
-}
-</script>
-<!-- ================= END AP MODE CONFIG BANNER COMPONENT ================= -->
+        <script>
+          if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.") === 0 || "%ap_banner_active%" === "1") {
+            var b = document.getElementById("apModeBanner");
+            if (b) b.style.display = "flex";
+          }
+        </script>
+        <!-- ================= END AP MODE CONFIG BANNER COMPONENT ================= -->
         <!-- ========================================================================= -->
         <!-- 1. PAGE HEADER STANDARD: GATEWAY OVERVIEW                                 -->
         <!-- ========================================================================= -->
@@ -1085,8 +1363,10 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                 <div class="sg-card-title-group">
                   <div class="sg-card-icon navy">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <rect width="20" height="8" x="2" y="3" rx="2"/><rect width="20" height="8" x="2" y="13" rx="2"/>
-                      <line x1="6" y1="7" x2="6.01" y2="7"/><line x1="6" y1="17" x2="6.01" y2="17"/>
+                      <rect width="20" height="8" x="2" y="3" rx="2" />
+                      <rect width="20" height="8" x="2" y="13" rx="2" />
+                      <line x1="6" y1="7" x2="6.01" y2="7" />
+                      <line x1="6" y1="17" x2="6.01" y2="17" />
                     </svg>
                   </div>
                   <div>
@@ -1108,12 +1388,13 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                 <div class="sg-kv-row">
                   <span class="sg-kv-label">Scan Mode</span>
                   <div class="sg-kv-value" style="display:flex;align-items:center;gap:6px;">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="%scan_mode_color%" stroke-width="2">
-                      <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
-                      <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
-                      <circle cx="12" cy="12" r="2"/>
-                      <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
-                      <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="%scan_mode_color%"
+                      stroke-width="2">
+                      <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" />
+                      <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" />
+                      <circle cx="12" cy="12" r="2" />
+                      <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" />
+                      <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1" />
                     </svg>
                     <span style="color:%scan_mode_color%;font-weight:700;">%scan_mode_text%</span>
                   </div>
@@ -1125,7 +1406,11 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                   <div class="sg-kv-value">
                     <code class="sg-chip-code">%device_id%</code>
                     <button type="button" onclick="copyText('%device_id%')" class="sg-copy-btn" title="Copy Device ID">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                      </svg>
                     </button>
                   </div>
                 </div>
@@ -1134,9 +1419,12 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                 <div class="sg-kv-row">
                   <span class="sg-kv-label">System Uptime</span>
                   <div class="sg-kv-value" style="display:flex;align-items:center;">
-                    <span id="detail-uptime-dot" style="color:#10b981;font-size:0.75rem;line-height:1;margin-right:2px;transition:color 0.2s ease;">●</span>
-                    <span id="detail-uptime-live" style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:#ffffff;font-size:0.92rem;font-weight:700;transition:color 0.2s ease;">%uptime_detail%</span>
-                    <span id="detail-uptime-badge" style="display:none;font-size:0.68rem;font-weight:700;padding:1px 6px;border-radius:4px;background:rgba(239,68,68,0.18);border:1px solid rgba(239,68,68,0.4);color:#f87171;margin-left:6px;letter-spacing:0.04em;">OFFLINE</span>
+                    <span id="detail-uptime-dot"
+                      style="color:var(--accent-emerald, #10b981);font-size:0.75rem;line-height:1;margin-right:2px;transition:color 0.2s ease;">●</span>
+                    <span id="detail-uptime-live"
+                      style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:var(--text-main, #ffffff);font-size:0.92rem;font-weight:700;transition:color 0.2s ease;">%uptime_detail%</span>
+                    <span id="detail-uptime-badge"
+                      style="display:none;font-size:0.68rem;font-weight:700;padding:1px 6px;border-radius:4px;background:rgba(239,68,68,0.18);border:1px solid rgba(239,68,68,0.4);color:var(--accent-rose, #f87171);margin-left:6px;letter-spacing:0.04em;">OFFLINE</span>
                   </div>
                 </div>
 
@@ -1144,8 +1432,11 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                 <div class="sg-kv-row">
                   <span class="sg-kv-label">System RAM</span>
                   <div class="sg-kv-value">
-                    <span style="color:#10b981;font-size:0.75rem;line-height:1;margin-right:2px;">●</span>
-                    <span id="detail-ram-live" style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:#ffffff;font-size:0.92rem;font-weight:700;">%free_heap_kb% KB Free</span>
+                    <span
+                      style="color:var(--accent-emerald, #10b981);font-size:0.75rem;line-height:1;margin-right:2px;">●</span>
+                    <span id="detail-ram-live"
+                      style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:var(--text-main, #ffffff);font-size:0.92rem;font-weight:700;">%free_heap_kb%
+                      KB Free</span>
                   </div>
                 </div>
 
@@ -1153,7 +1444,9 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                 <div class="sg-kv-row">
                   <span class="sg-kv-label">Bandwidth</span>
                   <div class="sg-kv-value">
-                    <span id="detail-bandwidth-live" style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:#ffffff;font-size:0.92rem;font-weight:700;">%net_bandwidth% KB/s</span>
+                    <span id="detail-bandwidth-live"
+                      style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:var(--text-main, #ffffff);font-size:0.92rem;font-weight:700;">%net_bandwidth%
+                      KB/s</span>
                   </div>
                 </div>
               </div>
@@ -1185,7 +1478,13 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
               <div class="sg-card-header">
                 <div class="sg-card-title-group">
                   <div class="sg-card-icon navy">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="16" y="16" width="6" height="6" rx="1" />
+                      <rect x="2" y="16" width="6" height="6" rx="1" />
+                      <rect x="9" y="2" width="6" height="6" rx="1" />
+                      <path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3" />
+                      <path d="M12 12V8" />
+                    </svg>
                   </div>
                   <div>
                     <h3>Network Status & Connectivity</h3>
@@ -1209,7 +1508,13 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                   <div class="sg-subcard-header">
                     <div class="sg-subcard-header-left">
                       <span id="wifi-icon-box" class="sg-subcard-icon emerald">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          stroke-width="2">
+                          <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+                          <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+                          <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+                          <line x1="12" y1="20" x2="12.01" y2="20" />
+                        </svg>
                       </span>
                       <div class="sg-subcard-title-wrap">
                         <h4>Wi-Fi Interface</h4>
@@ -1227,8 +1532,14 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                       <span class="sg-subcard-label">IPv4 Address</span>
                       <div class="sg-subcard-val-wrap">
                         <span id="wifi-ip-text" class="sg-subcard-val">%wifi_ip%</span>
-                        <button type="button" id="wifi-ip-copy" onclick="copyText(document.getElementById('wifi-ip-text').textContent)" class="sg-copy-btn" title="Copy Wi-Fi IPv4">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        <button type="button" id="wifi-ip-copy"
+                          onclick="copyText(document.getElementById('wifi-ip-text').textContent)" class="sg-copy-btn"
+                          title="Copy Wi-Fi IPv4">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                          </svg>
                         </button>
                       </div>
                     </div>
@@ -1237,8 +1548,13 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                       <span class="sg-subcard-label">MAC Address</span>
                       <div class="sg-subcard-val-wrap">
                         <span id="wifi-mac-text" class="sg-subcard-val slate-mac">%wifi_mac%</span>
-                        <button type="button" onclick="copyText(document.getElementById('wifi-mac-text').textContent)" class="sg-copy-btn" title="Copy Wi-Fi MAC">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        <button type="button" onclick="copyText(document.getElementById('wifi-mac-text').textContent)"
+                          class="sg-copy-btn" title="Copy Wi-Fi MAC">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                          </svg>
                         </button>
                       </div>
                     </div>
@@ -1246,7 +1562,8 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                     <div class="sg-subcard-row">
                       <span class="sg-subcard-label">Signal Strength</span>
                       <div id="wifi-signal-container" class="sg-subcard-val-wrap">
-                        <span id="wifi-ssid-val" class="sg-wifi-ssid" title="%wifi_ssid_title%" style="%wifi_ssid_style%">%wifi_ssid_display%</span>
+                        <span id="wifi-ssid-val" class="sg-wifi-ssid" title="%wifi_ssid_title%"
+                          style="%wifi_ssid_style%">%wifi_ssid_display%</span>
                         <div class="sg-signal-bars" title="Signal Strength Indicator">
                           <span class="sg-signal-bar on"></span>
                           <span class="sg-signal-bar on"></span>
@@ -1265,7 +1582,12 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                   <div class="sg-subcard-header">
                     <div class="sg-subcard-header-left">
                       <span id="eth-icon-box" class="sg-subcard-icon emerald">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1v2"/><path d="M19 15V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V9"/><path d="M21 21v1a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          stroke-width="2">
+                          <path d="M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1v2" />
+                          <path d="M19 15V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V9" />
+                          <path d="M21 21v1a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1" />
+                        </svg>
                       </span>
                       <div class="sg-subcard-title-wrap">
                         <h4>Ethernet Interface</h4>
@@ -1283,8 +1605,14 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                       <span class="sg-subcard-label">IPv4 Address</span>
                       <div class="sg-subcard-val-wrap">
                         <span id="eth-ip-text" class="sg-subcard-val %eth_ip_class%">%eth_ip_display%</span>
-                        <button type="button" id="eth-ip-copy" onclick="copyText(document.getElementById('eth-ip-text').textContent)" class="sg-copy-btn" title="Copy Ethernet IPv4" style="%eth_copy_style%">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        <button type="button" id="eth-ip-copy"
+                          onclick="copyText(document.getElementById('eth-ip-text').textContent)" class="sg-copy-btn"
+                          title="Copy Ethernet IPv4" style="%eth_copy_style%">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                          </svg>
                         </button>
                       </div>
                     </div>
@@ -1293,8 +1621,13 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                       <span class="sg-subcard-label">MAC Address</span>
                       <div class="sg-subcard-val-wrap">
                         <span id="eth-mac-text" class="sg-subcard-val slate-mac">%eth_mac%</span>
-                        <button type="button" onclick="copyText(document.getElementById('eth-mac-text').textContent)" class="sg-copy-btn" title="Copy Ethernet MAC">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        <button type="button" onclick="copyText(document.getElementById('eth-mac-text').textContent)"
+                          class="sg-copy-btn" title="Copy Ethernet MAC">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                          </svg>
                         </button>
                       </div>
                     </div>
@@ -1314,11 +1647,13 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                 <!-- Header Telemetri MQTT -->
                 <div class="sg-mqtt-header">
                   <div class="sg-mqtt-header-left">
-                    <span id="mqtt-icon-box" class="sg-subcard-icon %mqtt_icon_class%" style="width:26px;height:26px;border-radius:6px;">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
-                        <path d="M12 13v4"/>
-                        <path d="M10 15l2-2 2 2"/>
+                    <span id="mqtt-icon-box" class="sg-subcard-icon %mqtt_icon_class%"
+                      style="width:26px;height:26px;border-radius:6px;">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
+                        <path d="M12 13v4" />
+                        <path d="M10 15l2-2 2 2" />
                       </svg>
                     </span>
                     <h4>MQTT Telemetry</h4>
@@ -1335,9 +1670,16 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                   <div class="sg-mqtt-col sg-mqtt-col-host">
                     <span class="sg-mqtt-col-label">Broker Host</span>
                     <div class="sg-mqtt-col-val">
-                      <span id="mqtt-broker-val" class="sg-mqtt-host-val" title="%mqtt_broker_host%">%mqtt_broker_host%</span>
-                      <button type="button" onclick="copyText(document.getElementById('mqtt-broker-val').getAttribute('title') || document.getElementById('mqtt-broker-val').textContent)" class="sg-copy-btn" title="Copy MQTT Broker Host">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                      <span id="mqtt-broker-val" class="sg-mqtt-host-val"
+                        title="%mqtt_broker_host%">%mqtt_broker_host%</span>
+                      <button type="button"
+                        onclick="copyText(document.getElementById('mqtt-broker-val').getAttribute('title') || document.getElementById('mqtt-broker-val').textContent)"
+                        class="sg-copy-btn" title="Copy MQTT Broker Host">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          stroke-width="2">
+                          <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                        </svg>
                       </button>
                     </div>
                   </div>
@@ -1388,28 +1730,41 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
     <!-- Bottom Navigation Bar (Mobile) -->
     <nav class="bottom-nav">
       <a href="/" class="bottom-nav-item active">
-        <svg viewBox="0 0 24 24"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+        <svg viewBox="0 0 24 24">
+          <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
+          <path d="M22 12A10 10 0 0 0 12 2v10z" />
+        </svg>
         <span>Overview</span>
       </a>
       <button type="button" class="bottom-nav-item" data-action="config-sheet">
         <svg viewBox="0 0 24 24">
-          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-          <circle cx="12" cy="12" r="3"/>
+          <path
+            d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+          <circle cx="12" cy="12" r="3" />
         </svg>
         <span>Config</span>
       </button>
       <a href="/test" class="bottom-nav-item nav-center-highlight">
         <div class="center-pill">
-          <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <svg viewBox="0 0 24 24">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
           <span>Test</span>
         </div>
       </a>
       <a href="/firmware" class="bottom-nav-item">
-        <svg viewBox="0 0 24 24"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+        <svg viewBox="0 0 24 24">
+          <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+          <path d="M12 12v9" />
+          <path d="m16 16-4-4-4 4" />
+        </svg>
         <span>Firmware</span>
       </a>
       <button type="button" class="bottom-nav-item nav-tab-reboot" data-action="power-sheet">
-        <svg viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+        <svg viewBox="0 0 24 24">
+          <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+          <line x1="12" y1="2" x2="12" y2="12" />
+        </svg>
         <span>Reboot</span>
       </button>
     </nav>
@@ -1418,7 +1773,10 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
   <!-- TOAST NOTIFICATION -->
   <div id="toast" class="sg-toast">
     <div class="sg-toast-box">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--toast-icon-color, #34d399)" stroke-width="2">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+        <polyline points="22 4 12 14.01 9 11.01" />
+      </svg>
       <span id="toastMessage">Copied to clipboard!</span>
     </div>
   </div>
@@ -1489,7 +1847,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
       try {
         document.execCommand('copy');
         showToast(`Copied to clipboard: ${text}`);
-      } catch (e) {}
+      } catch (e) { }
       document.body.removeChild(tempInput);
     }
 
@@ -1511,14 +1869,14 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
             isDeviceOnline = true;
             const dotEl = document.getElementById("detail-uptime-dot");
             if (dotEl) {
-              dotEl.style.color = "#10b981";
+              dotEl.style.color = "var(--accent-emerald, #10b981)";
               dotEl.textContent = "●";
             }
             const badgeEl = document.getElementById("detail-uptime-badge");
             if (badgeEl) badgeEl.style.display = "none";
             const liveEl = document.getElementById("detail-uptime-live");
             if (liveEl) {
-              liveEl.style.color = "#ffffff";
+              liveEl.style.color = "";
               liveEl.textContent = formatUptimeString(uptimeSeconds);
             }
           }
@@ -1754,7 +2112,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
             isDeviceOnline = false;
             const dotEl = document.getElementById("detail-uptime-dot");
             if (dotEl) {
-              dotEl.style.color = "#ef4444";
+              dotEl.style.color = "var(--accent-rose, #ef4444)";
               dotEl.textContent = "○";
             }
             const badgeEl = document.getElementById("detail-uptime-badge");
@@ -1762,7 +2120,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
             const liveEl = document.getElementById("detail-uptime-live");
             if (liveEl) {
               liveEl.textContent = "Offline";
-              liveEl.style.color = "#ef4444";
+              liveEl.style.color = "var(--accent-rose, #ef4444)";
             }
 
             // Ubah badge dan deskripsi koneksi menjadi Disconnected
@@ -1781,4 +2139,5 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
     setInterval(syncDashboardStatus, 5000);
   </script>
 </body>
+
 </html>

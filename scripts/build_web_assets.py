@@ -107,10 +107,13 @@ def build_assets():
             total_html_bytes += len(b)
 
     # 4. Process Images & Metadata
-    logo_src = os.path.join(WEB_SRC, "assets", "img", "logo.png")
-    logo_dst = os.path.join(DATA_DIR, "assets", "img", "logo.png")
-    if os.path.exists(logo_src):
-        shutil.copy2(logo_src, logo_dst)
+    img_src_dir = os.path.join(WEB_SRC, "assets", "img")
+    img_dst_dir = os.path.join(DATA_DIR, "assets", "img")
+    if os.path.exists(img_src_dir):
+        for f in os.listdir(img_src_dir):
+            ext = os.path.splitext(f)[1].lower()
+            if ext in [".png", ".svg", ".jpg", ".jpeg", ".webp", ".ico"]:
+                shutil.copy2(os.path.join(img_src_dir, f), os.path.join(img_dst_dir, f))
 
     ver_src = os.path.join(WEB_SRC, "version.json")
     if os.path.exists(ver_src):

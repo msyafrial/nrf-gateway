@@ -413,19 +413,19 @@ static void formatMqttErrorDetail(esp_mqtt_event_handle_t event, char* outBuf, s
             int tls_err = event->error_handle->esp_tls_last_esp_err;
             if (tls_err != 0) {
                 if (tls_err == 0x8001) {
-                    snprintf(outBuf, maxLen, "Gagal Resolusi Domain Broker (DNS Error: 0x8001, sock_errno: %d)", sock_err);
+                    snprintf(outBuf, maxLen, "Broker DNS resolution failed (Error: 0x8001, errno: %d)", sock_err);
                 } else {
-                    snprintf(outBuf, maxLen, "Kegagalan Handshake TLS (Error: 0x%04X, sock_errno: %d)", tls_err, sock_err);
+                    snprintf(outBuf, maxLen, "TLS handshake failed (Error: 0x%04X, errno: %d)", tls_err, sock_err);
                 }
             } else if (sock_err != 0) {
-                snprintf(outBuf, maxLen, "Kegagalan Lapisan Transport TCP (sock_errno: %d)", sock_err);
+                snprintf(outBuf, maxLen, "TCP transport error (errno: %d)", sock_err);
             } else {
-                snprintf(outBuf, maxLen, "Kegagalan Lapisan Transport TCP");
+                snprintf(outBuf, maxLen, "TCP transport error");
             }
             return;
         }
     }
-    snprintf(outBuf, maxLen, "Anomali Parsing Frame Paket Protokol MQTT");
+    snprintf(outBuf, maxLen, "MQTT protocol frame parse error");
 }
 
 void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void* data) {
@@ -603,7 +603,7 @@ void MqttService::onMqttEvent(void* arg, esp_event_base_t base, int32_t id, void
                         snprintf(resBuf, sizeof(resBuf), "{\"res\":\"ok\",\"code\":0,\"cmd\":\"reboot\",\"seq\":%u}", (unsigned int)seqVal);
                         pubResponse(resBuf);
                         NetLogService::log(NetCategory::SYSTEM, NetEvent::REBOOT,
-                                           "Reboot gateway diinstruksikan via MQTT Remote Command");
+                                           "Gateway reboot triggered via MQTT remote command");
                         // Jalankan reboot di task terpisah dengan jeda 1000ms agar MQTT response ter-flush tuntas
                         xTaskCreatePinnedToCore([](void*) {
                             vTaskDelay(pdMS_TO_TICKS(1000));

@@ -265,8 +265,22 @@ document.addEventListener("DOMContentLoaded", function () {
     // Exact track fill calculation
     if (rssiSlider) {
       const pct = ((val - 30) / (100 - 30)) * 100;
-      rssiSlider.style.background = `linear-gradient(to right, #0284c7 0%, #38bdf8 ${pct}%, #1e293b ${pct}%, #1e293b 100%)`;
+      const rootCs = getComputedStyle(document.documentElement);
+      const trackEmpty = rootCs.getPropertyValue("--slider-track").trim() || "#1e293b";
+      const fillStart = rootCs.getPropertyValue("--slider-fill-start").trim() || "#0284c7";
+      const fillEnd = rootCs.getPropertyValue("--slider-fill-end").trim() || "#38bdf8";
+      rssiSlider.style.background = `linear-gradient(to right, ${fillStart} 0%, ${fillEnd} ${pct}%, ${trackEmpty} ${pct}%, ${trackEmpty} 100%)`;
     }
+  }
+
+  window.addEventListener("themechange", function () {
+    if (rssiSlider) {
+      updateRssiState(rssiSlider.value, "slider");
+    }
+  });
+
+  if (rssiSlider) {
+    updateRssiState(rssiSlider.value, "slider");
   }
 
   if (rssiPill && rssiInputAbs) {
@@ -414,8 +428,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // 5. Dirty-State Tracker & Floating Save Dock
   function isFormDirty() {
+    if (typeof window.evaluateFormDirtyState === "function") {
+      return window.evaluateFormDirtyState(form, initialValues);
+    }
     let dirty = false;
-    form.querySelectorAll("input:not([type='button']), select").forEach(el => {
+    form.querySelectorAll("input:not([type='button']):not([type='submit']), select").forEach(el => {
       const key = el.id || el.name;
       if (key && key in initialValues) {
         if (el.type === "checkbox") {
@@ -427,6 +444,8 @@ document.addEventListener("DOMContentLoaded", function () {
     });
     return dirty;
   }
+
+  window.__hasUnsavedChanges = isFormDirty;
 
   function checkDirty() {
     if (!floatingSaveDock) return;
@@ -466,6 +485,7 @@ document.addEventListener("DOMContentLoaded", function () {
         updateRssiState(Math.abs(parseInt(rssiMinHidden.value, 10)), "rollback");
       }
       syncRestartToggle(false);
+      form.querySelectorAll(".has-error").forEach(el => el.classList.remove("has-error"));
       checkDirty();
 
       const ntpBadgeEl = document.getElementById("ntpBadge") || document.getElementById("ntpTestBadge");
@@ -503,6 +523,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!targetServer) {
         targetServer = "pool.ntp.org";
         ntpServerInput.value = targetServer;
+        checkDirty();
       }
 
       btnTestNtp.disabled = true;

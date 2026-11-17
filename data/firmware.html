@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cubeacon %model% - Update Firmware</title>
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/img/favicon.png?v=%firmware_version%">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/img/apple-touch-icon.png?v=%firmware_version%">
+  <script>try{var t=localStorage.getItem("cubeacon_theme");if(t!=="light"&&t!=="dark"){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}</script>
   <style>
     /* Critical Pre-paint CSS: Eliminates White Canvas Flash */
     html, body {
@@ -12,6 +15,10 @@
       margin: 0;
       padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+    }
+    html[data-theme="light"], html[data-theme="light"] body {
+      background-color: #f1f5f9 !important;
+      color: #0f172a;
     }
     /* Instant Banner Suppression before external CSS loads */
     .pending-reboot-banner,
@@ -118,11 +125,20 @@
           </a>
           <span class="navbar-brand">Update Firmware & Filesystem</span>
         </div>
-        <a href="/logout" class="mobile-logout-btn" id="mobileLogoutBtn" title="Logout">
-          <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          <span>Logout</span>
-        </a>
+        <div class="navbar-actions">
+          <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Switch to Light Mode" title="Switch to Light Mode">
+            <svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+            <svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <span class="theme-toggle-label theme-label-light">Light</span>
+            <span class="theme-toggle-label theme-label-dark">Dark</span>
+          </button>
+          <a href="/logout" class="mobile-logout-btn" id="mobileLogoutBtn" title="Logout">
+            <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            <span>Logout</span>
+          </a>
+        </div>
       </header>
+      <script>try{if(document.documentElement.dataset.theme==="light"){document.querySelectorAll(".sidebar-logo-img,.mobile-logo-img").forEach(function(e){e.src="assets/img/logo-light.png";});}}catch(e){}</script>
 
       <section class="content">
 <!-- ================= AP MODE CONFIG BANNER COMPONENT ================= -->
@@ -317,7 +333,7 @@
     <div class="wifi-modal-box ota-modal-box">
       <div class="wifi-modal-header">
         <div class="wifi-modal-title">
-          <svg id="otaModalIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+          <svg id="otaModalIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan, #38bdf8)" stroke-width="2">
             <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/>
           </svg>
           <span id="otaModalTitle">Firmware Flashing Progress</span>
@@ -346,7 +362,7 @@
         </div>
 
         <div class="ota-modal-actions" id="otaModalActions" style="display:none;">
-          <button type="button" class="btn btn-info" id="btnOtaAction" style="padding:10px 24px;">Close</button>
+          <button type="button" class="btn btn-info" id="btnOtaAction">Close</button>
         </div>
       </div>
     </div>

@@ -5,6 +5,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cubeacon %model% - Live Test Monitor</title>
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/img/favicon.png?v=%firmware_version%">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/img/apple-touch-icon.png?v=%firmware_version%">
+  <script>try{var t=localStorage.getItem("cubeacon_theme");if(t!=="light"&&t!=="dark"){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}</script>
   <style>
     /* Critical Pre-paint CSS: Eliminates White Canvas Flash */
     html, body {
@@ -13,6 +16,10 @@
       margin: 0;
       padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+    }
+    html[data-theme="light"], html[data-theme="light"] body {
+      background-color: #f1f5f9 !important;
+      color: #0f172a;
     }
     /* Instant Banner Suppression before external CSS loads */
     .pending-reboot-banner,
@@ -121,15 +128,24 @@
           </a>
           <span class="navbar-brand">Live Test Monitor</span>
         </div>
-        <a href="/logout" class="mobile-logout-btn" id="mobileLogoutBtn" title="Logout">
-          <svg viewBox="0 0 24 24">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            <polyline points="16 17 21 12 16 7" />
-            <line x1="21" y1="12" x2="9" y2="12" />
-          </svg>
-          <span>Logout</span>
-        </a>
+        <div class="navbar-actions">
+          <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Switch to Light Mode" title="Switch to Light Mode">
+            <svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+            <svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <span class="theme-toggle-label theme-label-light">Light</span>
+            <span class="theme-toggle-label theme-label-dark">Dark</span>
+          </button>
+          <a href="/logout" class="mobile-logout-btn" id="mobileLogoutBtn" title="Logout">
+            <svg viewBox="0 0 24 24">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            <span>Logout</span>
+          </a>
+        </div>
       </header>
+      <script>try{if(document.documentElement.dataset.theme==="light"){document.querySelectorAll(".sidebar-logo-img,.mobile-logo-img").forEach(function(e){e.src="assets/img/logo-light.png";});}}catch(e){}</script>
 
       <section class="content">
 <!-- ================= AP MODE CONFIG BANNER COMPONENT ================= -->
@@ -187,31 +203,8 @@
     font-weight: 600;
     font-family: monospace;
   }
-  .btn-ap-stop {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 14px;
-    background: rgba(249, 115, 22, 0.15);
-    border: 1px solid rgba(249, 115, 22, 0.4);
-    color: #fb923c;
-    border-radius: 8px;
-    font-size: 0.84rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-  }
-  .btn-ap-stop:hover {
-    background: rgba(249, 115, 22, 0.28);
-    border-color: rgba(249, 115, 22, 0.7);
-    color: #fdba74;
-    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25);
-    transform: translateY(-1px);
-  }
   @media (max-width: 640px) {
     .ap-banner-card { flex-direction: column; align-items: stretch; gap: 12px; }
-    .btn-ap-stop { width: 100%; justify-content: center; }
   }
 </style>
 
@@ -278,7 +271,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                 </svg>
                 <span>Stop Test</span>
               </button>
-              <button type="button" class="btn-export" id="btnExportCsv" title="Export CSV Data Pengujian">
+              <button type="button" class="btn-export" id="btnExportCsv" title="Export Test Session CSV">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                   <polyline points="7 10 12 15 17 10"/>
@@ -295,19 +288,19 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
             </div>
             <div class="session-stat-item stat-total-scan">
               <span class="session-stat-label">Total Scan:</span>
-              <span class="session-stat-val sky" id="sessionTotalScan" title="Total paket BLE sebelum filter">0</span>
+              <span class="session-stat-val sky" id="sessionTotalScan" title="Total BLE frames prior to filtering">0</span>
             </div>
             <div class="session-stat-item stat-valid-data">
               <span class="session-stat-label">Valid Data:</span>
-              <span class="session-stat-val green" id="sessionValidData" title="Paket lolos filter gateway">0</span>
+              <span class="session-stat-val green" id="sessionValidData" title="Frames passing gateway filters">0</span>
             </div>
             <div class="session-stat-item stat-mqtt-send">
               <span class="session-stat-label">MQTT Send:</span>
-              <span class="session-stat-val emerald" id="sessionMqttSend" title="Paket terkirim ke broker MQTT">0</span>
+              <span class="session-stat-val emerald" id="sessionMqttSend" title="Frames published to MQTT broker">0</span>
             </div>
             <div class="session-stat-item stat-drop-data">
               <span class="session-stat-label">Drop Data:</span>
-              <span class="session-stat-val rose" id="sessionDropData" title="Total paket drop dan persentase terhadap Total Scan">0 (0.00%)</span>
+              <span class="session-stat-val rose" id="sessionDropData" title="Total dropped frames and percentage of Total Scan">0 (0.00%)</span>
             </div>
             <div class="session-stat-item stat-bandwidth">
               <span class="session-stat-label">Bandwidth:</span>
@@ -338,8 +331,8 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
                 <span class="hud-unit">pkt/s</span>
               </div>
               <div class="hud-sub-stats">
-                <span title="Total paket BLE yang discan radio per detik">Scan: <strong id="stat_scan_speed" class="substat-val-sky">0</strong></span>
-                <span title="Paket BLE yang ditolak filter per detik">Drop: <strong id="stat_drop_speed" class="substat-val-rose">0</strong></span>
+                <span title="Total BLE frames captured per second">Scan: <strong id="stat_scan_speed" class="substat-val-sky">0</strong></span>
+                <span title="BLE frames rejected by filter per second">Drop: <strong id="stat_drop_speed" class="substat-val-rose">0</strong></span>
               </div>
             </div>
           </div>
@@ -395,7 +388,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
           <!-- 4. Queue FreeRTOS (Amber / Load Safe) - With progress bar & badge -->
           <div class="hud-card-v2 card-amber">
             <div class="hud-header">
-              <span class="hud-label">FREERTOS INGRESS QUEUE</span>
+              <span class="hud-label">INGRESS FRAME QUEUE</span>
               <div class="hud-icon slate">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="3" y1="6" x2="21" y2="6"/>
@@ -499,7 +492,7 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
           <!-- 8. Free Heap RAM (Purple) - With progress bar & badge (Row 4, Col 2 on Mobile) -->
           <div class="hud-card-v2 card-lavender">
             <div class="hud-header">
-              <span class="hud-label">FREE HEAP RAM</span>
+              <span class="hud-label">FREE RAM</span>
               <div class="hud-icon purple">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect width="16" height="16" x="4" y="4" rx="2"/>
@@ -673,12 +666,12 @@ if (location.hostname === "192.168.4.1" || location.hostname.indexOf("192.168.4.
           <div class="table-card-header">
             <div>
               <div class="bento-title">Real-Time Performance Telemetry (60s Window)</div>
-              <div class="bento-sub">Real-time tag ingress rate, MQTT publish speed, FreeRTOS queue depth, and buffer load</div>
+              <div class="bento-sub">Real-time tag ingress rate, MQTT publish speed, ingress queue depth, and buffer load</div>
             </div>
             <div class="chart-legend-box">
               <span class="chart-legend-item cyan"><span class="legend-dot cyan"></span>Tag Speed</span>
               <span class="chart-legend-item emerald"><span class="legend-dot emerald"></span>MQTT Speed</span>
-              <span class="chart-legend-item amber"><span class="legend-dot amber"></span>Queue RTOS</span>
+              <span class="chart-legend-item amber"><span class="legend-dot amber"></span>Ingress Queue</span>
               <span class="chart-legend-item rose"><span class="legend-dot rose"></span>Batch Buffer</span>
               <span class="chart-legend-item violet"><span class="legend-dot violet"></span>Pkt / Batch</span>
               <span class="chart-legend-item sky"><span class="legend-dot sky"></span>Net Bandwidth</span>

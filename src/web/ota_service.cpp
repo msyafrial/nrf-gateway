@@ -137,7 +137,7 @@ void check_watchdog() {
     if (xSemaphoreTake(s_otaMutex, 0) != pdTRUE) return;
     if (s_status.in_progress && (monotonicMs() - s_last_activity_ms64 > (int64_t)OTA_INACTIVITY_TIMEOUT_MS)) {
         snprintf(s_status.error_msg, sizeof(s_status.error_msg),
-                 "Upload timeout: koneksi terputus (10 detik inaktivitas).");
+                 "Upload timeout: connection lost (10s inactivity).");
         abortLocked();
     }
     xSemaphoreGive(s_otaMutex);
@@ -146,14 +146,14 @@ void check_watchdog() {
 bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, size_t chunk_len, char *out_err, size_t err_len) {
     ensureOtaMutex();
     if (s_otaMutex && xSemaphoreTake(s_otaMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
-        snprintf(out_err, err_len, "Sistem OTA sibuk, coba beberapa saat lagi.");
+        snprintf(out_err, err_len, "OTA service busy, please try again shortly.");
         return false;
     }
 
     // Atomic check-and-set untuk pencegahan race condition sesi bersamaan
     if (s_ota_in_progress.exchange(true, std::memory_order_seq_cst)) {
         if (s_otaMutex) xSemaphoreGive(s_otaMutex);
-        snprintf(out_err, err_len, "Update sedang berlangsung dari sesi lain (409 Conflict)!");
+        snprintf(out_err, err_len, "Update already in progress from another session (409 Conflict).");
         return false;
     }
 
@@ -180,7 +180,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
 
     // 1. Magic check on byte 0..1: Partition Table rejection (0x50AA)
     if (chunk_len >= 2 && first_chunk[0] == 0xAA && first_chunk[1] == 0x50) {
-        snprintf(out_err, err_len, "File terdeteksi sebagai Tabel Partisi ESP32 (partitions.bin)! Ditolak.");
+        snprintf(out_err, err_len, "Rejected: File detected as Partition Table (partitions.bin).");
         snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
         s_status.in_progress = false;
         s_ota_in_progress.store(false, std::memory_order_seq_cst);
@@ -189,7 +189,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
 
     if (target == TargetType::Firmware) {
         if (chunk_len < 112) {
-            snprintf(out_err, err_len, "Chunk pertama terlalu kecil (%zu B) untuk validasi header firmware!", chunk_len);
+            snprintf(out_err, err_len, "Initial chunk too small (%zu B) for firmware header validation.", chunk_len);
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             s_status.in_progress = false;
             s_ota_in_progress.store(false, std::memory_order_seq_cst);
@@ -200,7 +200,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
         bool is_app_desc = (first_chunk[32] == 0x32 && first_chunk[33] == 0x54 &&
                             first_chunk[34] == 0xCD && first_chunk[35] == 0xAB);
         if (first_chunk[0] != ESP_IMAGE_HEADER_MAGIC || !is_app_desc) {
-            snprintf(out_err, err_len, "Error: Berkas bukan citra aplikasi Firmware ESP-IDF yang valid!");
+            snprintf(out_err, err_len, "Error: File is not a valid gateway firmware image.");
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             s_status.in_progress = false;
             s_ota_in_progress.store(false, std::memory_order_seq_cst);
@@ -216,7 +216,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
         const char *cur_board_ver = (g_config.device_version[0] != '\0') ? g_config.device_version : "v1.0.0";
 
         if (strcmp(cur_model, "EMPTY") != 0 && !at_sign) {
-            snprintf(out_err, err_len, "Ditolak: Metadata model@board tidak ditemukan pada header firmware!");
+            snprintf(out_err, err_len, "Rejected: model@board metadata missing in firmware header.");
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             s_status.in_progress = false;
             s_ota_in_progress.store(false, std::memory_order_seq_cst);
@@ -234,7 +234,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
             strncpy(incoming_board_ver, at_sign + 1, sizeof(incoming_board_ver) - 1);
 
             if (strcmp(cur_model, "EMPTY") != 0 && strcmp(incoming_model, cur_model) != 0) {
-                snprintf(out_err, err_len, "Ditolak: Model firmware ('%s') tidak sesuai model perangkat ('%s')!",
+                snprintf(out_err, err_len, "Rejected: Firmware model ('%s') does not match gateway model ('%s').",
                          incoming_model, cur_model);
                 snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
                 s_status.in_progress = false;
@@ -242,7 +242,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
                 return false;
             }
             if (strcmp(cur_board_ver, "EMPTY") != 0 && strcmp(incoming_board_ver, cur_board_ver) != 0) {
-                snprintf(out_err, err_len, "Ditolak: Versi board ('%s') tidak kompatibel dengan board fisik ('%s')!",
+                snprintf(out_err, err_len, "Rejected: Hardware board version ('%s') incompatible with device ('%s').",
                          incoming_board_ver, cur_board_ver);
                 snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
                 s_status.in_progress = false;
@@ -253,7 +253,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
 
         s_target_partition = esp_ota_get_next_update_partition(nullptr);
         if (!s_target_partition) {
-            snprintf(out_err, err_len, "Gagal menemukan partisi target OTA update!");
+            snprintf(out_err, err_len, "Failed to locate target OTA firmware partition.");
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             s_status.in_progress = false;
             s_ota_in_progress.store(false, std::memory_order_seq_cst);
@@ -261,7 +261,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
         }
 
         if (total_size > s_target_partition->size) {
-            snprintf(out_err, err_len, "Ukuran firmware (%u B) melebihi kapasitas partisi OTA (%u B)!",
+            snprintf(out_err, err_len, "Firmware size (%u B) exceeds OTA partition capacity (%u B).",
                      (unsigned int)total_size, (unsigned int)s_target_partition->size);
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             s_status.in_progress = false;
@@ -272,7 +272,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
         size_t ota_size = (total_size > 0) ? total_size : OTA_SIZE_UNKNOWN;
         esp_err_t err = esp_ota_begin(s_target_partition, ota_size, &s_ota_handle);
         if (err != ESP_OK) {
-            snprintf(out_err, err_len, "Gagal menginisialisasi partisi OTA flash (0x%x).", err);
+            snprintf(out_err, err_len, "Failed to initialize OTA flash partition (0x%x).", err);
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             s_status.in_progress = false;
             s_ota_in_progress.store(false, std::memory_order_seq_cst);
@@ -282,7 +282,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
         // TARGET FILESYSTEM:
         s_target_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "storage");
         if (!s_target_partition) {
-            snprintf(out_err, err_len, "Gagal menemukan partisi 'storage' untuk LittleFS!");
+            snprintf(out_err, err_len, "Failed to locate web filesystem storage partition.");
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             s_status.in_progress = false;
             s_ota_in_progress.store(false, std::memory_order_seq_cst);
@@ -291,7 +291,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
 
         // Cek kapasitas: Tidak boleh melampaui ukuran partisi (1 MB)
         if (total_size > s_target_partition->size) {
-            snprintf(out_err, err_len, "Ukuran LittleFS (%u B) melebihi kapasitas partisi storage (%u B)!",
+            snprintf(out_err, err_len, "Filesystem image size (%u B) exceeds storage partition capacity (%u B).",
                      (unsigned int)total_size, (unsigned int)s_target_partition->size);
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             s_status.in_progress = false;
@@ -301,7 +301,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
 
         // Cek signature LittleFS: Wajib minimal 16 byte dan teks "littlefs" pada offset 0x08
         if (chunk_len < 16 || memcmp(&first_chunk[8], "littlefs", 8) != 0) {
-            snprintf(out_err, err_len, "Error: Berkas bukan citra partisi LittleFS valid (signature 'littlefs' tidak cocok)!");
+            snprintf(out_err, err_len, "Error: File is not a valid Web Filesystem image (invalid filesystem signature).");
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             s_status.in_progress = false;
             s_ota_in_progress.store(false, std::memory_order_seq_cst);
@@ -320,7 +320,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
         if (Server::get_active_file_reads() > 0) {
             // BATALKAN SECARA BERSIH: Jangan panggil abort() karena VFS belum di-unmount!
             Server::set_maintenance_mode(false);
-            snprintf(out_err, err_len, "Filesystem sedang sibuk melayani unduhan web. Coba beberapa saat lagi.");
+            snprintf(out_err, err_len, "Filesystem busy serving web requests. Please retry shortly.");
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             s_status.in_progress = false;
             s_ota_in_progress.store(false, std::memory_order_seq_cst);
@@ -335,7 +335,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
                 // BATALKAN SECARA BERSIH: Jangan remountStorage() karena VFS belum ter-unmount!
                 ESP_LOGE(TAG, "esp_vfs_littlefs_unregister gagal: 0x%x", unreg_err);
                 Server::set_maintenance_mode(false);
-                snprintf(out_err, err_len, "Gagal unmount VFS storage (0x%x).", unreg_err);
+                snprintf(out_err, err_len, "Failed to unmount storage filesystem (0x%x).", unreg_err);
                 snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
                 s_status.in_progress = false;
                 s_ota_in_progress.store(false, std::memory_order_seq_cst);
@@ -362,7 +362,7 @@ bool begin(TargetType target, size_t total_size, const uint8_t *first_chunk, siz
 bool write_chunk(const uint8_t *data, size_t len, size_t current_offset, bool is_final, char *out_err, size_t err_len) {
     ensureOtaMutex();
     if (s_otaMutex && xSemaphoreTake(s_otaMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
-        snprintf(out_err, err_len, "Timeout mengunci proses OTA.");
+        snprintf(out_err, err_len, "Timeout acquiring OTA lock.");
         return false;
     }
     struct OtaLockGuard {
@@ -381,7 +381,7 @@ bool write_chunk(const uint8_t *data, size_t len, size_t current_offset, bool is
     if (s_status.target == TargetType::Firmware) {
         esp_err_t err = esp_ota_write(s_ota_handle, data, len);
         if (err != ESP_OK) {
-            snprintf(out_err, err_len, "Gagal menulis chunk OTA ke flash (0x%x).", err);
+            snprintf(out_err, err_len, "Failed to write firmware OTA chunk to flash (0x%x).", err);
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             abortLocked();
             return false;
@@ -389,7 +389,7 @@ bool write_chunk(const uint8_t *data, size_t len, size_t current_offset, bool is
     } else {
         size_t target_end = current_offset + len;
         if (target_end > s_target_partition->size) {
-            snprintf(out_err, err_len, "Data LittleFS melampaui kapasitas partisi storage 1MB!");
+            snprintf(out_err, err_len, "Filesystem upload exceeds 1MB storage partition capacity.");
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             abortLocked();
             return false;
@@ -402,7 +402,7 @@ bool write_chunk(const uint8_t *data, size_t len, size_t current_offset, bool is
             s_flash_dirty = true; // Ditandai dirty tepat sebelum erase pertama dieksekusi
             esp_err_t err = esp_partition_erase_range(s_target_partition, erase_start, erase_len);
             if (err != ESP_OK) {
-                snprintf(out_err, err_len, "Gagal erase sektor flash LittleFS (0x%x).", err);
+                snprintf(out_err, err_len, "Failed to erase filesystem flash sector (0x%x).", err);
                 snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
                 abortLocked();
                 return false;
@@ -412,7 +412,7 @@ bool write_chunk(const uint8_t *data, size_t len, size_t current_offset, bool is
 
         esp_err_t err = esp_partition_write(s_target_partition, current_offset, data, len);
         if (err != ESP_OK) {
-            snprintf(out_err, err_len, "Gagal menulis chunk LittleFS ke flash (0x%x).", err);
+            snprintf(out_err, err_len, "Failed to write filesystem chunk to flash (0x%x).", err);
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             abortLocked();
             return false;
@@ -426,7 +426,7 @@ bool write_chunk(const uint8_t *data, size_t len, size_t current_offset, bool is
 bool finalize(char *out_err, size_t err_len) {
     ensureOtaMutex();
     if (s_otaMutex && xSemaphoreTake(s_otaMutex, pdMS_TO_TICKS(10000)) != pdTRUE) {
-        snprintf(out_err, err_len, "Timeout mengunci finalisasi OTA.");
+        snprintf(out_err, err_len, "Timeout acquiring OTA finalize lock.");
         return false;
     }
     struct OtaLockGuard {
@@ -438,8 +438,8 @@ bool finalize(char *out_err, size_t err_len) {
 
     // Micro-Hardening: Truncated stream validation
     if (s_status.total_expected > 0 && s_status.written_bytes != s_status.total_expected) {
-        snprintf(out_err, err_len, "Data %s tidak lengkap (hanya %u dari %u byte)!",
-                 (s_status.target == TargetType::Firmware) ? "Firmware" : "LittleFS",
+        snprintf(out_err, err_len, "Incomplete %s upload (%u of %u bytes received).",
+                 (s_status.target == TargetType::Firmware) ? "Firmware" : "Filesystem",
                  (unsigned int)s_status.written_bytes, (unsigned int)s_status.total_expected);
         snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
         abortLocked();
@@ -450,7 +450,7 @@ bool finalize(char *out_err, size_t err_len) {
         esp_err_t err = esp_ota_end(s_ota_handle);
         s_ota_handle = 0;
         if (err != ESP_OK) {
-            snprintf(out_err, err_len, "Validasi akhir partisi OTA gagal (0x%x).", err);
+            snprintf(out_err, err_len, "OTA firmware partition verification failed (0x%x).", err);
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             abortLocked();
             return false;
@@ -458,7 +458,7 @@ bool finalize(char *out_err, size_t err_len) {
 
         err = esp_ota_set_boot_partition(s_target_partition);
         if (err != ESP_OK) {
-            snprintf(out_err, err_len, "Gagal menetapkan partisi boot baru (0x%x).", err);
+            snprintf(out_err, err_len, "Failed to set next OTA boot partition (0x%x).", err);
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
             abortLocked();
             return false;
@@ -487,7 +487,7 @@ bool finalize(char *out_err, size_t err_len) {
 
         if (!verify_ok) {
             ESP_LOGE(TAG, "Verifikasi integritas LittleFS GAGAL! Citra rusak atau index.html tidak ditemukan.");
-            snprintf(out_err, err_len, "Verifikasi citra LittleFS gagal: struktur berkas rusak atau index.html tidak ditemukan!");
+            snprintf(out_err, err_len, "Filesystem verification failed: image corrupted or index.html missing.");
             snprintf(s_status.error_msg, sizeof(s_status.error_msg), "%s", out_err);
 
             // Reset komprehensif state agar Emergency Recovery siap menerima upload ulang

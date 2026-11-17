@@ -96,7 +96,7 @@ void EthernetW5500::onEthEvent(void* arg, esp_event_base_t base, int32_t id, voi
             s_hasIp = false;
             ESP_LOGI(TAG, "Driver Ethernet W5500 dihentikan.");
             NetLogService::log(NetCategory::ETHERNET, NetEvent::STOPPED,
-                               "Interface Ethernet Dinonaktifkan (Peralihan ke Mode Wi-Fi)");
+                               "Ethernet interface disabled (Switched to Wi-Fi mode)");
             break;
 
         default:
@@ -287,7 +287,7 @@ bool EthernetW5500::begin(uint32_t ip, uint32_t gw, uint32_t mask,
     s_hardwareDetected = true;
     s_isDhcp = dhcp;
     char detStarted[80];
-    snprintf(detStarted, sizeof(detStarted), "Hardware W5500 Terdeteksi (SPI3 Host, Mode: %s)",
+    snprintf(detStarted, sizeof(detStarted), "Hardware Ethernet Controller Detected (Mode: %s)",
              dhcp ? "DHCP Client" : "Static IP");
     NetLogService::log(NetCategory::ETHERNET, NetEvent::STARTED, detStarted);
     ESP_LOGI(TAG, "Driver Ethernet W5500 siap bekerja.");

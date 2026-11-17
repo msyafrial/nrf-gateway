@@ -428,7 +428,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (startPage > 1) {
       html += `<button type="button" class="btn-page" data-page="1">1</button>`;
-      if (startPage > 2) html += `<span style="color:#64748b; padding: 0 4px;">…</span>`;
+      if (startPage > 2) html += `<span style="color:var(--text-dim, #8c9eb5); padding: 0 4px;">…</span>`;
     }
 
     for (let p = startPage; p <= endPage; p++) {
@@ -436,7 +436,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     if (endPage < totalPages) {
-      if (endPage < totalPages - 1) html += `<span style="color:#64748b; padding: 0 4px;">…</span>`;
+      if (endPage < totalPages - 1) html += `<span style="color:var(--text-dim, #8c9eb5); padding: 0 4px;">…</span>`;
       html += `<button type="button" class="btn-page" data-page="${totalPages}">${totalPages}</button>`;
     }
 
@@ -494,7 +494,7 @@ document.addEventListener("DOMContentLoaded", function () {
             <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.5L19 7.5V19a2 2 0 0 1-2 2z"/>
             </svg>
-            <div style="font-weight: 600; color: #cbd5e1; margin-bottom: 4px;">No Events Found</div>
+            <div style="font-weight: 600; color: var(--text-main, #cbd5e1); margin-bottom: 4px;">No Events Found</div>
             <div style="font-size: 0.8rem;">${allNetLogs.length === 0 ? "No event records stored in Filesystem." : "No log entries match the current filter or search criteria."}</div>
           </td>
         </tr>
@@ -511,7 +511,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
       html += `
         <tr>
-          <td style="color:#94a3b8; font-weight:700; font-family:monospace;">#${item.id}</td>
+          <td style="color:var(--text-muted, #94a3b8); font-weight:700; font-family:monospace;">#${item.id}</td>
           <td><span class="time-mono">${escapeHtml(item.time)}</span></td>
           <td><span class="net-cat-pill ${catClass}">${escapeHtml(item.cat)}</span></td>
           <td><span class="net-event-pill ${statusClass}">${escapeHtml(item.event)}</span></td>
@@ -630,7 +630,7 @@ document.addEventListener("DOMContentLoaded", function () {
               <circle cx="12" cy="12" r="10"/>
               <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
             </svg>
-            <div style="font-weight: 600; color: #cbd5e1; margin-bottom: 4px;">No Dropped Packets Recorded</div>
+            <div style="font-weight: 600; color: var(--text-main, #cbd5e1); margin-bottom: 4px;">No Dropped Packets Recorded</div>
             <div style="font-size: 0.8rem;">${allDropLogs.length === 0 ? "No beacon frames dropped during this session." : "No dropped records match the current filter."}</div>
           </td>
         </tr>
@@ -644,7 +644,7 @@ document.addEventListener("DOMContentLoaded", function () {
     pagedItems.forEach(item => {
       const typeBadge = getBeaconTypeBadge(item.code);
       const isMqtt = (item.code && item.code.toLowerCase() === "mqtt");
-      const rssiDisplay = isMqtt ? `<span style="color:#64748b;">-</span>` : `<span class="rssi-val ${getRssiColorClass(item.rssi)}">${item.rssi} dBm</span>`;
+      const rssiDisplay = isMqtt ? `<span style="color:var(--text-dim, #8c9eb5);">-</span>` : `<span class="rssi-val ${getRssiColorClass(item.rssi)}">${item.rssi} dBm</span>`;
       const statusClass = item.status_class || "neutral";
       const hasRaw = item.raw && item.raw.length >= 10;
       const frame44 = hasRaw ? convertRaw42ToMqtt44(item.raw, item.time) : "";
@@ -652,7 +652,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
       html += `
         <tr>
-          <td style="color:#94a3b8; font-weight:700; font-family:monospace;">#${item.id}</td>
+          <td style="color:var(--text-muted, #94a3b8); font-weight:700; font-family:monospace;">#${item.id}</td>
           <td><span class="time-mono">${escapeHtml(item.time)}</span></td>
           <td><span class="mono-mac">${escapeHtml(item.mac || "-")}</span></td>
           <td>${typeBadge}</td>
@@ -665,7 +665,7 @@ document.addEventListener("DOMContentLoaded", function () {
             </span>
           </td>
           <td style="text-align: center;">
-            ${hasRaw ? `<button type="button" class="btn-raw-hex" data-act="toggle-log-raw" data-id="${item.id}">Raw Hex</button>` : `<span style="color:#64748b;">-</span>`}
+            ${hasRaw ? `<button type="button" class="btn-raw-hex" data-act="toggle-log-raw" data-id="${item.id}">Raw Hex</button>` : `<span style="color:var(--text-dim, #8c9eb5);">-</span>`}
           </td>
         </tr>
       `;
@@ -676,7 +676,7 @@ document.addEventListener("DOMContentLoaded", function () {
             <td colspan="8">
               <div class="full-hex-string" style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
                 <span style="font-family:var(--mono, monospace); font-size:0.75rem;"><strong>Raw 44B:</strong> ${spacedHex}</span>
-                <button type="button" class="btn-raw-hex" data-act="copy-raw" data-raw="${frame44}" style="flex:none;">Salin Hex</button>
+                <button type="button" class="btn-raw-hex" data-act="copy-raw" data-raw="${frame44}" style="flex:none;">Copy Hex</button>
               </div>
             </td>
           </tr>
@@ -855,7 +855,7 @@ document.addEventListener("DOMContentLoaded", function () {
           showCancelButton: true,
           confirmButtonText: "Confirm Purge",
           cancelButtonText: "Cancel",
-          confirmButtonColor: "#ef4444",
+          confirmButtonColor: "var(--swal-btn-danger, #dc2626)",
           cancelButtonColor: "#64748b"
         }).then(res => {
           if (res.isConfirmed) {
@@ -881,7 +881,7 @@ document.addEventListener("DOMContentLoaded", function () {
           showCancelButton: true,
           confirmButtonText: "Confirm Purge",
           cancelButtonText: "Cancel",
-          confirmButtonColor: "#ef4444",
+          confirmButtonColor: "var(--swal-btn-danger, #dc2626)",
           cancelButtonColor: "#64748b"
         }).then(res => {
           if (res.isConfirmed) {
@@ -920,9 +920,9 @@ document.addEventListener("DOMContentLoaded", function () {
       const raw = btnCopy.getAttribute("data-raw");
       if (raw) {
         copyText(raw).then(() => {
-          showToastLog("Raw 44B Disalin ke Clipboard!");
+          showToastLog("Raw 44B copied to clipboard");
         }).catch(() => {
-          showToastLog("Gagal menyalin data raw");
+          showToastLog("Failed to copy raw payload");
         });
       }
     }

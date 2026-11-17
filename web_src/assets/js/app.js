@@ -1,7 +1,203 @@
 /**
  * Cubeacon Gateway Dashboard Core Application JS
- * Modern Bottom Action Sheets (Config & Power) + 2-Mode Segmented Controls
+ * Modern Bottom Action Sheets (Config & Power) + 2-Mode Segmented Controls + Dual-Theme Controller
  */
+(function () {
+  const THEME_KEY = "cubeacon_theme";
+  const SUN_SVG = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>';
+  const MOON_SVG = '<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+
+  let activeThemeTransition = null;
+  let themeAnimTimer = null;
+  let themeIconTimer = null;
+  let preloadedAltLogo = "";
+
+  function normalizeTheme(t) {
+    return t === "light" ? "light" : "dark";
+  }
+
+  function preloadAlternateLogo(curTheme) {
+    const altSrc = curTheme === "light" ? "assets/img/logo.png" : "assets/img/logo-light.png";
+    if (preloadedAltLogo === altSrc) return;
+    if (!document.querySelector("img.mobile-logo-img, img.login-logo-img, img.sidebar-logo-img")) return;
+    preloadedAltLogo = altSrc;
+    try {
+      const img = new Image();
+      img.decoding = "async";
+      img.onerror = function () {};
+      img.src = altSrc;
+    } catch (e) {}
+  }
+
+  function decodeLogosBounded(maxMs) {
+    const jobs = [];
+    document.querySelectorAll("img.mobile-logo-img, img.login-logo-img, img.sidebar-logo-img").forEach(function (img) {
+      if (!img.complete && typeof img.decode === "function") {
+        jobs.push(img.decode().catch(function () {}));
+      }
+    });
+    if (!jobs.length) return Promise.resolve();
+    return Promise.race([
+      Promise.all(jobs),
+      new Promise(function (resolve) { setTimeout(resolve, maxMs || 80); })
+    ]);
+  }
+
+  function triggerIconPop() {
+    const root = document.documentElement;
+    root.classList.remove("theme-icon-pop");
+    void root.offsetWidth;
+    root.classList.add("theme-icon-pop");
+    if (themeIconTimer) clearTimeout(themeIconTimer);
+    themeIconTimer = setTimeout(function () {
+      root.classList.remove("theme-icon-pop");
+      themeIconTimer = null;
+    }, 380);
+  }
+
+  function startFallbackCrossfade() {
+    const root = document.documentElement;
+    root.classList.add("theme-animating");
+    if (themeAnimTimer) clearTimeout(themeAnimTimer);
+    themeAnimTimer = setTimeout(function () {
+      root.classList.remove("theme-animating");
+      themeAnimTimer = null;
+    }, 340);
+  }
+
+  function syncThemeLogos(theme) {
+    const targetSrc = theme === "light" ? "assets/img/logo-light.png" : "assets/img/logo.png";
+    document.querySelectorAll("img.mobile-logo-img, img.login-logo-img, img.sidebar-logo-img").forEach(function (img) {
+      if (img.getAttribute("src") !== targetSrc) {
+        img.setAttribute("src", targetSrc);
+      }
+    });
+  }
+
+  function syncThemeButton(theme) {
+    const btn = document.getElementById("themeToggleBtn");
+    if (!btn) return;
+    const isLight = theme === "light";
+    btn.setAttribute("aria-label", isLight ? "Switch to Dark Mode" : "Switch to Light Mode");
+    btn.setAttribute("title", isLight ? "Switch to Dark Mode" : "Switch to Light Mode");
+    btn.setAttribute("aria-pressed", isLight ? "true" : "false");
+    if (!btn.querySelector(".theme-icon-sun") || !btn.querySelector(".theme-icon-moon")) {
+      btn.innerHTML = (isLight ? MOON_SVG : SUN_SVG) + '<span class="theme-toggle-label">' + (isLight ? "Dark" : "Light") + "</span>";
+    }
+  }
+
+  function commitTheme(next, persist) {
+    document.documentElement.dataset.theme = next;
+    if (persist !== false) {
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+    }
+    syncThemeLogos(next);
+    syncThemeButton(next);
+    window.dispatchEvent(new CustomEvent("themechange", { detail: { theme: next } }));
+  }
+
+  window.getAppTheme = function () {
+    return normalizeTheme(document.documentElement.dataset.theme);
+  };
+
+  window.setAppTheme = function (theme, persist, animate) {
+    const next = normalizeTheme(theme);
+    const prev = window.getAppTheme();
+    const reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    const shouldAnimate = animate !== false && prev !== next && !document.hidden && !reduceMotion;
+
+    if (!shouldAnimate) {
+      if (activeThemeTransition) {
+        try { activeThemeTransition.skipTransition(); } catch (e) {}
+        activeThemeTransition = null;
+      }
+      document.documentElement.classList.remove("theme-animating");
+      commitTheme(next, persist);
+      preloadAlternateLogo(next);
+      return next;
+    }
+
+    if (typeof document.startViewTransition === "function") {
+      if (activeThemeTransition) {
+        try { activeThemeTransition.skipTransition(); } catch (e) {}
+        activeThemeTransition = null;
+      }
+      document.documentElement.classList.remove("theme-animating");
+      try {
+        const vt = document.startViewTransition(function () {
+          commitTheme(next, persist);
+          return decodeLogosBounded(80);
+        });
+        activeThemeTransition = vt;
+        const clearVt = function () {
+          if (activeThemeTransition === vt) activeThemeTransition = null;
+        };
+        if (vt.updateCallbackDone) vt.updateCallbackDone.catch(function () {});
+        if (vt.ready) vt.ready.catch(function () {});
+        if (vt.finished) vt.finished.catch(function () {}).finally(clearVt);
+        preloadAlternateLogo(next);
+        return next;
+      } catch (e) {
+        activeThemeTransition = null;
+      }
+    }
+
+    startFallbackCrossfade();
+    commitTheme(next, persist);
+    triggerIconPop();
+    preloadAlternateLogo(next);
+    return next;
+  };
+
+  window.toggleAppTheme = function () {
+    return window.setAppTheme(window.getAppTheme() === "light" ? "dark" : "light", true, true);
+  };
+
+  window.syncThemeUI = function () {
+    const cur = window.getAppTheme();
+    syncThemeLogos(cur);
+    syncThemeButton(cur);
+  };
+
+  function hasSavedTheme() {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      return saved === "light" || saved === "dark";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  document.addEventListener("click", function (e) {
+    const btn = e.target.closest("#themeToggleBtn");
+    if (btn) {
+      e.preventDefault();
+      window.toggleAppTheme();
+    }
+  });
+
+  if (window.matchMedia) {
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const onOsThemeChange = function (e) {
+      if (!hasSavedTheme()) {
+        window.setAppTheme(e.matches ? "light" : "dark", false, !document.hidden);
+      }
+    };
+    if (mq.addEventListener) mq.addEventListener("change", onOsThemeChange);
+    else if (mq.addListener) mq.addListener(onOsThemeChange);
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    window.syncThemeUI();
+  });
+
+  window.addEventListener("load", function () {
+    preloadAlternateLogo(window.getAppTheme());
+  });
+
+  window.syncThemeUI();
+})();
+
 document.addEventListener("DOMContentLoaded", function() {
   // 1. Injeksi Bottom Action Sheet untuk Config (Settings & Auth)
   let sheetConfigBackdrop = document.getElementById("sheetConfigBackdrop");
@@ -99,7 +295,7 @@ document.addEventListener("DOMContentLoaded", function() {
           </div>
           <div class="sheet-btn-info">
             <div class="sheet-btn-title">Factory Reset Configuration</div>
-            <div class="sheet-btn-sub">Restore all NVS settings to factory defaults</div>
+            <div class="sheet-btn-sub">Restore all system storage settings to factory defaults</div>
           </div>
         </button>
 
@@ -123,6 +319,7 @@ document.addEventListener("DOMContentLoaded", function() {
     if (sheetPowerBackdrop) sheetPowerBackdrop.classList.remove("active");
     if (sheetPower) sheetPower.classList.remove("open");
   }
+  window.closeAllSheets = closeAllSheets;
 
   // Triggers
   document.querySelectorAll('[data-action="config-sheet"]').forEach(btn => {
@@ -148,7 +345,217 @@ document.addEventListener("DOMContentLoaded", function() {
   const cancelPowerBtn = document.getElementById("btnCancelPowerSheet");
   if (cancelPowerBtn) cancelPowerBtn.addEventListener("click", closeAllSheets);
 
-  // 3. SweetAlert Handlers for Reboot & Reset
+  // 3. SweetAlert Handlers for Reboot & Reset & Centralized Reboot Modal
+  let isGatewayRebooting = false;
+
+  function ensureGatewayRebootModal() {
+    let modal = document.getElementById("gatewayRebootModal");
+    if (modal) return modal;
+
+    modal = document.createElement("div");
+    modal.id = "gatewayRebootModal";
+    modal.className = "wifi-modal-backdrop reboot-modal-backdrop";
+    modal.style.display = "none";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-labelledby", "gatewayRebootModalTitle");
+    modal.innerHTML = `
+      <div class="wifi-modal-box ota-modal-box">
+        <div class="wifi-modal-header">
+          <div class="wifi-modal-title">
+            <svg id="gatewayRebootModalIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan, #38bdf8)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+              <line x1="12" y1="2" x2="12" y2="12"/>
+            </svg>
+            <span id="gatewayRebootModalTitle">System Reboot Progress</span>
+          </div>
+        </div>
+        <div class="ota-modal-body">
+          <div class="ota-visual-status">
+            <div class="ota-spinner" id="gatewayRebootSpinner"></div>
+            <div class="ota-result-icon" id="gatewayRebootResultIcon" style="display:none;"></div>
+          </div>
+          <div class="ota-file-info">
+            <span id="gatewayRebootTaskLabel" class="ota-filename-text">Gateway System Restart</span>
+            <span id="gatewayRebootEtaChip" class="ota-filesize-text">10s</span>
+          </div>
+          <div class="ota-progress-track">
+            <div class="ota-progress-fill reboot-smooth" id="gatewayRebootProgressFill"></div>
+          </div>
+          <div class="ota-meta-row">
+            <span class="ota-status-desc" id="gatewayRebootStatusDesc">Initiating gateway reboot...</span>
+            <span class="ota-percent-badge" id="gatewayRebootPercentBadge">0&#37;</span>
+          </div>
+          <div class="ota-modal-actions">
+            <button type="button" class="btn btn-info" id="btnGatewayRebootAction" disabled>Rebooting...</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Abaikan seluruh klik di luar kotak modal agar user tidak bisa menutup modal
+    modal.addEventListener("click", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  function blockRebootModalKeys(e) {
+    if (!isGatewayRebooting) return;
+    if (e.key === "Escape" || e.key === "Esc" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+
+  function executeGatewayReboot(options) {
+    if (isGatewayRebooting) return;
+    isGatewayRebooting = true;
+
+    const opts = options || {};
+    const title = opts.title || "System Reboot Progress";
+    const taskLabel = opts.taskLabel || "Gateway System Restart";
+    const totalSeconds = (typeof opts.seconds === "number" && opts.seconds > 0) ? opts.seconds : 10;
+    const redirectUrl = opts.redirectUrl || "/login.html";
+
+    if (typeof Swal !== "undefined") {
+      Swal.close();
+    }
+
+    const modal = ensureGatewayRebootModal();
+    const titleEl = document.getElementById("gatewayRebootModalTitle");
+    const taskLabelEl = document.getElementById("gatewayRebootTaskLabel");
+    const etaChipEl = document.getElementById("gatewayRebootEtaChip");
+    const spinnerEl = document.getElementById("gatewayRebootSpinner");
+    const resultIconEl = document.getElementById("gatewayRebootResultIcon");
+    const fillEl = document.getElementById("gatewayRebootProgressFill");
+    const badgeEl = document.getElementById("gatewayRebootPercentBadge");
+    const statusDescEl = document.getElementById("gatewayRebootStatusDesc");
+    const actionBtn = document.getElementById("btnGatewayRebootAction");
+    const iconSvg = document.getElementById("gatewayRebootModalIcon");
+
+    if (titleEl) titleEl.textContent = title;
+    if (taskLabelEl) taskLabelEl.textContent = taskLabel;
+    if (etaChipEl) etaChipEl.textContent = `${totalSeconds}s`;
+    if (spinnerEl) spinnerEl.style.display = "block";
+    if (resultIconEl) {
+      resultIconEl.style.display = "none";
+      resultIconEl.innerHTML = "";
+    }
+    const accentCyan = getComputedStyle(document.documentElement).getPropertyValue("--accent-cyan").trim() || "#38bdf8";
+    const accentGreen = getComputedStyle(document.documentElement).getPropertyValue("--accent-emerald").trim() || "#22c55e";
+    if (iconSvg) iconSvg.setAttribute("stroke", accentCyan);
+    if (fillEl) {
+      fillEl.classList.remove("is-complete");
+      fillEl.style.width = "10%";
+    }
+    if (badgeEl) {
+      badgeEl.classList.remove("is-complete");
+      badgeEl.textContent = "10%";
+    }
+    if (statusDescEl) {
+      statusDescEl.innerHTML = '<span class="ota-c-info">Sending command:</span> Initiating gateway reboot...';
+    }
+    if (actionBtn) {
+      actionBtn.textContent = "Rebooting...";
+      actionBtn.disabled = true;
+    }
+
+    const disabledByModal = [];
+    document.querySelectorAll("button, input, select").forEach(el => {
+      if (el.id !== "btnGatewayRebootAction" && !el.disabled) {
+        el.disabled = true;
+        disabledByModal.push(el);
+      }
+    });
+    document.addEventListener("keydown", blockRebootModalKeys, true);
+    modal.style.setProperty("display", "flex", "important");
+
+    window.isManualLoggingOut = true;
+
+    function beginCountdown() {
+      if (spinnerEl) spinnerEl.style.display = "none";
+      if (resultIconEl) {
+        resultIconEl.style.display = "flex";
+        resultIconEl.innerHTML = `
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="${accentGreen}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+        `;
+      }
+      if (iconSvg) iconSvg.setAttribute("stroke", accentGreen);
+
+      let remain = totalSeconds;
+      if (statusDescEl) {
+        statusDescEl.innerHTML = `<strong class="ota-c-ok">Reboot Initiated!</strong> Gateway rebooting in <span id="gatewayRebootCountdown">${remain}</span>s...`;
+      }
+      if (etaChipEl) etaChipEl.textContent = `${remain}s`;
+
+      const timer = setInterval(() => {
+        remain--;
+        const elapsedPct = Math.min(100, Math.max(10, Math.round(((totalSeconds - remain) / totalSeconds) * 100)));
+        const countdownEl = document.getElementById("gatewayRebootCountdown");
+        if (countdownEl) countdownEl.textContent = Math.max(0, remain);
+        if (etaChipEl) etaChipEl.textContent = `${Math.max(0, remain)}s`;
+        if (fillEl) fillEl.style.width = `${elapsedPct}%`;
+        if (badgeEl) badgeEl.textContent = `${elapsedPct}%`;
+
+        if (remain <= 0) {
+          clearInterval(timer);
+          if (fillEl) {
+            fillEl.style.width = "100%";
+            fillEl.classList.add("is-complete");
+          }
+          if (badgeEl) {
+            badgeEl.textContent = "100%";
+            badgeEl.classList.add("is-complete");
+          }
+          if (statusDescEl) {
+            statusDescEl.innerHTML = `<strong class="ota-c-ok">Reboot Complete.</strong> Redirecting to login...`;
+          }
+          document.removeEventListener("keydown", blockRebootModalKeys, true);
+          setTimeout(() => {
+            window.location.replace(redirectUrl);
+          }, 200);
+        }
+      }, 1000);
+    }
+
+    fetch("/api/v1/system/reboot", { method: "POST" })
+      .then(async res => {
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          const err = new Error(text || ("HTTP " + res.status));
+          err.isHttpError = true;
+          err.status = res.status;
+          throw err;
+        }
+        beginCountdown();
+      })
+      .catch(err => {
+        // Jika ESP32 memutus koneksi TCP segera saat reboot, anggap perintah reboot terkirim & lanjutkan countdown
+        if (err && !err.isHttpError) {
+          beginCountdown();
+          return;
+        }
+        isGatewayRebooting = false;
+        window.isManualLoggingOut = false;
+        document.removeEventListener("keydown", blockRebootModalKeys, true);
+        modal.style.setProperty("display", "none", "important");
+        disabledByModal.forEach(el => {
+          el.disabled = false;
+        });
+        if (err.status !== 401 && typeof Swal !== "undefined") {
+          Swal.fire("Failed", err.message || "Reboot execution failed.", "error");
+        }
+      });
+  }
+  window.executeGatewayReboot = executeGatewayReboot;
+
   function triggerReboot() {
     closeAllSheets();
     Swal.fire({
@@ -156,43 +563,17 @@ document.addEventListener("DOMContentLoaded", function() {
       text: "Are you sure you want to restart the gateway?",
       icon: "warning",
       showCancelButton: true,
-      confirmButtonColor: "#2563eb",
-      cancelButtonColor: "#64748b",
+      confirmButtonColor: "var(--swal-btn-info, var(--primary))",
       confirmButtonText: "Reboot Now",
       cancelButtonText: "Cancel"
     }).then(res => {
       if (res.isConfirmed) {
-        Swal.fire({
-          title: "Initiating Reboot...",
-          text: "Please wait 5-10 seconds",
-          icon: "info",
-          allowOutsideClick: false,
-          showConfirmButton: false,
-          didOpen: () => Swal.showLoading()
+        executeGatewayReboot({
+          title: "System Reboot Progress",
+          taskLabel: "Manual Gateway Reboot",
+          seconds: 10,
+          redirectUrl: "/login.html"
         });
-
-        window.isManualLoggingOut = true;
-        fetch("/api/v1/system/reboot", { method: "POST" })
-          .then(res => res.text())
-          .then(text => {
-            setTimeout(() => {
-              Swal.close();
-              Swal.fire({
-                title: "Rebooting...",
-                text: "Device is restarting",
-                icon: "info",
-                confirmButtonText: "OK",
-                confirmButtonColor: "#0284c7",
-                allowOutsideClick: false
-              }).then(() => {
-                window.location.replace("/login.html");
-              });
-            }, 1000);
-          })
-          .catch(err => {
-            Swal.close();
-            Swal.fire("Failed", err.message || "Reboot execution failed.", "error");
-          });
       }
     });
   }
@@ -201,10 +582,10 @@ document.addEventListener("DOMContentLoaded", function() {
     closeAllSheets();
     Swal.fire({
       title: "Factory Reset",
-      text: "All NVS configuration will be erased and restored to defaults. Proceed?",
+      text: "All system storage configuration will be erased and restored to defaults. Proceed?",
       icon: "warning",
       showCancelButton: true,
-      confirmButtonColor: "#ef4444",
+      confirmButtonColor: "var(--swal-btn-danger, #dc2626)",
       cancelButtonColor: "#64748b",
       confirmButtonText: "Yes, Reset Factory Defaults",
       cancelButtonText: "Cancel"
@@ -212,7 +593,7 @@ document.addEventListener("DOMContentLoaded", function() {
       if (res.isConfirmed) {
         Swal.fire({
           title: "Performing Factory Reset...",
-          text: "Erasing NVS partition and rebooting gateway",
+          text: "Erasing system storage and rebooting gateway",
           icon: "info",
           allowOutsideClick: false,
           showConfirmButton: false,
@@ -230,7 +611,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 text: "Configuration restored to factory defaults. Gateway restarting...",
                 icon: "success",
                 confirmButtonText: "OK",
-                confirmButtonColor: "#0284c7",
+                confirmButtonColor: "var(--swal-btn-info, var(--primary))",
                 allowOutsideClick: false
               }).then(() => {
                 window.location.replace("/login.html");
@@ -273,7 +654,7 @@ document.addEventListener("DOMContentLoaded", function() {
       text: "Are you sure you want to sign out of the gateway?",
       icon: "warning",
       showCancelButton: true,
-      confirmButtonColor: "#ef4444",
+      confirmButtonColor: "var(--swal-btn-danger, #dc2626)",
       cancelButtonColor: "#64748b",
       confirmButtonText: "Sign Out",
       cancelButtonText: "Cancel"
@@ -336,6 +717,7 @@ document.addEventListener("DOMContentLoaded", function() {
       syncDhcpState(this.dataset.group);
     });
   });
+  window.syncDhcpState = syncDhcpState;
 
   // 6. 2-Mode Segmented Control (Wi-Fi vs Ethernet Only)
   function updateConnectionMode(modeVal) {
@@ -456,6 +838,136 @@ document.addEventListener("DOMContentLoaded", function() {
 });
 
 /**
+ * Dirty-State & Navigation Protection Helpers (Shared by Auth & Settings Pages)
+ */
+window.__isSubmittingConfig = false;
+
+window.evaluateFormDirtyState = function(form, initialValues) {
+  if (!form || !initialValues) return false;
+  let dirty = false;
+  const modifiedContainers = new Set();
+  const allContainers = new Set();
+
+  form.querySelectorAll("input:not([type='button']):not([type='submit']), select").forEach(el => {
+    const key = el.id || el.name;
+    const container = el.closest(".row, .cell");
+    if (container) allContainers.add(container);
+
+    if (key && Object.prototype.hasOwnProperty.call(initialValues, key)) {
+      const cur = (el.type === "checkbox") ? el.checked : el.value;
+      if (cur !== initialValues[key]) {
+        dirty = true;
+        if (container) modifiedContainers.add(container);
+      }
+    }
+  });
+
+  allContainers.forEach(c => {
+    c.classList.toggle("is-modified", modifiedContainers.has(c));
+  });
+  return dirty;
+};
+
+function hasDirtyConfigChanges() {
+  return typeof window.__hasUnsavedChanges === "function" &&
+    !!window.__hasUnsavedChanges() &&
+    !window.__isSubmittingConfig &&
+    !window.isManualLoggingOut;
+}
+
+window.addEventListener("beforeunload", function(e) {
+  if (hasDirtyConfigChanges()) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
+document.addEventListener("click", function(e) {
+  if (!hasDirtyConfigChanges() || e.defaultPrevented) return;
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+
+  const link = e.target.closest("a[href]");
+  if (!link) return;
+
+  const rawHref = (link.getAttribute("href") || "").trim();
+  if (!rawHref || rawHref.startsWith("#") || rawHref.startsWith("javascript:") || rawHref.startsWith("mailto:") || rawHref.startsWith("tel:")) return;
+  if (link.hasAttribute("download") || link.target === "_blank") return;
+  if (rawHref === "/reboot" || rawHref === "/reset" || rawHref === "/logout") return;
+  if (link.matches(".sidebar-logout a, .mobile-logout-btn")) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  if (typeof window.closeAllSheets === "function") {
+    window.closeAllSheets();
+  }
+
+  Swal.fire({
+    title: "Unsaved Changes",
+    text: "You have unsaved configuration changes. Leave this page without saving?",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonColor: "var(--swal-btn-danger, #dc2626)",
+    cancelButtonColor: "#64748b",
+    confirmButtonText: "Discard & Leave",
+    cancelButtonText: "Stay"
+  }).then(res => {
+    if (res.isConfirmed) {
+      window.__isSubmittingConfig = true;
+      window.location.href = link.href;
+    }
+  });
+}, true);
+
+document.addEventListener("keydown", function(e) {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "s" || e.key === "S")) {
+    if (typeof window.__hasUnsavedChanges === "function") {
+      e.preventDefault();
+      if (window.__hasUnsavedChanges()) {
+        const dockSaveBtn = document.getElementById("btnDockSave");
+        if (dockSaveBtn) {
+          if (dockSaveBtn.form && typeof dockSaveBtn.form.requestSubmit === "function") {
+            dockSaveBtn.form.requestSubmit(dockSaveBtn);
+          } else {
+            dockSaveBtn.click();
+          }
+        }
+      }
+    }
+  }
+});
+
+(function() {
+  let invalidScrollScheduled = false;
+  document.addEventListener("invalid", function(e) {
+    const el = e.target;
+    if (!el || !el.form) return;
+    if (el.form.id !== "authAdminValidation" && el.form.id !== "settingsValidation") return;
+
+    const row = el.closest(".row, .cell, .item");
+    if (row) row.classList.add("has-error");
+
+    if (!invalidScrollScheduled) {
+      invalidScrollScheduled = true;
+      setTimeout(() => { invalidScrollScheduled = false; }, 120);
+      try {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      } catch (_) {}
+    }
+  }, true);
+
+  document.addEventListener("input", function(e) {
+    const row = e.target && e.target.closest ? e.target.closest(".row.has-error, .cell.has-error, .item.has-error") : null;
+    if (row) row.classList.remove("has-error");
+  }, true);
+
+  document.addEventListener("change", function(e) {
+    const row = e.target && e.target.closest ? e.target.closest(".row.has-error, .cell.has-error, .item.has-error") : null;
+    if (row) row.classList.remove("has-error");
+  }, true);
+})();
+
+/**
  * Universal Form Submitter with SweetAlert Confirmation
  */
 function handleFormSubmit(formId, endpoint, successMsg) {
@@ -463,21 +975,29 @@ function handleFormSubmit(formId, endpoint, successMsg) {
   if (!form) return false;
 
   let isValid = true;
+  let firstInvalid = null;
   const inputs = form.querySelectorAll("input:not([disabled]), select:not([disabled])");
   inputs.forEach(el => {
-    const item = el.closest(".item");
-    if (el.required && !el.value.trim()) {
+    const item = el.closest(".row, .cell, .item");
+    const hasNoSpaceErr = el.dataset.nospace === "true" && (el.value.indexOf(" ") >= 0 || !el.value);
+    const isEmptyReq = el.required && !el.value.trim();
+    const isNativeInvalid = typeof el.checkValidity === "function" && !el.checkValidity();
+    if (isEmptyReq || hasNoSpaceErr || isNativeInvalid) {
       isValid = false;
+      if (!firstInvalid) firstInvalid = el;
       if (item) item.classList.add("has-error");
-    } else if (el.dataset.nospace === "true" && (el.value.indexOf(" ") >= 0 || !el.value)) {
-      isValid = false;
-      if (item) item.classList.add("has-error");
-    } else {
-      if (item) item.classList.remove("has-error");
+    } else if (item) {
+      item.classList.remove("has-error");
     }
   });
 
   if (!isValid) {
+    if (firstInvalid) {
+      try {
+        firstInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
+        firstInvalid.focus({ preventScroll: true });
+      } catch (_) {}
+    }
     Swal.fire({
       title: "Validation Error",
       text: "Please fill all required fields correctly!",
@@ -491,15 +1011,15 @@ function handleFormSubmit(formId, endpoint, successMsg) {
     text: "Are you sure you want to apply these configuration settings?",
     icon: "warning",
     showCancelButton: true,
-    confirmButtonColor: "#2563eb",
-    cancelButtonColor: "#64748b",
+    confirmButtonColor: "var(--swal-btn-info, var(--primary))",
     confirmButtonText: "Save Configuration",
     cancelButtonText: "Cancel"
   }).then(res => {
     if (res.isConfirmed) {
+      window.__isSubmittingConfig = true;
       Swal.fire({
         title: "Saving Configuration...",
-        text: "Saving configuration to NVS memory",
+        text: "Saving configuration to system storage",
         allowOutsideClick: false,
         showConfirmButton: false,
         didOpen: () => Swal.showLoading()
@@ -521,39 +1041,40 @@ function handleFormSubmit(formId, endpoint, successMsg) {
             return response.text().then(text => {
               Swal.fire({
                 title: "Configuration Saved",
-                text: text || successMsg || "Configuration committed to NVS flash memory.",
+                text: text || successMsg || "Configuration committed to system storage.",
                 icon: "success",
                 showCancelButton: true,
                 confirmButtonText: "Reboot Now",
-                cancelButtonText: "Selesai",
-                confirmButtonColor: "#10b981",
+                cancelButtonText: "Done",
+                confirmButtonColor: "var(--swal-btn-emerald, #057a55)",
                 cancelButtonColor: "#64748b"
               }).then(choice => {
                 if (choice.isConfirmed) {
-                  window.isManualLoggingOut = true;
-                  fetch("/api/v1/system/reboot", { method: "POST" });
-                  Swal.fire({
-                    title: "Rebooting...",
-                    text: "Device is restarting",
-                    icon: "info",
-                    confirmButtonText: "OK",
-                    confirmButtonColor: "#0284c7",
-                    allowOutsideClick: false
-                  }).then(() => {
-                    window.location.replace("/login.html");
-                  });
+                  const taskLabel = (formId === "authAdminValidation")
+                    ? "Auth & Network Configuration"
+                    : "Device Settings Configuration";
+                  if (typeof window.executeGatewayReboot === "function") {
+                    window.executeGatewayReboot({
+                      title: "System Reboot Progress",
+                      taskLabel: taskLabel,
+                      seconds: 10,
+                      redirectUrl: "/login.html"
+                    });
+                  }
                 } else {
                   location.reload();
                 }
               });
             });
           } else {
+            window.__isSubmittingConfig = false;
             return response.text().then(text => {
               Swal.fire("Failed", text || "Failed to save configuration.", "error");
             });
           }
         })
         .catch(err => {
+          window.__isSubmittingConfig = false;
           Swal.close();
           Swal.fire("Connection Error", err.message || "Failed to communicate with gateway.", "error");
         });
@@ -681,7 +1202,7 @@ document.addEventListener("DOMContentLoaded", function() {
         } else if (data.status === "scanning") {
           pollScanResult();
         } else {
-          showScanError(data.message || "Gagal memindai Wi-Fi");
+          showScanError(data.message || "Wi-Fi scan failed");
         }
       })
       .catch(err => {
@@ -704,7 +1225,7 @@ document.addEventListener("DOMContentLoaded", function() {
           } else if (data.status === "scanning") {
             pollScanResult();
           } else {
-            showScanError(data.message || "Gagal memindai Wi-Fi");
+            showScanError(data.message || "Wi-Fi scan failed");
           }
         })
         .catch(err => {
@@ -757,8 +1278,8 @@ document.addEventListener("DOMContentLoaded", function() {
 
       // Lock SVG icon
       const lockIcon = net.secure
-        ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" title="Password Protected"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
-        : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" title="Open Network (Unsecured)"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>`;
+        ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--wifi-lock-protected, #f59e0b)" stroke-width="2" title="Password Protected"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
+        : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--wifi-lock-open, #10b981)" stroke-width="2" title="Open Network (Unsecured)"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>`;
 
       // Signal waves SVG
       const signalBars = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M8.5 13.5a5 5 0 0 1 7 0" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 10a10 10 0 0 1 14 0" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
@@ -807,7 +1328,7 @@ document.addEventListener("DOMContentLoaded", function() {
     if (statusEl) statusEl.textContent = "Scan failed";
     if (listContainer) {
       listContainer.innerHTML = `
-        <div style="text-align:center;padding:28px 16px;color:#f87171;">
+        <div class="ota-c-err" style="text-align:center;padding:28px 16px;">
           <div style="font-size:1.3rem;margin-bottom:6px;">⚠️</div>
           <div>${msg}</div>
         </div>
@@ -893,7 +1414,7 @@ function bindApStopButton() {
         text: "The configuration hotspot will be disabled and the LED indicator will return to normal operation.",
         icon: "warning",
         showCancelButton: true,
-        confirmButtonColor: "#f97316",
+        confirmButtonColor: "var(--swal-btn-amber, #c2410c)",
         cancelButtonColor: "#64748b",
         confirmButtonText: "Yes, Shutdown AP",
         cancelButtonText: "Cancel"
@@ -947,7 +1468,7 @@ function executeStopAp(banner) {
           return;
         }
         if (typeof Swal !== "undefined") {
-          Swal.fire({ title: "Failed", text: err.message, icon: "error", confirmButtonColor: "#0284c7" });
+          Swal.fire({ title: "Failed", text: err.message, icon: "error", confirmButtonColor: "var(--swal-btn-info, var(--primary))" });
         } else {
           alert(err.message);
         }
@@ -964,7 +1485,7 @@ function handleStopSuccess(banner, msg) {
       title: "Hotspot Disabled",
       text: msg,
       icon: "success",
-      confirmButtonColor: "#0284c7"
+      confirmButtonColor: "var(--swal-btn-info, var(--primary))"
     });
   } else {
     alert(msg);
@@ -1273,22 +1794,18 @@ function triggerRebootNow() {
     showCancelButton: true,
     confirmButtonText: "Reboot Now",
     cancelButtonText: "Cancel",
-    confirmButtonColor: "#10b981",
+    confirmButtonColor: "var(--swal-btn-emerald, #057a55)",
     cancelButtonColor: "#64748b"
   }).then(res => {
     if (res.isConfirmed) {
-      window.isManualLoggingOut = true;
-      fetch("/api/v1/system/reboot", { method: "POST" });
-      Swal.fire({
-        title: "Rebooting...",
-        text: "Gateway is restarting. Redirecting to login...",
-        icon: "info",
-        allowOutsideClick: false,
-        showConfirmButton: false,
-        timer: 6000
-      }).then(() => {
-        window.location.replace("/login.html");
-      });
+      if (typeof window.executeGatewayReboot === "function") {
+        window.executeGatewayReboot({
+          title: "System Reboot Progress",
+          taskLabel: "Applying Network Configuration",
+          seconds: 10,
+          redirectUrl: "/login.html"
+        });
+      }
     }
   });
 }
@@ -1301,7 +1818,7 @@ function discardPendingNetworkChanges() {
     showCancelButton: true,
     confirmButtonText: "Yes, Discard Changes",
     cancelButtonText: "Cancel",
-    confirmButtonColor: "#ef4444",
+    confirmButtonColor: "var(--swal-btn-danger, #dc2626)",
     cancelButtonColor: "#64748b"
   }).then(res => {
     if (res.isConfirmed) {
@@ -1319,13 +1836,13 @@ function discardPendingNetworkChanges() {
           const banner = document.getElementById("pendingRebootBanner");
           if (banner) banner.style.display = "none";
           const detailText = `Pending network configuration changes were discarded. Reverted to mode ${d.reverted_mode}${d.reverted_ssid ? ` (${d.reverted_ssid})` : ''}.\n\n✓ Admin/Technician credentials and MQTT configurations remain intact.`;
-          const detailHtml = `<div style="text-align:left; font-size:0.875rem; line-height:1.6; color:#475569;">
+          const detailHtml = `<div style="text-align:left; font-size:0.875rem; line-height:1.6; color:var(--swal-text, #94a3b8);">
               <p>Pending network changes have been discarded. Reverted to active configuration:</p>
               <ul style="margin: 8px 0; padding-left: 20px;">
                 <li><b>Network Interface:</b> ${d.reverted_mode}</li>
                 ${d.reverted_ssid ? `<li><b>Wi-Fi SSID:</b> ${d.reverted_ssid}</li>` : ''}
               </ul>
-              <p style="margin-top:10px; color:#059669; font-weight:600;">✓ Admin/Technician credentials and MQTT configurations remain intact.</p>
+              <p class="ota-c-ok" style="margin-top:10px;">✓ Admin/Technician credentials and MQTT configurations remain intact.</p>
             </div>`;
           Swal.fire({
             title: "Network Changes Discarded",
@@ -1333,7 +1850,7 @@ function discardPendingNetworkChanges() {
             html: detailHtml,
             icon: "success",
             confirmButtonText: "OK",
-            confirmButtonColor: "#0284c7"
+            confirmButtonColor: "var(--swal-btn-info, var(--primary))"
           }).then(() => {
             location.reload();
           });
@@ -1361,7 +1878,7 @@ function updatePendingRebootBanner(rebootRequired) {
             <line x1="12" y1="9" x2="12" y2="13"/>
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
-          <span>Network configuration changes saved to NVS. Reboot required to apply to hardware.</span>
+          <span>Network configuration changes saved to system storage. Reboot required to apply to hardware.</span>
         </div>
         <div class="pending-banner-actions">
           <button type="button" class="btn-banner-reboot" onclick="triggerRebootNow()">Reboot Now</button>

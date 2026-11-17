@@ -274,22 +274,22 @@ document.addEventListener("DOMContentLoaded", function() {
 
     if (elSessionTotalScan) {
       elSessionTotalScan.textContent = formatMetricK(totalScan);
-      elSessionTotalScan.title = `${totalScan.toLocaleString()} pkt Total Scan (sebelum filter)`;
+      elSessionTotalScan.title = `${totalScan.toLocaleString()} pkt Total Scan (pre-filter)`;
     }
     if (elSessionValidData) {
       elSessionValidData.textContent = formatMetricK(sessionTotalRecv);
-      elSessionValidData.title = `${sessionTotalRecv.toLocaleString()} pkt Valid Data (lolos filter)`;
+      elSessionValidData.title = `${sessionTotalRecv.toLocaleString()} pkt Valid Data (filter passed)`;
     }
     if (elSessionMqttSend) {
       elSessionMqttSend.textContent = formatMetricK(sessionTotalSent);
-      elSessionMqttSend.title = `${sessionTotalSent.toLocaleString()} pkt MQTT Send (sukses terkirim)`;
+      elSessionMqttSend.title = `${sessionTotalSent.toLocaleString()} pkt MQTT Send (published)`;
     }
 
     if (elSessionDropData) {
       if (totalScan > 0) {
         const rate = Math.min(100, Math.max(0, (sessionDropped / totalScan) * 100));
         elSessionDropData.textContent = `${formatMetricK(sessionDropped)} (${rate.toFixed(2)}%)`;
-        elSessionDropData.title = `${sessionDropped.toLocaleString()} pkt Drop Data dari ${totalScan.toLocaleString()} Total Scan (${rate.toFixed(2)}%)`;
+        elSessionDropData.title = `${sessionDropped.toLocaleString()} pkt Drop Data of ${totalScan.toLocaleString()} Total Scan (${rate.toFixed(2)}%)`;
       } else {
         elSessionDropData.textContent = "0 (0.00%)";
         elSessionDropData.title = "0 pkt Drop Data";
@@ -327,7 +327,7 @@ document.addEventListener("DOMContentLoaded", function() {
           icon: "info",
           title: "No Telemetry Data Available",
           text: "Start test stream first to accumulate telemetry data.",
-          confirmButtonColor: "#0284c7"
+          confirmButtonColor: "var(--swal-btn-info, var(--primary))"
         });
       } else {
         alert("No beacon telemetry available to export. Start test first.");
@@ -500,7 +500,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
     return `
       <div class="raw-breakdown">
-        <div class="raw-tag-item"><span class="raw-tag-lbl">Timestamp (4B)</span><span class="raw-tag-bytes byte-time" title="Waktu: ${humanTime}">${epochHex}</span></div>
+        <div class="raw-tag-item"><span class="raw-tag-lbl">Timestamp (4B)</span><span class="raw-tag-bytes byte-time" title="Timestamp: ${humanTime}">${epochHex}</span></div>
         <div class="raw-tag-item"><span class="raw-tag-lbl">MAC (6B)</span><span class="raw-tag-bytes byte-mac">${mac}</span></div>
         <div class="raw-tag-item"><span class="raw-tag-lbl">PDU Type</span><span class="raw-tag-bytes byte-pdu">${pdu}</span></div>
         <div class="raw-tag-item"><span class="raw-tag-lbl">RSSI</span><span class="raw-tag-bytes byte-rssi">${rssiHex}</span></div>
@@ -1624,7 +1624,7 @@ document.addEventListener("DOMContentLoaded", function() {
             <td style="color:var(--text-dim);font-family:var(--font-mono, monospace);font-size:0.84rem;">${timeStr}</td>
             <td><span class="mono-mac">${escapeHtml(b.mac || "-")}</span></td>
             <td>${getProtoBadgeHtml(b.code)}</td>
-            <td><strong style="font-family:var(--font-mono, monospace);color:#38bdf8;">${escapeHtml(b.tag || "-")}</strong></td>
+            <td><strong style="font-family:var(--font-mono, monospace);color:var(--accent-cyan, #38bdf8);">${escapeHtml(b.tag || "-")}</strong></td>
             <td>${getRssiBarsHtml(b.rssi)}</td>
             <td><span class="badge-drop ${reasonInfo.cssClass}">${reasonInfo.label}</span></td>
             <td style="text-align: center;">
@@ -1881,10 +1881,35 @@ document.addEventListener("DOMContentLoaded", function() {
     drawChart();
   }
 
+  function getChartTheme() {
+    const cs = getComputedStyle(document.documentElement);
+    const g = (v, fb) => (cs.getPropertyValue(v).trim() || fb);
+    return {
+      isLight: document.documentElement.dataset.theme === "light",
+      grid: g("--chart-grid", "rgba(255, 255, 255, 0.05)"),
+      axis: g("--chart-axis", "rgba(148, 163, 184, 0.5)"),
+      crosshair: g("--chart-crosshair", "rgba(255, 255, 255, 0.4)"),
+      dotStroke: g("--chart-dot-stroke", "#0f172a"),
+      cRead: g("--chart-c-read", "#22d3ee"),
+      fRead: g("--chart-f-read", "rgba(34, 211, 238, 0.12)"),
+      cMqtt: g("--chart-c-mqtt", "#34d399"),
+      fMqtt: g("--chart-f-mqtt", "rgba(52, 211, 153, 0.08)"),
+      cQueue: g("--chart-c-queue", "#fbbf24"),
+      fQueue: g("--chart-f-queue", "rgba(251, 191, 36, 0.08)"),
+      cBatch: g("--chart-c-batch", "#f43f5e"),
+      fBatch: g("--chart-f-batch", "rgba(244, 63, 94, 0.10)"),
+      cPkt: g("--chart-c-pkt", "#818cf8"),
+      fPkt: g("--chart-f-pkt", "rgba(129, 140, 248, 0.10)"),
+      cBw: g("--chart-c-bw", "#38bdf8"),
+      fBw: g("--chart-f-bw", "rgba(56, 189, 248, 0.08)")
+    };
+  }
+
   function drawChart() {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    const ct = getChartTheme();
 
     // Retina / High-DPI Scaling
     const dpr = window.devicePixelRatio || 1;
@@ -1929,12 +1954,12 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // 2. Gambar Kisi-Kisi Halus (Task Manager Grid)
     ctx.lineWidth = 1;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+    ctx.strokeStyle = ct.grid;
 
     // Garis Grid Horizontal (4 baris)
     const ySteps = 4;
     ctx.font = "10px monospace";
-    ctx.fillStyle = "rgba(148, 163, 184, 0.5)";
+    ctx.fillStyle = ct.axis;
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
 
@@ -1962,12 +1987,12 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // 3. Render 4 Garis Kurva Telemetri
     const series = [
-      { key: "readSpeed", color: "#22d3ee", fill: "rgba(34, 211, 238, 0.12)" },
-      { key: "mqttSpeed", color: "#34d399", fill: "rgba(52, 211, 153, 0.08)" },
-      { key: "queueLoad", color: "#fbbf24", fill: "rgba(251, 191, 36, 0.08)" },
-      { key: "batchLoad", color: "#f43f5e", fill: "rgba(244, 63, 94, 0.10)" },
-      { key: "batchPktSize", color: "#818cf8", fill: "rgba(129, 140, 248, 0.10)" },
-      { key: "netBandwidth", color: "#38bdf8", fill: "rgba(56, 189, 248, 0.08)" }
+      { key: "readSpeed", color: ct.cRead, fill: ct.fRead },
+      { key: "mqttSpeed", color: ct.cMqtt, fill: ct.fMqtt },
+      { key: "queueLoad", color: ct.cQueue, fill: ct.fQueue },
+      { key: "batchLoad", color: ct.cBatch, fill: ct.fBatch },
+      { key: "batchPktSize", color: ct.cPkt, fill: ct.fPkt },
+      { key: "netBandwidth", color: ct.cBw, fill: ct.fBw }
     ];
 
     if (chartData.length > 1) {
@@ -1997,9 +2022,9 @@ document.addEventListener("DOMContentLoaded", function() {
 
         // Stroke Line
         ctx.strokeStyle = s.color;
-        ctx.lineWidth = 1.8;
+        ctx.lineWidth = ct.isLight ? 2.0 : 1.8;
         ctx.shadowColor = s.color;
-        ctx.shadowBlur = 6;
+        ctx.shadowBlur = ct.isLight ? 0 : 6;
         ctx.stroke();
 
         // Area Fill
@@ -2016,7 +2041,7 @@ document.addEventListener("DOMContentLoaded", function() {
         const hx = padLeft + (startIndex + hoverIndex) * stepX;
         ctx.beginPath();
         ctx.setLineDash([3, 3]);
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.strokeStyle = ct.crosshair;
         ctx.lineWidth = 1;
         ctx.moveTo(hx, padTop);
         ctx.lineTo(hx, padTop + plotH);
@@ -2032,7 +2057,7 @@ document.addEventListener("DOMContentLoaded", function() {
           ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
           ctx.fillStyle = s.color;
           ctx.fill();
-          ctx.strokeStyle = "#0f172a";
+          ctx.strokeStyle = ct.dotStroke;
           ctx.lineWidth = 1.5;
           ctx.stroke();
         });
@@ -2041,6 +2066,8 @@ document.addEventListener("DOMContentLoaded", function() {
 
     ctx.restore();
   }
+
+  window.addEventListener("themechange", drawChart);
 
   // Canvas Mouse Interaction for Tooltip
   if (canvas && chartWrapper) {
@@ -2069,18 +2096,19 @@ document.addEventListener("DOMContentLoaded", function() {
         drawChart();
 
         if (chartTooltip) {
+          const ct = getChartTheme();
           const pt = chartData[hoverIndex];
           const timeStr = formatTime(pt.time);
           const secAgo = totalPoints - (startIndex + hoverIndex) - 1;
 
           chartTooltip.innerHTML = `
-            <div class="chart-tooltip-title">${secAgo === 0 ? 'Sekarang (Live)' : secAgo + 's lalu'} • ${timeStr}</div>
-            <div class="chart-tooltip-row"><span style="color:#22d3ee;">Tag Read Speed</span><strong>${pt.readSpeed} pkt/s</strong></div>
-            <div class="chart-tooltip-row"><span style="color:#34d399;">MQTT Speed</span><strong>${pt.mqttSpeed} batch/s</strong></div>
-            <div class="chart-tooltip-row"><span style="color:#fbbf24;">Queue RTOS</span><strong>${pt.queueLoad} / 300</strong></div>
-            <div class="chart-tooltip-row"><span style="color:#f43f5e;">Batch Buffer</span><strong>${pt.batchLoad} / ${curBatchMax}</strong></div>
-            <div class="chart-tooltip-row"><span style="color:#818cf8;">Pkt / Batch</span><strong>${pt.batchPktSize || 0} pkt</strong></div>
-            <div class="chart-tooltip-row"><span style="color:#38bdf8;">Net Bandwidth</span><strong>${(pt.netBandwidth || 0).toFixed(2)} KB/s</strong></div>
+            <div class="chart-tooltip-title">${secAgo === 0 ? 'Live' : secAgo + 's ago'} • ${timeStr}</div>
+            <div class="chart-tooltip-row"><span style="color:${ct.cRead};">Tag Read Speed</span><strong>${pt.readSpeed} pkt/s</strong></div>
+            <div class="chart-tooltip-row"><span style="color:${ct.cMqtt};">MQTT Speed</span><strong>${pt.mqttSpeed} batch/s</strong></div>
+            <div class="chart-tooltip-row"><span style="color:${ct.cQueue};">Ingress Queue</span><strong>${pt.queueLoad} / 300</strong></div>
+            <div class="chart-tooltip-row"><span style="color:${ct.cBatch};">Batch Buffer</span><strong>${pt.batchLoad} / ${curBatchMax}</strong></div>
+            <div class="chart-tooltip-row"><span style="color:${ct.cPkt};">Pkt / Batch</span><strong>${pt.batchPktSize || 0} pkt</strong></div>
+            <div class="chart-tooltip-row"><span style="color:${ct.cBw};">Net Bandwidth</span><strong>${(pt.netBandwidth || 0).toFixed(2)} KB/s</strong></div>
           `;
 
           // Position Tooltip
@@ -2333,6 +2361,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
       if (statusBadge) {
         statusBadge.className = "status-pill";
+        statusBadge.removeAttribute("style");
         statusBadge.innerHTML = `<span class="pulse-dot"></span><span id="testStatusText">STREAMING LIVE</span>`;
       }
 
@@ -2453,10 +2482,8 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     if (statusBadge) {
-      statusBadge.className = "status-pill";
-      statusBadge.style.background = "rgba(148, 163, 184, 0.12)";
-      statusBadge.style.borderColor = "rgba(148, 163, 184, 0.3)";
-      statusBadge.style.color = "#94a3b8";
+      statusBadge.className = "status-pill ready";
+      statusBadge.removeAttribute("style");
       statusBadge.innerHTML = `<span>STANDBY</span>`;
     }
 
@@ -2502,8 +2529,8 @@ document.addEventListener("DOMContentLoaded", function() {
         html: "Live telemetry test is currently active. If you navigate away, the live stream will stop and unsaved test session data will be lost.<br><br>Do you want to proceed?",
         icon: "warning",
         showCancelButton: true,
-        confirmButtonText: "Lanjut",
-        confirmButtonColor: "#ef4444",
+        confirmButtonText: "Proceed",
+        confirmButtonColor: "var(--swal-btn-danger, #dc2626)",
         cancelButtonText: "Cancel",
         cancelButtonColor: "#64748b"
       }).then((result) => {

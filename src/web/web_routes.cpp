@@ -208,7 +208,7 @@ static esp_err_t stream_static_file(httpd_req_t *req, const char *base_path) {
 
     if (!file_guard.acquired) {
         httpd_resp_set_status(req, "503 Service Unavailable");
-        httpd_resp_send(req, "Sistem sedang dalam proses pemeliharaan/update.", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req, "System maintenance or firmware update in progress.", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -277,6 +277,12 @@ static esp_err_t stream_static_file(httpd_req_t *req, const char *base_path) {
 }
 
 static esp_err_t favicon_handler(httpd_req_t *req) {
+    if (Server::is_filesystem_ready()) {
+        struct stat st;
+        if (stat("/storage/assets/img/favicon.png", &st) == 0) {
+            return stream_static_file(req, "/storage/assets/img/favicon.png");
+        }
+    }
     httpd_resp_set_status(req, "204 No Content");
     httpd_resp_send(req, nullptr, 0);
     return ESP_OK;
@@ -495,7 +501,7 @@ static esp_err_t api_login_handler(httpd_req_t *req) {
     } else if (auth_res == Session::AuthResult::SESSION_LIMIT_REACHED) {
         httpd_resp_set_status(req, "409 Conflict");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"status\":\"error\",\"code\":\"session_limit\",\"message\":\"Batas maksimal 2 perangkat aktif tercapai. Silakan logout terlebih dahulu di salah satu perangkat yang sedang login.\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req, "{\"status\":\"error\",\"code\":\"session_limit\",\"message\":\"Maximum active session limit reached (2 devices). Please sign out from another active session first.\"}", HTTPD_RESP_USE_STRLEN);
         ESP_LOGW(TAG, "Login DITOLAK: Batas 2 perangkat aktif tercapai untuk user '%s'", u);
     } else if (auth_res == Session::AuthResult::RATE_LIMITED) {
         httpd_resp_set_status(req, "429 Too Many Requests");
@@ -504,7 +510,7 @@ static esp_err_t api_login_handler(httpd_req_t *req) {
     } else {
         httpd_resp_set_status(req, "401 Unauthorized");
         httpd_resp_set_type(req, "text/plain");
-        httpd_resp_send(req, "Username atau password salah.", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req, "Invalid username or password.", HTTPD_RESP_USE_STRLEN);
         ESP_LOGW(TAG, "Login GAGAL untuk user '%s'", u);
     }
     return ESP_OK;
@@ -595,7 +601,7 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
     UserRole role = Session::validate(req);
     if (role == UserRole::NONE) {
         httpd_resp_set_status(req, "401 Unauthorized");
-        httpd_resp_send(req, "Sesi Anda telah berakhir.", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req, "Session expired. Please sign in again.", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
@@ -813,20 +819,20 @@ static esp_err_t api_config_auth_handler(httpd_req_t *req) {
     }
 
     char detAuth[80];
-    snprintf(detAuth, sizeof(detAuth), "%s oleh %s (Staged NVS)",
-             authCredChanged ? "Kredensial Akun Diperbarui" : "Konfigurasi Jaringan/MQTT Diperbarui",
+    snprintf(detAuth, sizeof(detAuth), "%s by %s (Staged System Storage)",
+             authCredChanged ? "Account Credentials Updated" : "Network/MQTT Configuration Updated",
              role == UserRole::ADMIN ? "Admin" : "Engineer");
     Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::AUTH_UPDATE, detAuth);
 
     httpd_resp_set_type(req, "text/plain");
-    httpd_resp_send(req, "Configuration committed to NVS. Reboot required to apply changes.", HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, "Configuration committed to system storage. Reboot required to apply changes.", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
 static esp_err_t api_network_discard_handler(httpd_req_t *req) {
     if (Session::validate(req) == UserRole::NONE) {
         httpd_resp_set_status(req, "401 Unauthorized");
-        httpd_resp_send(req, "Sesi Anda telah berakhir.", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req, "Session expired. Please sign in again.", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
@@ -834,7 +840,7 @@ static esp_err_t api_network_discard_handler(httpd_req_t *req) {
     s_auth_reboot_required = false;
 
     Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::CONFIG_DISCARD,
-                                "Perubahan Konfigurasi Dibatalkan oleh Pengguna");
+                                "Pending configuration changes discarded by user");
 
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "status", "ok");
@@ -857,7 +863,7 @@ static esp_err_t api_config_settings_handler(httpd_req_t *req) {
     UserRole role = Session::validate(req);
     if (role == UserRole::NONE) {
         httpd_resp_set_status(req, "401 Unauthorized");
-        httpd_resp_send(req, "Sesi Anda telah berakhir.", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req, "Session expired. Please sign in again.", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
@@ -974,12 +980,12 @@ static esp_err_t api_config_settings_handler(httpd_req_t *req) {
     s_auth_reboot_required = true;
 
     char detCfg[80];
-    snprintf(detCfg, sizeof(detCfg), "Pengaturan Sistem Disimpan oleh %s (Staged NVS)",
+    snprintf(detCfg, sizeof(detCfg), "System settings saved by %s (Staged System Storage)",
              role == UserRole::ADMIN ? "Admin" : "Engineer");
     Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::CONFIG_UPDATE, detCfg);
 
     httpd_resp_set_type(req, "text/plain");
-    httpd_resp_send(req, "Configuration committed to NVS. Reboot required to apply changes.", HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, "Configuration committed to system storage. Reboot required to apply changes.", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
@@ -1158,7 +1164,7 @@ static esp_err_t api_stop_ap_handler(httpd_req_t *req) {
         return ESP_OK;
     }
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, "{\"status\":\"ok\",\"message\":\"Mode Hotspot AP berhasil dinonaktifkan.\"}", HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, "{\"status\":\"ok\",\"message\":\"Configuration AP hotspot disabled.\"}", HTTPD_RESP_USE_STRLEN);
     Network::NetworkManager::scheduleStopConfigAP(1000);
     return ESP_OK;
 }
@@ -1351,12 +1357,12 @@ static esp_err_t api_net_logs_clear_handler(httpd_req_t *req) {
 
     Network::NetLogService::clearLogs();
     char detClr[80];
-    snprintf(detClr, sizeof(detClr), "Seluruh Riwayat Log Sistem Dibersihkan oleh %s",
+    snprintf(detClr, sizeof(detClr), "System event logs cleared by %s",
              role == UserRole::ADMIN ? "Admin" : "Engineer");
     Network::NetLogService::log(Network::NetCategory::SYSTEM, Network::NetEvent::LOG_CLEARED, detClr);
 
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, "{\"status\":\"ok\",\"message\":\"Riwayat net log berhasil dihapus.\"}", HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, "{\"status\":\"ok\",\"message\":\"Network & system logs cleared.\"}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
@@ -1404,7 +1410,7 @@ static esp_err_t api_net_logs_export_handler(httpd_req_t *req) {
         dst[o] = '\0';
     };
 
-    const char *csv_head = "No,Waktu,Interface,Event,Detail\r\n";
+    const char *csv_head = "No,Timestamp,Interface,Event,Detail\r\n";
     if (httpd_resp_send_chunk(req, csv_head, strlen(csv_head)) != ESP_OK) {
         return ESP_FAIL;
     }
@@ -1442,7 +1448,7 @@ static esp_err_t api_drop_logs_handler(httpd_req_t *req) {
 
     if (Session::validate(req, nullptr, 0, false) == UserRole::NONE) {
         httpd_resp_set_status(req, "401 Unauthorized");
-        httpd_resp_send(req, "Sesi Anda telah berakhir.", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req, "Session expired. Please sign in again.", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
@@ -1507,7 +1513,7 @@ static esp_err_t api_drop_logs_clear_handler(httpd_req_t *req) {
     Core::DropLogService::clearLogs();
     Core::BeaconPipeline::resetDropCounters();
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, "{\"status\":\"ok\",\"message\":\"Riwayat log drop data berhasil dihapus.\"}", HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, "{\"status\":\"ok\",\"message\":\"Drop telemetry logs cleared.\"}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
@@ -1534,7 +1540,7 @@ static esp_err_t api_drop_logs_export_handler(httpd_req_t *req) {
     httpd_resp_set_hdr(req, "Content-Disposition", drop_disp_hdr);
 
     // Header CSV (8 kolom)
-    const char *csv_head = "No,Waktu,MAC Address,Tipe,Major-Minor/Tag,RSSI(dBm),Alasan,Raw 44B\r\n";
+    const char *csv_head = "No,Timestamp,MAC Address,Type,Major-Minor/Tag,RSSI(dBm),Reason,Raw 44B\r\n";
     if (httpd_resp_send_chunk(req, csv_head, strlen(csv_head)) != ESP_OK) {
         return ESP_FAIL;
     }
@@ -1581,7 +1587,7 @@ static esp_err_t api_reboot_handler(httpd_req_t *req) {
     UserRole role = Session::validate(req);
     if (role == UserRole::NONE) {
         httpd_resp_set_status(req, "401 Unauthorized");
-        httpd_resp_send(req, "Sesi Anda telah berakhir.", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req, "Session expired. Please sign in again.", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
@@ -1662,7 +1668,7 @@ static esp_err_t api_reset_handler(httpd_req_t *req) {
     Core::ConfigStore::resetConfigToFactory();
 
     httpd_resp_set_type(req, "text/plain");
-    httpd_resp_send(req, "NVS configuration, logs, and boot count restored to factory defaults. Gateway restarting...", HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, "System storage configuration, logs, and boot count restored to factory defaults. Gateway restarting...", HTTPD_RESP_USE_STRLEN);
 
     xTaskCreatePinnedToCore([](void *) {
         // Feedback visual LED Hijau kedip 600ms sebelum restart
@@ -1826,7 +1832,7 @@ static esp_err_t api_wifi_scan_handler(httpd_req_t *req) {
             ESP_LOGE(TAG, "Gagal memulai scan Wi-Fi: 0x%x (%s)", err, esp_err_to_name(err));
             stop_wifi_if_ethernet_active();
             httpd_resp_set_type(req, "application/json");
-            httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"Gagal memulai pemindaian Wi-Fi\"}", HTTPD_RESP_USE_STRLEN);
+            httpd_resp_send(req, "{\"status\":\"error\",\"message\":\"Failed to start Wi-Fi scan\"}", HTTPD_RESP_USE_STRLEN);
             return ESP_OK;
         }
     }
@@ -1922,13 +1928,13 @@ static esp_err_t api_wifi_scan_handler(httpd_req_t *req) {
 static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
     if (Session::validate(req) == UserRole::NONE) {
         httpd_resp_set_status(req, "401 Unauthorized");
-        httpd_resp_send(req, "Sesi Anda telah berakhir.", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req, "Session expired. Please sign in again.", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
     if (Ota::is_in_progress()) {
         httpd_resp_set_status(req, "409 Conflict");
-        httpd_resp_send(req, "Update firmware sedang berlangsung dari sesi lain (409 Conflict)!", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req, "Update already in progress from another session (409 Conflict).", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
@@ -1949,7 +1955,7 @@ static esp_err_t api_ota_upload_handler(httpd_req_t *req) {
             unsigned long parsed = strtoul(size_val, &endptr, 10);
             if (endptr == size_val || *endptr != '\0' || parsed == 0 || static_cast<size_t>(parsed) != req->content_len) {
                 httpd_resp_set_status(req, "400 Bad Request");
-                httpd_resp_send(req, "Ukuran query 'size' tidak konsisten dengan Content-Length HTTP!", HTTPD_RESP_USE_STRLEN);
+                httpd_resp_send(req, "Query 'size' parameter mismatches HTTP Content-Length.", HTTPD_RESP_USE_STRLEN);
                 return ESP_OK;
             }
             total_size = static_cast<size_t>(parsed);
@@ -2197,7 +2203,7 @@ static esp_err_t api_test_ntp_handler(httpd_req_t *req) {
             cJSON_AddBoolToObject(root, "success", false);
             cJSON_AddStringToObject(root, "server", cleanServer);
             cJSON_AddStringToObject(root, "ip", ipStr);
-            cJSON_AddStringToObject(root, "message", "Server tidak merespons (Timeout 3s / Port UDP 123 diblokir)");
+            cJSON_AddStringToObject(root, "message", "No response from NTP server (3s timeout or UDP port 123 blocked)");
         }
         return sendJson(root);
     }
@@ -2214,7 +2220,7 @@ static esp_err_t api_test_ntp_handler(httpd_req_t *req) {
         time_t unixTime = (time_t)(sec1900 - NTP_OFFSET_1970);
         struct tm tmWib;
         localtime_r(&unixTime, &tmWib);
-        strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S WIB", &tmWib);
+        strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S UTC+7", &tmWib);
     }
 
     cJSON *root = cJSON_CreateObject();
@@ -2228,7 +2234,7 @@ static esp_err_t api_test_ntp_handler(httpd_req_t *req) {
         cJSON_AddStringToObject(root, "server_time", timeStr);
 
         char msg[128];
-        snprintf(msg, sizeof(msg), "Server NTP aktif (Latensi: %lld ms | Stratum %d)", (long long)elapsedMs, stratum);
+        snprintf(msg, sizeof(msg), "NTP server reachable (Latency: %lld ms | Stratum %d)", (long long)elapsedMs, stratum);
         cJSON_AddStringToObject(root, "message", msg);
     }
     return sendJson(root);

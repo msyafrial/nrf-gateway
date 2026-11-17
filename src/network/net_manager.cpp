@@ -137,7 +137,7 @@ const char* NetworkManager::getWifiDisconnectReasonName(uint8_t reason) {
         case 12:  return "BSS_TRANSITION";
         case 13:  return "IE_INVALID";
         case 14:  return "MIC_FAILURE";
-        case 15:  return "4WAY_HANDSHAKE_TIMEOUT (Salah Password / Interferensi Kuat)";
+        case 15:  return "4WAY_HANDSHAKE_TIMEOUT (Invalid PSK / High Interference)";
         case 16:  return "GROUP_KEY_UPDATE_TIMEOUT";
         case 17:  return "IE_IN_4WAY_DIFFERS";
         case 18:  return "GROUP_CIPHER_INVALID";
@@ -147,9 +147,9 @@ const char* NetworkManager::getWifiDisconnectReasonName(uint8_t reason) {
         case 22:  return "INVALID_RSN_IE_CAP";
         case 23:  return "802_1X_AUTH_FAILED";
         case 24:  return "CIPHER_SUITE_REJECTED";
-        case 200: return "BEACON_TIMEOUT (AP Di Luar Jangkauan / Radio Padam)";
-        case 201: return "NO_AP_FOUND (SSID Tidak Ditemukan / Router Mati)";
-        case 202: return "AUTH_FAIL (Password Wi-Fi Salah)";
+        case 200: return "BEACON_TIMEOUT (AP Out of Range / Down)";
+        case 201: return "NO_AP_FOUND (SSID Not Found)";
+        case 202: return "AUTH_FAIL (Invalid Wi-Fi Password)";
         case 203: return "ASSOC_FAIL";
         case 204: return "HANDSHAKE_TIMEOUT";
         case 205: return "CONNECTION_FAIL";
@@ -272,7 +272,7 @@ void NetworkManager::onWifiEvent(void* arg, esp_event_base_t base, int32_t id, v
                     mdns_netif_action(s_apNetif, MDNS_EVENT_ANNOUNCE_IP4);
                 }
                 char det[80];
-                snprintf(det, sizeof(det), "Klien terhubung (MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
+                snprintf(det, sizeof(det), "AP client connected (MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
                          e->mac[0], e->mac[1], e->mac[2], e->mac[3], e->mac[4], e->mac[5]);
                 NetLogService::log(NetCategory::SOFTAP, NetEvent::CLIENT_JOIN, det);
                 break;
@@ -284,7 +284,7 @@ void NetworkManager::onWifiEvent(void* arg, esp_event_base_t base, int32_t id, v
                          e->mac[0], e->mac[1], e->mac[2], e->mac[3], e->mac[4], e->mac[5]);
                 recordApActivity();
                 char det[80];
-                snprintf(det, sizeof(det), "Klien terputus (MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
+                snprintf(det, sizeof(det), "AP client disconnected (MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
                          e->mac[0], e->mac[1], e->mac[2], e->mac[3], e->mac[4], e->mac[5]);
                 NetLogService::log(NetCategory::SOFTAP, NetEvent::CLIENT_LEAVE, det);
                 break;
@@ -781,7 +781,7 @@ void NetworkManager::startConfigAP() {
     MicroDnsServer::start(s_apNetif, 0xC0A80401);
 
     char det[80];
-    snprintf(det, sizeof(det), "Hotspot aktif: SSID %s (IP 192.168.4.1)", ap_config.ap.ssid);
+    snprintf(det, sizeof(det), "Config AP active: SSID %s (IP 192.168.4.1)", ap_config.ap.ssid);
     NetLogService::log(NetCategory::SOFTAP, NetEvent::STARTED, det);
 }
 
@@ -798,7 +798,7 @@ void NetworkManager::stopConfigAP() {
             mdns_netif_action(s_apNetif, MDNS_EVENT_DISABLE_IP4);
         }
 
-        NetLogService::log(NetCategory::SOFTAP, NetEvent::STOPPED, "Hotspot konfigurasi dinonaktifkan");
+        NetLogService::log(NetCategory::SOFTAP, NetEvent::STOPPED, "Config AP disabled");
 
         if (s_ethFsmState != EthFsmState::DIRECT_PC && s_ethFsmState != EthFsmState::PEER_SLAVE) {
             Bsp::LedManager::setConfigMode(false);
@@ -967,14 +967,14 @@ void NetworkManager::getEthernetIp(char* outBuf, size_t maxLen) {
     outBuf[0] = '\0';
     if (s_ethDriver && s_ethDriver->isHardwareDetected()) {
         if (!s_ethDriver->isConnected()) {
-            snprintf(outBuf, maxLen, "Kabel Terputus (Link Down)");
+            snprintf(outBuf, maxLen, "Cable Unplugged (Link Down)");
             return;
         }
         s_ethDriver->getIp(outBuf, maxLen);
         if (strlen(outBuf) > 0 && strcmp(outBuf, "0.0.0.0") != 0) {
             return;
         }
-        snprintf(outBuf, maxLen, "Menunggu IP (DHCP)...");
+        snprintf(outBuf, maxLen, "Acquiring IP (DHCP)...");
         return;
     }
     snprintf(outBuf, maxLen, "-");
@@ -1071,7 +1071,7 @@ void NetworkManager::checkDisconWatchdog() {
         ESP_LOGE(TAG, "Watchdog Diskoneksi Terpicu! Terputus > %d menit. Melakukan Restart Sistem...",
                  g_config.discon_rst);
         char wdDetail[80];
-        snprintf(wdDetail, sizeof(wdDetail), "Watchdog diskoneksi terpicu (> %d menit)", g_config.discon_rst);
+        snprintf(wdDetail, sizeof(wdDetail), "Disconnection watchdog triggered (> %d min)", g_config.discon_rst);
         NetLogService::log(NetCategory::SYSTEM, NetEvent::REBOOT, wdDetail);
         vTaskDelay(pdMS_TO_TICKS(150));
         gracefulRestart();
@@ -1153,7 +1153,7 @@ void NetworkManager::resetFastLinkBackoff() {
 void NetworkManager::forceWifiReassociate(const char* reason) {
     ESP_LOGW(TAG, "Memicu rekoneksi paksa Wi-Fi Station! Alasan: %s", reason ? reason : "-");
     char det[80];
-    snprintf(det, sizeof(det), "Link Zombie (%s) -> Reconnect Paksa", reason ? reason : "Gateway RTO");
+    snprintf(det, sizeof(det), "Stale link (%s) -> Forced reconnect", reason ? reason : "Gateway RTO");
     NetLogService::log(NetCategory::WIFI, NetEvent::ERROR_EVT, det);
 
     s_wifiConnected = false;
@@ -1333,7 +1333,7 @@ void NetworkManager::checkDailyRestart() {
             ESP_LOGI(TAG, "Jadwal restart harian (%02d:%02d) tercapai. Melakukan restart terencana...",
                      targetH, targetM);
             char schDetail[80];
-            snprintf(schDetail, sizeof(schDetail), "Jadwal restart harian (%02d:%02d) dieksekusi", targetH, targetM);
+            snprintf(schDetail, sizeof(schDetail), "Scheduled daily reboot (%02d:%02d) executed", targetH, targetM);
             NetLogService::log(NetCategory::SYSTEM, NetEvent::REBOOT, schDetail);
             vTaskDelay(pdMS_TO_TICKS(200));
             gracefulRestart();
@@ -1425,7 +1425,7 @@ void NetworkManager::checkEthernetFallback() {
                 MicroDhcpServer::start(eth_netif, 0xC0A80401, 0xC0A80402);
 
                 NetLogService::log(NetCategory::ETHERNET, NetEvent::STARTED,
-                                   "Direct LAN Terhubung (Master: 192.168.4.1, Micro-DHCP Aktif)");
+                                   "Direct LAN Connected (Host: 192.168.4.1, Micro-DHCP Active)");
             } else {
                 // SLAVE / PEER NODE: Tetapkan IP unik berbasis MAC
                 uint8_t mac[6] = {0};
@@ -1448,7 +1448,7 @@ void NetworkManager::checkEthernetFallback() {
                 }
 
                 char det[80];
-                snprintf(det, sizeof(det), "Hub Terdeteksi (Slave Peer: 192.168.4.%d, Master 192.168.4.1)", host_octet);
+                snprintf(det, sizeof(det), "Switch/Hub Link Detected (Peer: 192.168.4.%d, Host 192.168.4.1)", host_octet);
                 NetLogService::log(NetCategory::ETHERNET, NetEvent::STARTED, det);
             }
 
